@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Preview — Finanzas App · Nav Horizontal</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:      #040F20;
+  --bg2:     #071E3D;
+  --bg3:     #0D2D57;
+  --bg4:     #0D3D75;
+  --border:  rgba(46,127,217,0.22);
+  --border2: rgba(46,127,217,0.40);
+  --text:    #E8F0FB;
+  --muted:   rgba(180,205,240,0.55);
+  --accent:  #2E7FD9;
+  --accent2: #14549C;
+  --aqua:    #00C4CC;
+  --green:   #29D985;
+  --red:     #FF5E5E;
+  --gold:    #FFD166;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: #020810;
+  color: var(--text);
+  padding: 32px 20px 60px;
+}
+
+/* ── Títulos del preview ── */
+.preview-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--muted);
+  text-align: center;
+  margin-bottom: 14px;
+}
+.preview-label span { color: var(--accent); }
+.section-divider {
+  margin: 56px 0 32px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--muted);
+}
+.section-divider::before,
+.section-divider::after { content:''; flex:1; height:1px; background:var(--border); }
+
+/* ══════════════════════════════
+   DESKTOP FRAME
+══════════════════════════════ */
+.desktop-wrap {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.browser-frame {
+  background: var(--bg);
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.07);
+  box-shadow: 0 32px 80px rgba(0,0,0,.7);
+  overflow: hidden;
+}
+.browser-bar {
+  height: 36px;
+  background: #050E1E;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 8px;
+}
+.b-dot { width:11px;height:11px;border-radius:50%; }
+.browser-url {
+  flex: 1;
+  text-align: center;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--bg2);
+  border-radius: 6px;
+  padding: 3px 12px;
+  max-width: 300px;
+  margin: 0 auto;
+}
+
+/* ── TOP HEADER ── */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 32px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+}
+.logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px;
+  letter-spacing: .07em;
+  color: var(--text);
+  white-space: nowrap;
+}
+.logo span { color: var(--accent); }
+.logo-sub {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  margin-top: 1px;
+}
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.live {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: var(--green);
+  letter-spacing: .06em;
+}
+.live::before {
+  content:'';
+  width:6px;height:6px;border-radius:50%;
+  background:var(--green);
+  animation: blink 2s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+.chip {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.chip-user { background:rgba(46,127,217,.12); border:1px solid rgba(46,127,217,.35); color:var(--accent); }
+.chip-btn  { background:none; border:1px solid rgba(255,255,255,.1); color:var(--muted); cursor:pointer; }
+
+/* ── MAIN NAV (horizontal, sticky) ── */
+.main-nav {
+  display: flex;
+  align-items: stretch;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+}
+.main-nav::-webkit-scrollbar { display:none; }
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 13px 18px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color .15s;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  text-decoration: none;
+}
+.nav-item:hover { color: var(--text); }
+.nav-item.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: rgba(46,127,217,0.06);
+}
+.nav-icon { font-size: 15px; }
+
+/* ── SUB-NAV (Inversiones) ── */
+.sub-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(4,15,32,0.6);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 32px;
+}
+.sub-item {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: none;
+  border: 1px solid transparent;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.sub-item:hover { color: var(--text); border-color: var(--border); }
+.sub-item.active {
+  color: var(--accent);
+  background: rgba(46,127,217,0.12);
+  border-color: rgba(46,127,217,0.35);
+}
+
+/* ── BODY ── */
+.app-body {
+  padding: 28px 32px;
+  background: var(--bg);
+  min-height: 420px;
+  background-image:
+    linear-gradient(rgba(46,127,217,.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(46,127,217,.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* ── Page title ── */
+.page-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 2rem;
+  letter-spacing: .06em;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.page-sub {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--muted);
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.page-sub::after { content:''; flex:1; height:1px; background:var(--border); }
+
+/* ── Metric cards ── */
+.metrics-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.metric-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px 18px;
+}
+.metric-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.metric-val {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.9rem;
+  letter-spacing: .04em;
+  color: var(--text);
+  line-height: 1;
+}
+.metric-delta {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  margin-top: 4px;
+}
+.up   { color: var(--green); }
+.down { color: var(--red); }
+
+/* ── Charts row ── */
+.charts-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+.chart-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px;
+  min-height: 200px;
+}
+.chart-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.1rem;
+  letter-spacing: .06em;
+  color: var(--accent);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.chart-title span {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+/* Fake SVG chart */
+.fake-chart { width:100%; height:140px; position:relative; }
+.fake-chart svg { width:100%; height:100%; }
+
+/* ── Table ── */
+.data-table {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.data-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.data-table th {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+  text-align: left;
+}
+.data-table td {
+  padding: 12px 16px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(46,127,217,.06);
+  font-variant-numeric: tabular-nums;
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: rgba(46,127,217,.04); }
+.ticker { font-family:'DM Mono',monospace; font-size:12px; color:var(--accent); }
+.num-right { text-align:right; }
+
+/* ══════════════════════════════
+   MOBILE FRAME
+══════════════════════════════ */
+.mobile-wrap {
+  display: flex;
+  gap: 32px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.phone {
+  width: 375px;
+  background: var(--bg);
+  border-radius: 40px;
+  border: 7px solid #111E30;
+  box-shadow:
+    0 0 0 1px rgba(255,255,255,0.04),
+    0 32px 70px rgba(0,0,0,.65);
+  overflow: hidden;
+}
+.phone-notch {
+  height: 30px;
+  background: #111E30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.phone-pill {
+  width: 100px;
+  height: 10px;
+  background: #070E1A;
+  border-radius: 5px;
+}
+.phone-screen {
+  height: 700px;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  background-image:
+    linear-gradient(rgba(46,127,217,.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(46,127,217,.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* Mobile header (más compacto) */
+.mob-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px 10px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.mob-logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 20px;
+  letter-spacing: .07em;
+  color: var(--text);
+}
+.mob-logo span { color: var(--accent); }
+
+/* Mobile: NO top nav — va en bottom bar */
+
+/* Mobile body */
+.mob-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 14px 80px;
+  scrollbar-width: none;
+}
+.mob-body::-webkit-scrollbar { display: none; }
+
+/* Mobile metrics — 2x2 grid */
+.mob-metrics {
+  display: grid;
+  grid-template-columns: repeat(2,1fr);
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.mob-metric {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.mob-metric .metric-val { font-size: 1.6rem; }
+
+/* Mobile chart */
+.mob-chart {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+/* Mobile sub-nav (tabs horizontales scrolleables) */
+.mob-subnav {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin-bottom: 14px;
+  padding-bottom: 2px;
+}
+.mob-subnav::-webkit-scrollbar { display:none; }
+.mob-subtab {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+}
+.mob-subtab.active {
+  color: var(--accent);
+  background: rgba(46,127,217,.12);
+  border-color: rgba(46,127,217,.4);
+}
+
+/* ── Bottom nav ── */
+.bottom-nav {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 68px;
+  background: rgba(7,30,61,0.97);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: stretch;
+  padding: 0 2px;
+  z-index: 20;
+}
+.bot-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 6px 2px;
+  transition: background .15s;
+}
+.bot-btn:hover { background: rgba(46,127,217,.07); }
+.bot-btn.active { background: rgba(46,127,217,.1); }
+.bot-icon { font-size: 19px; line-height: 1; }
+.bot-label {
+  font-family: 'DM Mono', monospace;
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--muted);
+}
+.bot-btn.active .bot-label { color: var(--accent); }
+
+/* ── Nota de fullscreen ── */
+.note-box {
+  background: var(--bg2);
+  border: 1px solid rgba(255,209,102,.3);
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.7;
+  max-width: 680px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.note-box strong { color: var(--gold); }
+.note-box code {
+  background: var(--bg3);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--aqua);
+}
+
+/* Fake chart SVG helpers */
+.sparkline { stroke: var(--accent); stroke-width: 2; fill: none; }
+.sparkfill { fill: rgba(46,127,217,0.12); }
+.sparkline-green { stroke: var(--green); stroke-width: 2; fill: none; }
+.sparkfill-green { fill: rgba(41,217,133,0.1); }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════
+     DESKTOP — Dashboard activo
+══════════════════════════════════════ -->
+<p class="preview-label">PREVIEW · <span>FINANZAS APP</span> · NAV HORIZONTAL · DESKTOP</p>
+
+<div class="desktop-wrap">
+  <div class="browser-frame">
+    <div class="browser-bar">
+      <div class="b-dot" style="background:#FF5F57"></div>
+      <div class="b-dot" style="background:#FFBD2E"></div>
+      <div class="b-dot" style="background:#28CA41"></div>
+      <div class="browser-url">localhost:8501</div>
+    </div>
+
+    <!-- Header -->
+    <div class="app-header">
+      <div>
+        <div class="logo">💰 FINANZAS <span>APP</span></div>
+        <div class="logo-sub">Panel de control · Patrimonio personal</div>
+      </div>
+      <div class="header-right">
+        <div class="live">EN VIVO</div>
+        <span class="chip chip-user">Juan García</span>
+        <button class="chip chip-btn">Salir</button>
+      </div>
+    </div>
+
+    <!-- Main nav — HORIZONTAL STICKY -->
+    <div class="main-nav">
+      <button class="nav-item active"><span class="nav-icon">🏠</span> Dashboard</button>
+      <button class="nav-item"><span class="nav-icon">📈</span> Inversiones</button>
+      <button class="nav-item"><span class="nav-icon">💸</span> Gastos</button>
+      <button class="nav-item"><span class="nav-icon">💵</span> Ingresos</button>
+      <button class="nav-item"><span class="nav-icon">🎯</span> Presupuesto</button>
+      <button class="nav-item"><span class="nav-icon">⚙️</span> Config</button>
+    </div>
+
+    <!-- Body: Dashboard -->
+    <div class="app-body">
+      <div class="page-title">Dashboard</div>
+      <div class="page-sub">Resumen financiero · actualizado hace 2 min</div>
+
+      <!-- Métricas -->
+      <div class="metrics-row">
+        <div class="metric-card">
+          <div class="metric-label">Patrimonio total</div>
+          <div class="metric-val">$142.8K</div>
+          <div class="metric-delta up">▲ 3.2% este mes</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">P&L del mes</div>
+          <div class="metric-val" style="color:var(--green)">+$4.4K</div>
+          <div class="metric-delta up">▲ vs mes anterior</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Gastos del mes</div>
+          <div class="metric-val" style="color:var(--red)">$2.1K</div>
+          <div class="metric-delta down">▼ sobre presupuesto</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">vs Benchmark SPY</div>
+          <div class="metric-val" style="color:var(--aqua)">+1.8%</div>
+          <div class="metric-delta" style="color:var(--muted)">— portafolio supera</div>
+        </div>
+      </div>
+
+      <!-- Charts -->
+      <div class="charts-row">
+        <div class="chart-card">
+          <div class="chart-title">Evolución patrimonial <span>Últimos 12 meses</span></div>
+          <div class="fake-chart">
+            <svg viewBox="0 0 500 130" preserveAspectRatio="none">
+              <defs>
+                <linearGradient id="grad1" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#2E7FD9" stop-opacity=".25"/>
+                  <stop offset="100%" stop-color="#2E7FD9" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <!-- Grid lines -->
+              <line x1="0" y1="32" x2="500" y2="32" stroke="rgba(46,127,217,.1)" stroke-width="1"/>
+              <line x1="0" y1="65" x2="500" y2="65" stroke="rgba(46,127,217,.1)" stroke-width="1"/>
+              <line x1="0" y1="97" x2="500" y2="97" stroke="rgba(46,127,217,.1)" stroke-width="1"/>
+              <!-- Fill -->
+              <path class="sparkfill" d="M0,110 L42,95 L83,88 L125,92 L167,75 L208,68 L250,72 L292,58 L333,45 L375,38 L417,28 L458,20 L500,15 L500,130 L0,130 Z" fill="url(#grad1)"/>
+              <!-- Line -->
+              <path class="sparkline" d="M0,110 L42,95 L83,88 L125,92 L167,75 L208,68 L250,72 L292,58 L333,45 L375,38 L417,28 L458,20 L500,15"/>
+              <!-- Last dot -->
+              <circle cx="500" cy="15" r="4" fill="#2E7FD9"/>
+            </svg>
+          </div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">Composición <span>Actual</span></div>
+          <div class="fake-chart" style="height:130px;display:flex;align-items:center;justify-content:center;gap:16px;flex-direction:column">
+            <!-- Fake donut -->
+            <svg width="90" height="90" viewBox="0 0 90 90">
+              <circle cx="45" cy="45" r="35" fill="none" stroke="var(--bg3)" stroke-width="12"/>
+              <circle cx="45" cy="45" r="35" fill="none" stroke="#2E7FD9" stroke-width="12"
+                stroke-dasharray="88 132" stroke-dashoffset="-27" stroke-linecap="round"/>
+              <circle cx="45" cy="45" r="35" fill="none" stroke="#29D985" stroke-width="12"
+                stroke-dasharray="55 165" stroke-dashoffset="-115" stroke-linecap="round"/>
+              <circle cx="45" cy="45" r="35" fill="none" stroke="#00C4CC" stroke-width="12"
+                stroke-dasharray="34 186" stroke-dashoffset="-170" stroke-linecap="round"/>
+              <text x="45" y="48" text-anchor="middle" font-family="Bebas Neue" font-size="14" fill="#E8F0FB">$142K</text>
+            </svg>
+            <div style="display:flex;gap:12px;font-family:'DM Mono',monospace;font-size:9px;color:var(--muted)">
+              <span><span style="color:#2E7FD9">■</span> Acciones 40%</span>
+              <span><span style="color:#29D985">■</span> Crypto 25%</span>
+              <span><span style="color:#00C4CC">■</span> Bonos 15%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabla portafolio resumen -->
+      <div class="data-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Activo</th>
+              <th>Tipo</th>
+              <th class="num-right">Precio</th>
+              <th class="num-right">Valor</th>
+              <th class="num-right">P&L %</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="ticker">AAPL</span></td>
+              <td style="color:var(--muted);font-size:12px">Acción</td>
+              <td class="num-right">$213.40</td>
+              <td class="num-right">$12,804</td>
+              <td class="num-right up">▲ 8.3%</td>
+            </tr>
+            <tr>
+              <td><span class="ticker">BTC</span></td>
+              <td style="color:var(--muted);font-size:12px">Crypto</td>
+              <td class="num-right">$67,200</td>
+              <td class="num-right">$33,600</td>
+              <td class="num-right up">▲ 42.1%</td>
+            </tr>
+            <tr>
+              <td><span class="ticker">SPY</span></td>
+              <td style="color:var(--muted);font-size:12px">ETF</td>
+              <td class="num-right">$528.90</td>
+              <td class="num-right">$21,156</td>
+              <td class="num-right up">▲ 5.6%</td>
+            </tr>
+            <tr>
+              <td><span class="ticker">YPF</span></td>
+              <td style="color:var(--muted);font-size:12px">ADR</td>
+              <td class="num-right">$34.20</td>
+              <td class="num-right">$6,840</td>
+              <td class="num-right down">▼ 2.1%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════
+     DESKTOP — Inversiones activo (sub-nav)
+══════════════════════════════════════ -->
+<div class="section-divider">Desktop · Inversiones con sub-navegación</div>
+
+<div class="desktop-wrap">
+  <div class="browser-frame">
+    <div class="browser-bar">
+      <div class="b-dot" style="background:#FF5F57"></div>
+      <div class="b-dot" style="background:#FFBD2E"></div>
+      <div class="b-dot" style="background:#28CA41"></div>
+      <div class="browser-url">localhost:8501</div>
+    </div>
+
+    <div class="app-header">
+      <div>
+        <div class="logo">💰 FINANZAS <span>APP</span></div>
+        <div class="logo-sub">Panel de control · Patrimonio personal</div>
+      </div>
+      <div class="header-right">
+        <div class="live">EN VIVO</div>
+        <span class="chip chip-user">Juan García</span>
+        <button class="chip chip-btn">Salir</button>
+      </div>
+    </div>
+
+    <!-- Main nav — Inversiones activo -->
+    <div class="main-nav">
+      <button class="nav-item"><span class="nav-icon">🏠</span> Dashboard</button>
+      <button class="nav-item active"><span class="nav-icon">📈</span> Inversiones</button>
+      <button class="nav-item"><span class="nav-icon">💸</span> Gastos</button>
+      <button class="nav-item"><span class="nav-icon">💵</span> Ingresos</button>
+      <button class="nav-item"><span class="nav-icon">🎯</span> Presupuesto</button>
+      <button class="nav-item"><span class="nav-icon">⚙️</span> Config</button>
+    </div>
+
+    <!-- Sub-nav Inversiones -->
+    <div class="sub-nav">
+      <button class="sub-item">🌐 Mercado</button>
+      <button class="sub-item active">📋 Portafolio</button>
+      <button class="sub-item">🔄 Operaciones</button>
+      <button class="sub-item">📊 Rentabilidad</button>
+    </div>
+
+    <div class="app-body">
+      <div class="page-title">Portafolio</div>
+      <div class="page-sub">Inversiones activas · 4 posiciones abiertas</div>
+
+      <div class="metrics-row">
+        <div class="metric-card">
+          <div class="metric-label">Valor total</div>
+          <div class="metric-val">$74.4K</div>
+          <div class="metric-delta up">▲ 3.2% hoy</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">P&L total</div>
+          <div class="metric-val" style="color:var(--green)">+$9.2K</div>
+          <div class="metric-delta up">▲ 14.1%</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Posiciones</div>
+          <div class="metric-val">4</div>
+          <div class="metric-delta" style="color:var(--muted)">— 3 en verde</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Mejor activo</div>
+          <div class="metric-val" style="font-size:1.5rem;color:var(--aqua)">BTC</div>
+          <div class="metric-delta up">▲ 42.1%</div>
+        </div>
+      </div>
+
+      <div class="data-table">
+        <table>
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Nombre</th>
+              <th class="num-right">Cantidad</th>
+              <th class="num-right">Precio actual</th>
+              <th class="num-right">Valor</th>
+              <th class="num-right">P&L $</th>
+              <th class="num-right">P&L %</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="ticker">BTC</span></td>
+              <td style="color:var(--muted);font-size:12px">Bitcoin</td>
+              <td class="num-right">0.5</td>
+              <td class="num-right">$67,200</td>
+              <td class="num-right">$33,600</td>
+              <td class="num-right up">+$9,780</td>
+              <td class="num-right up">▲ 42.1%</td>
+            </tr>
+            <tr>
+              <td><span class="ticker">AAPL</span></td>
+              <td style="color:var(--muted);font-size:12px">Apple Inc.</td>
+              <td class="num-right">60</td>
+              <td class="num-right">$213.40</td>
+              <td class="num-right">$12,804</td>
+              <td class="num-right up">+$984</td>
+              <td class="num-right up">▲ 8.3%</td>
+            </tr>
+            <tr>
+              <td><span class="ticker">SPY</span></td>
+              <td style="color:var(--muted);font-size:12px">SPDR S&P 500</td>
+              <td class="num-right">40</td>
+              <td class="num-right">$528.90</td>
+              <td class="num-right">$21,156</td>
+              <td class="num-right up">+$1,130</td>
+              <td class="num-right up">▲ 5.6%</td>
+            </tr>
+            <tr>
+              <td><span class="ticker">YPF</span></td>
+              <td style="color:var(--muted);font-size:12px">YPF S.A.</td>
+              <td class="num-right">200</td>
+              <td class="num-right">$34.20</td>
+              <td class="num-right">$6,840</td>
+              <td class="num-right down">-$147</td>
+              <td class="num-right down">▼ 2.1%</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════
+     MOBILE
+══════════════════════════════════════ -->
+<div class="section-divider">Mobile · Dashboard &amp; Inversiones</div>
+<p class="preview-label" style="margin-bottom:24px">En mobile: nav va en la barra inferior · sub-nav de Inversiones como chips scrolleables</p>
+
+<div class="mobile-wrap">
+
+  <!-- Phone 1: Dashboard -->
+  <div>
+    <p class="preview-label" style="margin-bottom:10px">📱 Dashboard</p>
+    <div class="phone">
+      <div class="phone-notch"><div class="phone-pill"></div></div>
+      <div class="phone-screen">
+
+        <div class="mob-header">
+          <div>
+            <div class="mob-logo">💰 FINANZAS <span>APP</span></div>
+            <div style="font-family:'DM Mono',monospace;font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Dashboard</div>
+          </div>
+          <div class="live" style="font-size:8px">EN VIVO</div>
+        </div>
+
+        <div class="mob-body">
+
+          <div class="mob-metrics">
+            <div class="mob-metric">
+              <div class="metric-label">Patrimonio</div>
+              <div class="metric-val">$142K</div>
+              <div class="metric-delta up" style="font-size:10px">▲ 3.2%</div>
+            </div>
+            <div class="mob-metric">
+              <div class="metric-label">P&L Mes</div>
+              <div class="metric-val" style="color:var(--green)">+$4.4K</div>
+              <div class="metric-delta up" style="font-size:10px">▲ positivo</div>
+            </div>
+            <div class="mob-metric">
+              <div class="metric-label">Gastos</div>
+              <div class="metric-val" style="color:var(--red)">$2.1K</div>
+              <div class="metric-delta down" style="font-size:10px">▼ sobre ppto</div>
+            </div>
+            <div class="mob-metric">
+              <div class="metric-label">vs SPY</div>
+              <div class="metric-val" style="color:var(--aqua)">+1.8%</div>
+              <div class="metric-delta" style="font-size:10px;color:var(--muted)">— supera</div>
+            </div>
+          </div>
+
+          <div class="mob-chart">
+            <div style="font-family:'Bebas Neue',sans-serif;font-size:1rem;letter-spacing:.05em;color:var(--accent);margin-bottom:10px">Evolución patrimonial</div>
+            <svg viewBox="0 0 320 80" style="width:100%;height:80px">
+              <defs>
+                <linearGradient id="mg1" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#2E7FD9" stop-opacity=".2"/>
+                  <stop offset="100%" stop-color="#2E7FD9" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path fill="url(#mg1)" d="M0,70 L27,60 L53,56 L80,59 L107,48 L133,43 L160,46 L187,37 L213,28 L240,24 L267,17 L293,12 L320,9 L320,80 L0,80 Z"/>
+              <path fill="none" stroke="#2E7FD9" stroke-width="2" d="M0,70 L27,60 L53,56 L80,59 L107,48 L133,43 L160,46 L187,37 L213,28 L240,24 L267,17 L293,12 L320,9"/>
+              <circle cx="320" cy="9" r="3" fill="#2E7FD9"/>
+            </svg>
+          </div>
+
+          <div style="font-family:'DM Mono',monospace;font-size:8px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:8px">
+            Top posiciones <span style="flex:1;height:1px;background:var(--border)"></span>
+          </div>
+          <div class="data-table">
+            <table>
+              <thead>
+                <tr><th>Activo</th><th class="num-right">Valor</th><th class="num-right">P&L %</th></tr>
+              </thead>
+              <tbody>
+                <tr><td><span class="ticker">BTC</span></td><td class="num-right">$33.6K</td><td class="num-right up">▲ 42.1%</td></tr>
+                <tr><td><span class="ticker">SPY</span></td><td class="num-right">$21.2K</td><td class="num-right up">▲ 5.6%</td></tr>
+                <tr><td><span class="ticker">AAPL</span></td><td class="num-right">$12.8K</td><td class="num-right up">▲ 8.3%</td></tr>
+                <tr><td><span class="ticker">YPF</span></td><td class="num-right">$6.8K</td><td class="num-right down">▼ 2.1%</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Bottom nav -->
+        <div class="bottom-nav">
+          <button class="bot-btn active"><span class="bot-icon">🏠</span><span class="bot-label">Dashboard</span></button>
+          <button class="bot-btn"><span class="bot-icon">📈</span><span class="bot-label">Inv.</span></button>
+          <button class="bot-btn"><span class="bot-icon">💸</span><span class="bot-label">Gastos</span></button>
+          <button class="bot-btn"><span class="bot-icon">💵</span><span class="bot-label">Ingresos</span></button>
+          <button class="bot-btn"><span class="bot-icon">⚙️</span><span class="bot-label">Config</span></button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Phone 2: Inversiones -->
+  <div>
+    <p class="preview-label" style="margin-bottom:10px">📱 Inversiones · Portafolio</p>
+    <div class="phone">
+      <div class="phone-notch"><div class="phone-pill"></div></div>
+      <div class="phone-screen">
+
+        <div class="mob-header">
+          <div>
+            <div class="mob-logo">💰 FINANZAS <span>APP</span></div>
+            <div style="font-family:'DM Mono',monospace;font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em">Inversiones</div>
+          </div>
+          <div class="live" style="font-size:8px">EN VIVO</div>
+        </div>
+
+        <div class="mob-body">
+
+          <!-- Sub-nav como chips scrolleables -->
+          <div class="mob-subnav">
+            <button class="mob-subtab">🌐 Mercado</button>
+            <button class="mob-subtab active">📋 Portafolio</button>
+            <button class="mob-subtab">🔄 Operaciones</button>
+            <button class="mob-subtab">📊 Rentabilidad</button>
+          </div>
+
+          <div class="mob-metrics">
+            <div class="mob-metric">
+              <div class="metric-label">Valor total</div>
+              <div class="metric-val">$74.4K</div>
+              <div class="metric-delta up" style="font-size:10px">▲ 3.2% hoy</div>
+            </div>
+            <div class="mob-metric">
+              <div class="metric-label">P&L total</div>
+              <div class="metric-val" style="color:var(--green)">+$9.2K</div>
+              <div class="metric-delta up" style="font-size:10px">▲ 14.1%</div>
+            </div>
+          </div>
+
+          <div style="font-family:'DM Mono',monospace;font-size:8px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:8px;display:flex;align-items:center;gap:8px">
+            Posiciones <span style="flex:1;height:1px;background:var(--border)"></span>
+          </div>
+
+          <div class="data-table">
+            <table>
+              <thead>
+                <tr><th>Ticker</th><th class="num-right">Valor</th><th class="num-right">P&L %</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>
+                    <span class="ticker">BTC</span>
+                    <div style="font-size:10px;color:var(--muted)">Bitcoin · 0.5</div>
+                  </td>
+                  <td class="num-right">$33,600</td>
+                  <td class="num-right up">▲ 42.1%</td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="ticker">AAPL</span>
+                    <div style="font-size:10px;color:var(--muted)">Apple · 60</div>
+                  </td>
+                  <td class="num-right">$12,804</td>
+                  <td class="num-right up">▲ 8.3%</td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="ticker">SPY</span>
+                    <div style="font-size:10px;color:var(--muted)">S&P500 · 40</div>
+                  </td>
+                  <td class="num-right">$21,156</td>
+                  <td class="num-right up">▲ 5.6%</td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="ticker">YPF</span>
+                    <div style="font-size:10px;color:var(--muted)">YPF · 200</div>
+                  </td>
+                  <td class="num-right">$6,840</td>
+                  <td class="num-right down">▼ 2.1%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+        </div>
+
+        <div class="bottom-nav">
+          <button class="bot-btn"><span class="bot-icon">🏠</span><span class="bot-label">Dashboard</span></button>
+          <button class="bot-btn active"><span class="bot-icon">📈</span><span class="bot-label">Inv.</span></button>
+          <button class="bot-btn"><span class="bot-icon">💸</span><span class="bot-label">Gastos</span></button>
+          <button class="bot-btn"><span class="bot-icon">💵</span><span class="bot-label">Ingresos</span></button>
+          <button class="bot-btn"><span class="bot-icon">⚙️</span><span class="bot-label">Config</span></button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Nota técnica -->
+<div style="display:flex;justify-content:center;margin-top:32px">
+  <div class="note-box">
+    <strong>💡 Sobre el bug de pantalla completa (fullscreen)</strong><br>
+    Cuando Streamlit expande un gráfico en fullscreen, el sidebar desaparece porque está fuera del flow normal.
+    Con la nav horizontal (sticky en el top), ese problema <strong style="color:var(--green)">no ocurre</strong>:
+    el nav vive dentro del mismo contenedor de la página y el botón de fullscreen del gráfico
+    solo cubre el área del cuerpo, no el header ni la barra de nav.<br><br>
+    El diseño se implementa en <code>app.py</code> reemplazando el <code>st.sidebar</code>
+    por <code>st.markdown</code> con <code>unsafe_allow_html=True</code> para el nav,
+    y usando <code>st.query_params</code> (o <code>st.session_state</code>) para
+    rastrear la sección activa sin recargar la página completa.
+  </div>
+</div>
+
+<p class="preview-label" style="margin-top:40px">¿Te gusta? → decí <span>GO</span> y aplico al app.py</p>
+
+</body>
+</html>
