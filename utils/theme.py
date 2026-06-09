@@ -174,12 +174,16 @@ def aplicar_tema() -> None:
         font-size: 13px;
         font-weight: 500;
         color: {c['texto_sec']};
-        text-decoration: none;
+        text-decoration: none !important;
         border-bottom: 2px solid transparent;
         white-space: nowrap;
         transition: color .15s, background .15s;
     }}
-    .fin-nav-item:hover {{ color: {c['texto']}; }}
+    .fin-nav-item:hover, .fin-nav-item:visited,
+    .fin-nav-item:focus, .fin-nav-item:active {{
+        text-decoration: none !important;
+        color: {c['texto']};
+    }}
     .fin-nav-item.fin-active {{
         color: {c['acento']};
         border-bottom-color: {c['acento']};
@@ -215,12 +219,14 @@ def aplicar_tema() -> None:
         color: {c['texto_sec']};
         padding: 5px 14px;
         border-radius: 20px;
-        text-decoration: none;
+        text-decoration: none !important;
         border: 1px solid transparent;
         white-space: nowrap;
         transition: all .15s;
     }}
-    .fin-sub-item:hover {{
+    .fin-sub-item:hover, .fin-sub-item:visited,
+    .fin-sub-item:focus, .fin-sub-item:active {{
+        text-decoration: none !important;
         color: {c['texto']};
         border-color: {c['borde_fuerte']};
     }}
