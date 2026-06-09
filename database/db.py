@@ -1,170 +1,114 @@
 """
 database/db.py
-Conexión centralizada a SQLite y setup inicial de la base de datos.
-Todas las funciones de acceso a datos pasan por este módulo.
+Conexión a Supabase (PostgreSQL) via supabase-py.
+Credenciales en .streamlit/secrets.toml o variables de entorno.
 """
 
-import sqlite3
 import os
-from pathlib import Path
-
-# ── Rutas ────────────────────────────────────────────────────────────────────
-
-BASE_DIR    = Path(__file__).resolve().parent.parent   # raíz del proyecto
-DB_PATH     = BASE_DIR / "finanzas.db"
-SCHEMA_PATH = BASE_DIR / "database" / "schema.sql"
-
+import streamlit as st
+from supabase import create_client, Client
 
 # ── Conexión ──────────────────────────────────────────────────────────────────
 
-def get_connection() -> sqlite3.Connection:
-    """
-    Devuelve una conexión a SQLite con:
-    - Row factory para acceder a columnas por nombre (conn.row_factory)
-    - Foreign keys activadas
-    - WAL mode para mejor concurrencia
-    """
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row          # Permite row['columna'] en vez de row[0]
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.execute("PRAGMA journal_mode = WAL")
-    return conn
+@st.cache_resource
+def _client() -> Client:
+    try:
+        url = st.secrets["supabase"]["url"]
+        key = st.secrets["supabase"]["anon_key"]
+    except Exception:
+        url = os.environ.get("SUPABASE_URL", "")
+        key = os.environ.get("SUPABASE_ANON_KEY", "")
+    if not url or not key:
+        raise RuntimeError(
+            "Credenciales de Supabase no encontradas. "
+            "Configurá .streamlit/secrets.toml o SUPABASE_URL / SUPABASE_ANON_KEY."
+        )
+    return create_client(url, key)
 
 
-# ── Setup inicial ─────────────────────────────────────────────────────────────
+# ── Setup / verificación ───────────────────────────────────────────────────────
 
 def init_db() -> None:
+    _client().table("configuracion").select("clave").limit(1).execute()
+
+
+# ── Helpers genéricos ──────────────────────────────────────────────────────────
+
+def fetch_all(table: str, select: str = "*", **filters) -> list[dict]:
+    """SELECT con filtros de igualdad opcionales.
+    Ejemplo: fetch_all("gastos", fecha="2026-05-01")
     """
-    Inicializa la base de datos:
-    1. Ejecuta schema.sql (crea tablas si no existen)
-    2. Inserta datos por defecto (categorías, configuración)
-    Seguro de llamar múltiples veces (usa INSERT OR IGNORE).
-    """
-    if not SCHEMA_PATH.exists():
-        raise FileNotFoundError(f"No se encontró el schema en: {SCHEMA_PATH}")
-
-    with get_connection() as conn:
-        # 1. Crear tablas
-        schema_sql = SCHEMA_PATH.read_text(encoding="utf-8")
-        conn.executescript(schema_sql)
-
-        # 2. Configuración por defecto
-        _insertar_configuracion_default(conn)
-
-        conn.commit()
-
-    print(f"✅ Base de datos inicializada en: {DB_PATH}")
+    q = _client().table(table).select(select)
+    for col, val in filters.items():
+        q = q.eq(col, val)
+    return q.execute().data
 
 
-def _insertar_configuracion_default(conn: sqlite3.Connection) -> None:
-    """Inserta valores de configuración iniciales si no existen."""
-    defaults = [
-        ("moneda_base",      "USD",       "Moneda principal de la app"),
-        ("benchmark_ticker", "SPY",       "ETF usado como benchmark del portafolio"),
-        ("perfil_riesgo",    "moderado",  "Perfil de riesgo del usuario"),
-        ("nombre_usuario_1", "Usuario 1", "Nombre del primer usuario"),
-        ("nombre_usuario_2", "Usuario 2", "Nombre del segundo usuario"),
-    ]
-    conn.executemany(
-        "INSERT OR IGNORE INTO configuracion (clave, valor, descripcion) VALUES (?, ?, ?)",
-        defaults
-    )
+def fetch_one(table: str, select: str = "*", **filters) -> dict | None:
+    """Devuelve la primera fila que coincide con los filtros."""
+    q = _client().table(table).select(select)
+    for col, val in filters.items():
+        q = q.eq(col, val)
+    rows = q.limit(1).execute().data
+    return rows[0] if rows else None
 
 
-# ── Helpers genéricos ─────────────────────────────────────────────────────────
-
-def fetch_all(query: str, params: tuple = ()) -> list[dict]:
-    """
-    Ejecuta una consulta SELECT y devuelve lista de dicts.
-    Uso: rows = fetch_all("SELECT * FROM gastos WHERE fecha = ?", ("2026-05-01",))
-    """
-    with get_connection() as conn:
-        cursor = conn.execute(query, params)
-        return [dict(row) for row in cursor.fetchall()]
+def insert(table: str, data: dict) -> dict:
+    """Inserta una fila y devuelve el registro creado."""
+    result = _client().table(table).insert(data).execute()
+    return result.data[0] if result.data else {}
 
 
-def fetch_one(query: str, params: tuple = ()) -> dict | None:
-    """
-    Ejecuta una consulta SELECT y devuelve un solo dict (o None si no hay resultado).
-    """
-    with get_connection() as conn:
-        cursor = conn.execute(query, params)
-        row = cursor.fetchone()
-        return dict(row) if row else None
+def update(table: str, data: dict, **filters) -> list[dict]:
+    """Actualiza filas que coinciden con los filtros."""
+    q = _client().table(table).update(data)
+    for col, val in filters.items():
+        q = q.eq(col, val)
+    return q.execute().data
 
 
-def execute_write(query: str, params: tuple = ()) -> int:
-    """
-    Ejecuta INSERT, UPDATE o DELETE.
-    Devuelve el id del último registro insertado (lastrowid).
-    """
-    with get_connection() as conn:
-        cursor = conn.execute(query, params)
-        conn.commit()
-        return cursor.lastrowid
+def delete(table: str, **filters) -> list[dict]:
+    """Elimina filas que coinciden con los filtros."""
+    q = _client().table(table).delete()
+    for col, val in filters.items():
+        q = q.eq(col, val)
+    return q.execute().data
 
 
-def execute_many(query: str, params_list: list[tuple]) -> int:
-    """
-    Ejecuta la misma query con múltiples filas de parámetros (bulk insert).
-    Devuelve la cantidad de filas afectadas.
-    """
-    with get_connection() as conn:
-        cursor = conn.executemany(query, params_list)
-        conn.commit()
-        return cursor.rowcount
+def upsert(table: str, data: dict | list[dict]) -> list[dict]:
+    """INSERT … ON CONFLICT DO UPDATE."""
+    result = _client().table(table).upsert(data).execute()
+    return result.data
 
 
 # ── Helpers de configuración ──────────────────────────────────────────────────
 
 def get_config(clave: str) -> str | None:
-    """Devuelve el valor de una clave de configuración."""
-    row = fetch_one("SELECT valor FROM configuracion WHERE clave = ?", (clave,))
+    row = fetch_one("configuracion", select="valor", clave=clave)
     return row["valor"] if row else None
 
 
 def set_config(clave: str, valor: str) -> None:
-    """Actualiza o inserta un valor de configuración."""
-    execute_write(
-        """INSERT INTO configuracion (clave, valor)
-           VALUES (?, ?)
-           ON CONFLICT(clave) DO UPDATE SET valor = excluded.valor,
-                                            actualizado = datetime('now')""",
-        (clave, valor)
-    )
+    upsert("configuracion", {"clave": clave, "valor": valor})
 
 
 # ── Verificación rápida ───────────────────────────────────────────────────────
 
 def verificar_db() -> dict:
-    """
-    Devuelve un resumen del estado de la base de datos.
-    Útil para mostrar en el dashboard o para debugging.
-    """
     tablas = [
         "activos", "operaciones", "posiciones", "lotes",
         "operaciones_cerradas", "gastos", "ingresos",
-        "presupuestos", "cuentas", "deudas", "alertas"
+        "presupuestos", "cuentas", "deudas", "alertas",
     ]
     resumen = {}
     try:
-        with get_connection() as conn:
-            for tabla in tablas:
-                cursor = conn.execute(f"SELECT COUNT(*) as n FROM {tabla}")
-                resumen[tabla] = cursor.fetchone()["n"]
+        sb = _client()
+        for tabla in tablas:
+            r = sb.table(tabla).select("*", count="exact").limit(0).execute()
+            resumen[tabla] = r.count if r.count is not None else 0
         resumen["estado"] = "ok"
-        resumen["ruta_db"] = str(DB_PATH)
+        resumen["bd"] = "Supabase PostgreSQL"
     except Exception as e:
         resumen["estado"] = "error"
-        resumen["error"]  = str(e)
+        resumen["error"] = str(e)
     return resumen
-
-
-# ── Entry point para probar desde terminal ────────────────────────────────────
-
-if __name__ == "__main__":
-    init_db()
-    estado = verificar_db()
-    print("\n📊 Estado de la base de datos:")
-    for k, v in estado.items():
-        print(f"   {k}: {v}")

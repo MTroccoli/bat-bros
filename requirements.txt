@@ -7,7 +7,7 @@
 streamlit>=1.35.0
 
 # --- Base de datos ---
-# SQLite viene incluido en Python stdlib; no requiere paquete extra
+supabase>=2.10.0
 
 # --- Datos de mercado ---
 yfinance>=0.2.40

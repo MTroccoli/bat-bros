@@ -71,7 +71,7 @@ def _nav_link(icon: str, label: str, key: str, active: bool,
     href = f"?page={key}{extra_params}"
     cls  = "fin-nav-item fin-active" if active else "fin-nav-item"
     return (
-        f'<a href="{href}" class="{cls}">'
+        f'<a href="{href}" target="_top" class="{cls}">'
         f'<span class="fin-nav-icon">{icon}</span>'
         f'<span class="fin-nav-label">{label}</span>'
         f'</a>'
@@ -97,7 +97,7 @@ st.markdown(
 
 if page == "inversiones":
     sub_html = "".join(
-        f'<a href="?page=inversiones&sub={k}" '
+        f'<a href="?page=inversiones&sub={k}" target="_top" '
         f'class="fin-sub-item {"fin-active" if k == sub else ""}">'
         f'{ic} {lb}</a>'
         for ic, lb, k in _SUB
