@@ -6,13 +6,13 @@ const TILE = 32;
 const CANVAS_W = 800;
 const CANVAS_H = 480;
 
-const GRAVITY = 0.5;
+const GRAVITY = 0.52;
 const MAX_FALL = 15;
 const MOVE_ACCEL = 0.7;
 const MAX_SPEED = 4.4;
 const AIR_ACCEL = 0.5;
 const FRICTION = 0.78;
-const JUMP_VELOCITY = -12.8; // generous jump (~5 tiles of height) so every platform in the levels is reachable
+const JUMP_VELOCITY = -11.2; // tighter jump (~3.8 tiles of height) — the grapple swing carries the long gaps now
 const JUMP_CUT = 0.5;
 const STOMP_BOUNCE = -8.5;
 const STOMP_TOLERANCE = 14;
@@ -23,10 +23,9 @@ const JUMP_BUFFER_MS = 140;   // a jump press is remembered briefly so a tap nev
 const COYOTE_MS = 90;         // short grace window to jump after walking off a ledge
 const SHOOT_COOLDOWN_MS = 500;
 const BATARANG_SPEED = 7.5;
-const BATARANG_RANGE = 260;
+const BATARANG_RANGE = 130;
 const BATARANG_LIFESPAN_MS = 3000;
-const MUSHROOM_SCORE = 1000;
-const BAT_SCORE = 1000;
+const BAT_SCORE = 2000; // the bat now grows Batman AND grants the batarang in one pickup
 
 const GRAPPLE_RANGE = 170;       // how close to a lamppost anchor before Batman auto-latches on
 const SWING_RELEASE_ANGLE = 1.15; // ~66° from vertical: natural release point at the top of the arc
@@ -43,7 +42,7 @@ const SIZES = {
 // ---------------------------------------------------------------
 function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], coins = [],
-          thugs = [], birds = [], mushrooms = [], bats = [], swingPoints = [],
+          thugs = [], birds = [], bats = [], swingPoints = [],
           flag, spawn, name } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
@@ -76,9 +75,6 @@ function buildLevel(spec) {
       minX: b.range[0] * TILE, maxX: b.range[1] * TILE,
       vx: 1.7, alive: true,
     })),
-    mushrooms: mushrooms.map(([x, row]) => ({
-      x: x * TILE, y: row * TILE - 22, w: 24, h: 22, taken: false,
-    })),
     bats: bats.map(([x, row]) => ({
       x: x * TILE, y: row * TILE - 22, w: 24, h: 20, taken: false,
     })),
@@ -100,33 +96,33 @@ const LEVEL_SPECS = [
   {
     name: '1-1',
     width: 70, height: 15, groundY: 13,
-    pits: [[18, 20], [40, 42]],
-    // Platforms sit 4 tiles above the ground (clearing a running player's
-    // head, well within the jump's ~5-tile max height) and are spaced with
-    // at least 5 clear tiles of runway on both sides so a jump never clips
-    // a neighboring pit or platform mid-arc.
+    // Pit 2 is widened well past jump range — swing across on the streetlamp.
+    pits: [[18, 20], [40, 46]],
+    // Platforms sit 3 tiles above the ground (clearing a running player's
+    // head, safely within the jump's ~3.8-tile max height) and are spaced
+    // with clear runway on both sides so a jump never clips a neighboring
+    // pit or platform mid-arc.
     platforms: [
-      { x: 8, y: 9, w: 3 },
-      { x: 30, y: 9, w: 3 },
-      { x: 55, y: 9, w: 3 },
+      { x: 8, y: 10, w: 3 },
+      { x: 30, y: 10, w: 3 },
+      { x: 55, y: 10, w: 3 },
     ],
+    swingPoints: [[43, 5]],
     coins: [
-      [9, 8], [10, 8],
-      [31, 8],
-      [56, 8], [57, 8],
+      [9, 9], [10, 9],
+      [56, 9], [57, 9],
       [14, 12], [24, 12], [36, 12], [48, 12], [62, 12],
     ],
     thugs: [
       { x: 12, y: 13, range: [10, 17] },
       { x: 25, y: 13, range: [23, 39] },
-      { x: 46, y: 13, range: [43, 51] },
+      { x: 49, y: 13, range: [47, 53] },
       { x: 58, y: 13, range: [55, 66] },
     ],
     birds: [
-      { x: 20, y: 9, range: [17, 27] },
+      { x: 20, y: 10, range: [17, 27] },
     ],
-    mushrooms: [[6, 13]],
-    bats: [[31, 9]],
+    bats: [[31, 10]],
     flag: { x: 66, y: 3 },
     spawn: { x: 2, y: 11 },
   },
@@ -134,22 +130,22 @@ const LEVEL_SPECS = [
     name: '1-2',
     width: 100, height: 15, groundY: 13,
     pits: [[10, 11], [24, 26], [38, 39], [55, 58], [70, 71], [86, 93]],
-    // Platforms sit 4 tiles above the ground (clearing a running player's
-    // head, well within the jump's ~5-tile max height) and are spaced with
-    // at least 5 clear tiles of runway on both sides so a jump never clips
-    // a neighboring pit or platform mid-arc.
+    // Platforms sit 3 tiles above the ground (clearing a running player's
+    // head, safely within the jump's ~3.8-tile max height) and are spaced
+    // with clear runway on both sides so a jump never clips a neighboring
+    // pit or platform mid-arc.
     platforms: [
-      { x: 16, y: 9, w: 3 },
-      { x: 46, y: 9, w: 3 },
-      { x: 63, y: 9, w: 3 },
+      { x: 16, y: 10, w: 3 },
+      { x: 46, y: 10, w: 3 },
+      { x: 63, y: 10, w: 3 },
     ],
     // A gap too wide to jump (8 tiles) — the only way across is to leap up
     // toward the streetlamp and swing, Batman-style.
     swingPoints: [[89, 6]],
     coins: [
-      [17, 8],
-      [47, 8],
-      [64, 8], [65, 8],
+      [17, 9],
+      [47, 9],
+      [64, 9], [65, 9],
       [3, 12], [20, 12], [33, 12], [52, 12], [67, 12], [79, 12], [96, 12],
     ],
     thugs: [
@@ -162,37 +158,39 @@ const LEVEL_SPECS = [
       { x: 96, y: 13, range: [94, 99] },
     ],
     birds: [
-      { x: 23, y: 9, range: [21, 29] },
-      { x: 88, y: 9, range: [84, 96] },
+      { x: 23, y: 10, range: [21, 29] },
+      { x: 88, y: 10, range: [84, 96] },
     ],
-    mushrooms: [[3, 13]],
-    bats: [[47, 9]],
+    bats: [[47, 10]],
     flag: { x: 97, y: 3 },
     spawn: { x: 2, y: 11 },
   },
   {
     name: '1-3',
-    width: 100, height: 15, groundY: 13,
-    pits: [[9, 10], [20, 22], [33, 34], [44, 47], [58, 60], [72, 74], [88, 90]],
-    // Platforms sit 4 tiles above the ground (clearing a running player's
-    // head, well within the jump's ~5-tile max height) and are spaced with
-    // at least 2-3 clear tiles of runway on both sides so a jump never clips
-    // a neighboring pit or platform mid-arc.
+    width: 108, height: 15, groundY: 13,
+    // The final stretch is widened into a long gap guarding the villain and
+    // flag — a streetlamp swing carries Batman across it.
+    pits: [[9, 10], [20, 22], [33, 34], [44, 47], [58, 60], [72, 74], [88, 95]],
+    // Platforms sit 3 tiles above the ground (clearing a running player's
+    // head, safely within the jump's ~3.8-tile max height) and are spaced
+    // with clear runway on both sides so a jump never clips a neighboring
+    // pit or platform mid-arc.
     platforms: [
-      { x: 15, y: 9, w: 3 },
-      { x: 27, y: 9, w: 3 },
-      { x: 38, y: 9, w: 3 },
-      { x: 52, y: 9, w: 3 },
-      { x: 65, y: 9, w: 3 },
-      { x: 80, y: 9, w: 4 },
+      { x: 15, y: 10, w: 3 },
+      { x: 27, y: 10, w: 3 },
+      { x: 38, y: 10, w: 3 },
+      { x: 52, y: 10, w: 3 },
+      { x: 65, y: 10, w: 3 },
+      { x: 80, y: 10, w: 4 },
     ],
+    swingPoints: [[91, 6]],
     coins: [
-      [16, 8],
-      [28, 8],
-      [39, 8],
-      [53, 8], [54, 8],
-      [66, 8],
-      [81, 8], [82, 8],
+      [16, 9],
+      [28, 9],
+      [39, 9],
+      [53, 9], [54, 9],
+      [66, 9],
+      [81, 9], [82, 9],
       [5, 12], [24, 12], [42, 12], [56, 12], [70, 12], [85, 12],
     ],
     thugs: [
@@ -205,13 +203,12 @@ const LEVEL_SPECS = [
       { x: 80, y: 13, range: [76, 86] },
     ],
     birds: [
-      { x: 19, y: 9, range: [17, 25] },
-      { x: 57, y: 9, range: [55, 63] },
+      { x: 19, y: 10, range: [17, 25] },
+      { x: 57, y: 10, range: [55, 63] },
     ],
-    mushrooms: [[3, 13]],
-    bats: [[28, 9]],
-    villain: { x: 95, y: 13, range: [92, 98], hp: 3 },
-    flag: { x: 97, y: 3 },
+    bats: [[28, 10]],
+    villain: { x: 98, y: 13, range: [97, 103], hp: 3 },
+    flag: { x: 102, y: 3 },
     spawn: { x: 2, y: 11 },
   },
 ];
@@ -630,18 +627,7 @@ function updatePlaying(dt) {
     }
   }
 
-  // mushrooms (grow)
-  for (const m of level.mushrooms) {
-    if (m.taken) continue;
-    if (aabbOverlap(player, m)) {
-      m.taken = true;
-      if (player.powerState === 'small') setPowerState('big');
-      score += MUSHROOM_SCORE;
-      hud.score.textContent = score;
-    }
-  }
-
-  // bats (batarang power)
+  // bats (grow + batarang power, all in one pickup)
   for (const bat of level.bats) {
     if (bat.taken) continue;
     if (aabbOverlap(player, bat)) {
@@ -823,8 +809,61 @@ function drawBackground(t) {
   // far skyline (slow parallax, no windows, flat silhouette)
   drawSkylineRow(camera.x * 0.15, 300, 46, 140, 0.9, false, t, '#161a35');
 
+  drawBatSignal(t);
+
   // near skyline (faster parallax, lit flickering windows)
   drawSkylineRow(camera.x * 0.35, 340, 34, 190, 1.7, true, t, '#0c0f22');
+}
+
+function drawBatSignal(t) {
+  const sx = 240 - camera.x * 0.05; // barely moves — reads as a distant searchlight
+  const beamTopY = 130, beamBottomY = 300;
+  const flicker = 0.85 + 0.15 * Math.sin(t / 900);
+
+  ctx.save();
+  const beamGrad = ctx.createLinearGradient(0, beamBottomY, 0, beamTopY);
+  beamGrad.addColorStop(0, `rgba(255,224,150,${0.16 * flicker})`);
+  beamGrad.addColorStop(1, 'rgba(255,224,150,0)');
+  ctx.fillStyle = beamGrad;
+  ctx.beginPath();
+  ctx.moveTo(sx - 10, beamBottomY);
+  ctx.lineTo(sx - 55, beamTopY);
+  ctx.lineTo(sx + 55, beamTopY);
+  ctx.lineTo(sx + 10, beamBottomY);
+  ctx.closePath();
+  ctx.fill();
+
+  const glowGrad = ctx.createRadialGradient(sx, beamTopY, 4, sx, beamTopY, 60);
+  glowGrad.addColorStop(0, `rgba(255,224,150,${0.5 * flicker})`);
+  glowGrad.addColorStop(1, 'rgba(255,224,150,0)');
+  ctx.fillStyle = glowGrad;
+  ctx.beginPath();
+  ctx.arc(sx, beamTopY, 60, 0, Math.PI * 2);
+  ctx.fill();
+
+  // bat emblem silhouette, projected in the beam like the classic bat-signal
+  ctx.fillStyle = `rgba(25,18,10,${0.8 * flicker})`;
+  const cx = sx, cy = beamTopY;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - 5);
+  ctx.lineTo(cx - 5, cy - 12);
+  ctx.lineTo(cx - 3, cy - 5);
+  ctx.lineTo(cx - 26, cy - 15);
+  ctx.lineTo(cx - 15, cy - 2);
+  ctx.lineTo(cx - 28, cy + 5);
+  ctx.lineTo(cx - 10, cy + 5);
+  ctx.lineTo(cx - 7, cy + 13);
+  ctx.lineTo(cx, cy + 6);
+  ctx.lineTo(cx + 7, cy + 13);
+  ctx.lineTo(cx + 10, cy + 5);
+  ctx.lineTo(cx + 28, cy + 5);
+  ctx.lineTo(cx + 15, cy - 2);
+  ctx.lineTo(cx + 26, cy - 15);
+  ctx.lineTo(cx + 3, cy - 5);
+  ctx.lineTo(cx + 5, cy - 12);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawTrash(t) {
@@ -986,7 +1025,10 @@ function drawBirds(t) {
     const flap = Math.sin(t / 90 + b.x) * 9;
     const cy = b.y + b.h / 2;
 
-    ctx.fillStyle = '#181a22';
+    ctx.save();
+    ctx.shadowColor = 'rgba(160,190,230,0.9)';
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = '#6b7182';
     ctx.beginPath();
     ctx.moveTo(px + b.w / 2, cy);
     ctx.lineTo(px - 6, cy - flap);
@@ -1003,10 +1045,11 @@ function drawBirds(t) {
     ctx.beginPath();
     ctx.ellipse(px + b.w / 2, cy, b.w * 0.28, b.h * 0.32, 0, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
 
     ctx.fillStyle = '#ff5e5e';
     ctx.beginPath();
-    ctx.arc(px + b.w * 0.62, cy - 2, 1.6, 0, Math.PI * 2);
+    ctx.arc(px + b.w * 0.62, cy - 2, 1.8, 0, Math.PI * 2);
     ctx.fill();
   }
 }
@@ -1042,9 +1085,13 @@ function drawPlayer() {
   ctx.scale(player.facing, 1);
   ctx.translate(-w / 2, 0);
 
+  // soft rim-light halo so the dark suit reads clearly against the night sky
+  ctx.shadowColor = 'rgba(150,185,230,0.85)';
+  ctx.shadowBlur = 7;
+
   // cape trailing behind (opposite the facing direction; flares out while swinging)
   const flare = player.swinging ? 0.35 : 0;
-  ctx.fillStyle = '#14161c';
+  ctx.fillStyle = '#1c1f28';
   ctx.beginPath();
   ctx.moveTo(w * 0.3, cowlH - 2);
   ctx.lineTo(-w * (0.6 + flare), h * (0.55 - flare * 0.3));
@@ -1054,7 +1101,7 @@ function drawPlayer() {
   ctx.fill();
 
   // cowl with pointed ears
-  ctx.fillStyle = '#20242e';
+  ctx.fillStyle = '#2e3446';
   ctx.beginPath();
   ctx.moveTo(2, cowlH);
   ctx.lineTo(0, -6);
@@ -1076,7 +1123,7 @@ function drawPlayer() {
   ctx.fillRect(w * 0.2, cowlH + 2, 5, 2.5);
 
   // suit
-  ctx.fillStyle = '#2b2f38';
+  ctx.fillStyle = '#3a3f4d';
   ctx.fillRect(0, bodyTop, w, suitH);
 
   // utility belt
@@ -1165,70 +1212,44 @@ function drawVillain() {
   }
 }
 
-function drawMushrooms() {
-  for (const m of level.mushrooms) {
-    if (m.taken) continue;
-    const px = m.x - camera.x;
-    if (px < -30 || px > CANVAS_W + 30) continue;
-    ctx.fillStyle = '#f2d9b8';
-    ctx.fillRect(px + m.w * 0.3, m.y + m.h * 0.45, m.w * 0.4, m.h * 0.55);
-    ctx.fillStyle = '#e0392b';
-    ctx.beginPath();
-    ctx.arc(px + m.w / 2, m.y + m.h * 0.45, m.w / 2, Math.PI, 0);
-    ctx.fill();
-    ctx.fillRect(px, m.y + m.h * 0.3, m.w, m.h * 0.2);
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc(px + m.w * 0.3, m.y + m.h * 0.25, 3, 0, Math.PI * 2);
-    ctx.arc(px + m.w * 0.7, m.y + m.h * 0.25, 3, 0, Math.PI * 2);
-    ctx.arc(px + m.w * 0.5, m.y + m.h * 0.12, 2.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-}
-
 function drawBats(t) {
   for (const bat of level.bats) {
     if (bat.taken) continue;
     const px = bat.x - camera.x;
-    if (px < -30 || px > CANVAS_W + 30) continue;
-    const bob = Math.sin(t / 260 + bat.x) * 2;
+    if (px < -40 || px > CANVAS_W + 40) continue;
+    const bob = Math.sin(t / 300 + bat.x) * 2;
     const cx = px + bat.w / 2, cy = bat.y + bat.h / 2 + bob;
-    const spread = 0.8 + 0.2 * Math.sin(t / 110 + bat.x);
+    const glow = 0.6 + 0.3 * Math.sin(t / 260 + bat.x);
 
-    ctx.fillStyle = '#1c1e26';
+    // small spotlight glow behind it, echoing the bat-signal
+    const grad = ctx.createRadialGradient(cx, cy, 2, cx, cy, 26);
+    grad.addColorStop(0, `rgba(255,224,150,${0.5 * glow})`);
+    grad.addColorStop(1, 'rgba(255,224,150,0)');
+    ctx.fillStyle = grad;
     ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.quadraticCurveTo(cx - bat.w * 0.55 * spread, cy - 10, cx - bat.w * 0.5 * spread, cy + 6);
-    ctx.quadraticCurveTo(cx - bat.w * 0.2, cy + 2, cx, cy + 4);
-    ctx.closePath();
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.quadraticCurveTo(cx + bat.w * 0.55 * spread, cy - 10, cx + bat.w * 0.5 * spread, cy + 6);
-    ctx.quadraticCurveTo(cx + bat.w * 0.2, cy + 2, cx, cy + 4);
-    ctx.closePath();
+    ctx.arc(cx, cy, 26, 0, Math.PI * 2);
     ctx.fill();
 
+    // Batman emblem silhouette, not a literal flying bat
+    ctx.fillStyle = '#0c0d10';
     ctx.beginPath();
-    ctx.ellipse(cx, cy, bat.w * 0.16, bat.h * 0.28, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(cx - 4, cy - bat.h * 0.28);
-    ctx.lineTo(cx - 2, cy - bat.h * 0.5);
-    ctx.lineTo(cx, cy - bat.h * 0.22);
+    ctx.moveTo(cx, cy - 3);
+    ctx.lineTo(cx - 3, cy - 7);
+    ctx.lineTo(cx - 2, cy - 3);
+    ctx.lineTo(cx - 15, cy - 9);
+    ctx.lineTo(cx - 9, cy - 1);
+    ctx.lineTo(cx - 16, cy + 3);
+    ctx.lineTo(cx - 6, cy + 3);
+    ctx.lineTo(cx - 4, cy + 8);
+    ctx.lineTo(cx, cy + 4);
+    ctx.lineTo(cx + 4, cy + 8);
+    ctx.lineTo(cx + 6, cy + 3);
+    ctx.lineTo(cx + 16, cy + 3);
+    ctx.lineTo(cx + 9, cy - 1);
+    ctx.lineTo(cx + 15, cy - 9);
+    ctx.lineTo(cx + 2, cy - 3);
+    ctx.lineTo(cx + 3, cy - 7);
     ctx.closePath();
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(cx + 4, cy - bat.h * 0.28);
-    ctx.lineTo(cx + 2, cy - bat.h * 0.5);
-    ctx.lineTo(cx, cy - bat.h * 0.22);
-    ctx.closePath();
-    ctx.fill();
-
-    ctx.fillStyle = '#ffd166';
-    ctx.beginPath();
-    ctx.arc(cx - 2.5, cy - 1, 1.3, 0, Math.PI * 2);
-    ctx.arc(cx + 2.5, cy - 1, 1.3, 0, Math.PI * 2);
     ctx.fill();
   }
 }
@@ -1263,7 +1284,6 @@ function render(t) {
   drawTiles();
   drawTrash(t);
   drawCoins(t);
-  drawMushrooms();
   drawBats(t);
   drawBatarangs();
   drawSwingRope();
@@ -1300,5 +1320,5 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-showOverlay('BIT BROS', 'Gotham de noche: corré por los techos y callejones, pisá a los ladrones y esquivá a los pájaros. Agarrá el hongo para crecer y el murciélago especial para tirar batarangs. Saltá cerca de un poste de luz para engancharte y balancearte. Al final del último nivel te espera un villano con sonrisa siniestra.', 'JUGAR');
+showOverlay('BIT BROS', 'Gotham de noche: corré por los techos y callejones, pisá a los ladrones y esquivá a los pájaros. Agarrá el emblema de Batman para crecer y tirar batarangs. Saltá cerca de un poste de luz para engancharte y balancearte por los huecos más anchos. Al final del último nivel te espera un villano con sonrisa siniestra.', 'JUGAR');
 requestAnimationFrame(loop);
