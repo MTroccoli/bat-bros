@@ -138,3 +138,42 @@ canvas {
 @media (hover: none) and (pointer: coarse) {
   #touch-controls { display: flex; }
 }
+
+#rotate-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #0b0e1a;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  padding: 20px;
+}
+.rotate-icon {
+  font-size: 56px;
+  animation: rotate-hint 1.6s ease-in-out infinite;
+  margin-bottom: 8px;
+}
+#rotate-overlay p {
+  font-size: 16px;
+  color: #ffd166;
+  letter-spacing: 0.04em;
+}
+.rotate-sub {
+  font-size: 12px !important;
+  color: #8fa3d9 !important;
+}
+@keyframes rotate-hint {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-90deg); }
+}
+
+/* Phones held upright: block the game and ask for landscape. Gated to
+   touch/coarse-pointer devices so a resized desktop window never triggers it. */
+@media (hover: none) and (pointer: coarse) and (orientation: portrait) {
+  #game-wrap { display: none; }
+  #rotate-overlay { display: flex; }
+}

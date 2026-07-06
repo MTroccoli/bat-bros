@@ -27,6 +27,10 @@ const BATARANG_RANGE = 130;
 const BATARANG_LIFESPAN_MS = 3000;
 const BAT_SCORE = 2000; // the bat now grows Batman AND grants the batarang in one pickup
 
+const REQUIRED_DEFEAT_RATIO = 0.79; // must take down at least this share of a level's enemies to pass the flag
+const HERO_MESSAGE_MS = 2800;
+const HERO_QUOTE = 'UN HÉROE NO LE DA LA ESPALDA AL CRIMEN. SI NO COMBATÍS EL MAL, NO PODÉS SEGUIR ADELANTE.';
+
 const GRAPPLE_RANGE = 170;       // how close to a lamppost anchor before Batman auto-latches on
 const SWING_RELEASE_ANGLE = 1.15; // ~66° from vertical: natural release point at the top of the arc
 const GRAPPLE_COOLDOWN_MS = 500;  // prevents instantly re-grabbing the same anchor after letting go
@@ -41,7 +45,7 @@ const SIZES = {
 // Level builder: programmatic spec -> tile grid + entity lists
 // ---------------------------------------------------------------
 function buildLevel(spec) {
-  const { width, height, groundY, pits = [], platforms = [], coins = [],
+  const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [],
           flag, spawn, name } = spec;
 
@@ -58,10 +62,19 @@ function buildLevel(spec) {
     for (let i = 0; i < p.w; i++) solid[p.y][p.x + i] = true;
   }
 
+  // Rooftop walls: solid floor-to-topRow columns, too tall to jump over —
+  // the only way across is the swing point placed above them.
+  for (const w of walls) {
+    for (let y = w.topRow; y < groundY; y++) {
+      for (let i = 0; i < w.w; i++) solid[y][w.x + i] = true;
+    }
+  }
+
   return {
     name,
     width, height, groundY,
     solid,
+    walls: walls.map(w => ({ x: w.x, w: w.w, topRow: w.topRow })),
     coins: coins.map(([x, y]) => ({ x: x * TILE + TILE / 2, y: y * TILE + TILE / 2, taken: false })),
     thugs: thugs.map(g => ({
       x: g.x * TILE, y: g.y * TILE - 26,
@@ -139,19 +152,23 @@ const LEVEL_SPECS = [
       { x: 46, y: 10, w: 3 },
       { x: 63, y: 10, w: 3 },
     ],
-    // A gap too wide to jump (8 tiles) — the only way across is to leap up
-    // toward the streetlamp and swing, Batman-style.
-    swingPoints: [[89, 6]],
+    // A rooftop wall — too tall to jump over — blocks the corridor; the only
+    // way past is to grapple up onto the streetlamp above it and swing over,
+    // with a thug patrolling the roof itself. Further on, a second gap (8
+    // tiles) needs the same trick to cross, Batman-style.
+    walls: [{ x: 32, w: 2, topRow: 7 }],
+    swingPoints: [[33, 5], [89, 6]],
     coins: [
       [17, 9],
       [47, 9],
       [64, 9], [65, 9],
-      [3, 12], [20, 12], [33, 12], [52, 12], [67, 12], [79, 12], [96, 12],
+      [3, 12], [20, 12], [36, 12], [52, 12], [67, 12], [79, 12], [96, 12],
     ],
     thugs: [
       { x: 6, y: 13, range: [3, 9] },
       { x: 16, y: 13, range: [13, 22] },
-      { x: 30, y: 13, range: [28, 36] },
+      { x: 29, y: 13, range: [28, 31] },
+      { x: 32, y: 7, range: [32, 33] },
       { x: 44, y: 13, range: [41, 53] },
       { x: 62, y: 13, range: [60, 68] },
       { x: 78, y: 13, range: [74, 83] },
@@ -290,6 +307,7 @@ let timeLeft = LEVEL_TIME;
 let timeAccum = 0;
 let invulnUntil = 0;
 let stateTimer = 0;
+let heroMessageUntil = 0;
 let frameTime = 0;
 let currentPowerState = 'small'; // small | big | batarang — carries over between levels, resets on death
 let batarangs = [];
@@ -302,6 +320,7 @@ function newPlayer(spawn, powerState = 'small') {
     vx: 0, vy: 0, onGround: false, facing: 1, dead: false,
     powerState,
     swinging: false, swingAnchor: null, swingRadius: 0, swingAngle: 0, swingAngularVel: 0,
+    walkDist: 0,
   };
 }
 
@@ -545,6 +564,14 @@ function hurtPlayer() {
   killPlayer();
 }
 
+function levelEnemyTotals() {
+  const total = level.thugs.length + level.birds.length + (level.villain ? 1 : 0);
+  const defeated = level.thugs.filter(g => !g.alive).length +
+    level.birds.filter(b => !b.alive).length +
+    (level.villain && !level.villain.alive ? 1 : 0);
+  return { total, defeated };
+}
+
 function completeLevel() {
   state = 'levelcomplete';
   stateTimer = 1400;
@@ -577,6 +604,10 @@ function updatePlaying(dt) {
       if (Math.abs(player.vx) < 0.05) player.vx = 0;
     }
     player.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, player.vx));
+
+    // walk-cycle distance: only advances while actually moving on the ground,
+    // so the legs animate in step with real travel instead of just sliding
+    if (player.onGround) player.walkDist = (player.walkDist || 0) + Math.abs(player.vx) * dt;
 
     // jump: buffered press + coyote time, so a tap always registers even if it
     // lands a frame or two before touching ground / after leaving a ledge
@@ -705,8 +736,13 @@ function updatePlaying(dt) {
   // flag
   const dxf = (player.x + player.w / 2) - level.flag.x;
   if (Math.abs(dxf) < 18 && player.y + player.h > level.flag.topY) {
-    completeLevel();
-    return;
+    const { total, defeated } = levelEnemyTotals();
+    const ratio = total === 0 ? 1 : defeated / total;
+    if (ratio >= REQUIRED_DEFEAT_RATIO) {
+      completeLevel();
+      return;
+    }
+    heroMessageUntil = Date.now() + HERO_MESSAGE_MS;
   }
 
   // timer
@@ -898,6 +934,13 @@ function drawTrash(t) {
   }
 }
 
+function wallAt(tx) {
+  for (const w of level.walls) {
+    if (tx >= w.x && tx < w.x + w.w) return w;
+  }
+  return null;
+}
+
 function drawTiles() {
   const tx0 = Math.floor(camera.x / TILE);
   const tx1 = Math.ceil((camera.x + CANVAS_W) / TILE);
@@ -905,6 +948,35 @@ function drawTiles() {
     for (let tx = Math.max(0, tx0); tx <= Math.min(level.width - 1, tx1); tx++) {
       if (!level.solid[ty][tx]) continue;
       const px = tx * TILE - camera.x, py = ty * TILE;
+      const wall = ty < level.groundY ? wallAt(tx) : null;
+
+      if (wall) {
+        if (ty === wall.topRow) {
+          // rooftop cap: gravel surface + a parapet ledge lip along the edge
+          ctx.fillStyle = '#6b7280';
+          ctx.fillRect(px, py, TILE, 9);
+          ctx.fillStyle = '#4b5160';
+          ctx.fillRect(px, py + 9, TILE, TILE - 9);
+          ctx.fillStyle = '#8b90a0';
+          ctx.fillRect(px, py, TILE, 3);
+        } else {
+          // building facade below the roofline: brick-like banding
+          ctx.fillStyle = '#463c34';
+          ctx.fillRect(px, py, TILE, TILE);
+          ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(px, py + 11); ctx.lineTo(px + TILE, py + 11);
+          ctx.moveTo(px, py + 22); ctx.lineTo(px + TILE, py + 22);
+          const jointX = px + (ty % 2 === 0 ? 16 : 0);
+          ctx.moveTo(jointX, py); ctx.lineTo(jointX, py + TILE);
+          ctx.stroke();
+        }
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+        ctx.strokeRect(px + 0.5, py + 0.5, TILE - 1, TILE - 1);
+        continue;
+      }
+
       const exposedTop = ty === 0 || !level.solid[ty - 1][tx];
       if (exposedTop) {
         ctx.fillStyle = '#565c6b';
@@ -920,6 +992,28 @@ function drawTiles() {
       ctx.strokeStyle = 'rgba(0,0,0,0.25)';
       ctx.strokeRect(px + 0.5, py + 0.5, TILE - 1, TILE - 1);
     }
+  }
+}
+
+function drawRooftopProps() {
+  for (const w of level.walls) {
+    const cx = (w.x + w.w / 2) * TILE - camera.x;
+    const topY = w.topRow * TILE;
+    if (cx < -30 || cx > CANVAS_W + 30) continue;
+    // small AC unit / vent box sitting on the rooftop
+    ctx.fillStyle = '#3a3f4a';
+    ctx.fillRect(cx - 10, topY - 12, 20, 12);
+    ctx.fillStyle = '#22262e';
+    ctx.fillRect(cx - 10, topY - 12, 20, 3);
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cx - 10.5, topY - 12.5, 20, 12);
+    // a thin antenna pipe
+    ctx.strokeStyle = '#5a606c';
+    ctx.beginPath();
+    ctx.moveTo(cx + 14, topY - 12);
+    ctx.lineTo(cx + 14, topY - 30);
+    ctx.stroke();
   }
 }
 
@@ -1080,10 +1174,21 @@ function drawPlayer() {
   const suitH = h - bodyTop;
   const accent = player.powerState === 'batarang' ? '#ffe066' : '#ffd166';
 
+  // walk-cycle: driven by distance travelled (not time), so the legs and a
+  // little body bob animate only while actually moving on the ground —
+  // holding still or flying through the air doesn't "walk in place".
+  const moving = player.onGround && Math.abs(player.vx) > 0.3;
+  const walkPhase = moving ? (player.walkDist || 0) / 6 : 0;
+  const bodyBob = moving ? Math.abs(Math.sin(walkPhase)) * 1.4 : 0;
+  const strideA = moving ? Math.sin(walkPhase) * 4 : 0;
+  const liftA = moving ? Math.max(0, Math.sin(walkPhase)) * 2 : 0;
+  const strideB = moving ? Math.sin(walkPhase + Math.PI) * 4 : 0;
+  const liftB = moving ? Math.max(0, Math.sin(walkPhase + Math.PI)) * 2 : 0;
+
   ctx.save();
   ctx.translate(px + w / 2, player.y);
   ctx.scale(player.facing, 1);
-  ctx.translate(-w / 2, 0);
+  ctx.translate(-w / 2, -bodyBob);
 
   // soft rim-light halo so the dark suit reads clearly against the night sky
   ctx.shadowColor = 'rgba(150,185,230,0.85)';
@@ -1151,10 +1256,10 @@ function drawPlayer() {
   ctx.fillRect(-3, bodyTop + 1, 5, 8);
   ctx.fillRect(w - 2, bodyTop + 1, 5, 8);
 
-  // boots
+  // boots (stride swing + lift while walking)
   ctx.fillStyle = '#0c0d10';
-  ctx.fillRect(1, h - shoesH, 8, shoesH);
-  ctx.fillRect(w - 9, h - shoesH, 8, shoesH);
+  ctx.fillRect(1 + strideA, h - shoesH - liftA, 8, shoesH);
+  ctx.fillRect(w - 9 + strideB, h - shoesH - liftB, 8, shoesH);
 
   ctx.restore();
 }
@@ -1278,10 +1383,42 @@ function drawBatarangs() {
   }
 }
 
+function drawHeroMessage() {
+  if (Date.now() >= heroMessageUntil) return;
+  const { total, defeated } = levelEnemyTotals();
+  const pct = total === 0 ? 100 : Math.round((defeated / total) * 100);
+  const need = Math.round(REQUIRED_DEFEAT_RATIO * 100);
+  // Only fades on the way out: standing at the flag keeps re-arming
+  // heroMessageUntil every frame, which would keep a fade-in stuck near 0
+  // forever, so the banner must show at full opacity immediately instead.
+  const remaining = heroMessageUntil - Date.now();
+  const fadeOut = Math.min(1, remaining / 300);
+
+  ctx.save();
+  ctx.globalAlpha = fadeOut;
+  ctx.fillStyle = 'rgba(8,10,20,0.88)';
+  ctx.fillRect(50, 56, CANVAS_W - 100, 78);
+  ctx.strokeStyle = '#ffd166';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(50, 56, CANVAS_W - 100, 78);
+
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 15px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('UN HÉROE NO LE DA LA ESPALDA AL CRIMEN.', CANVAS_W / 2, 82);
+  ctx.fillText('SI NO COMBATÍS EL MAL, NO PODÉS SEGUIR ADELANTE.', CANVAS_W / 2, 102);
+
+  ctx.fillStyle = '#8fa3d9';
+  ctx.font = '11px monospace';
+  ctx.fillText(`Derrotaste ${defeated}/${total} enemigos (${pct}%) · necesitás ${need}%`, CANVAS_W / 2, 122);
+  ctx.restore();
+}
+
 function render(t) {
   drawBackground(t);
   drawSwingPoints(t);
   drawTiles();
+  drawRooftopProps();
   drawTrash(t);
   drawCoins(t);
   drawBats(t);
@@ -1292,6 +1429,7 @@ function render(t) {
   drawVillain();
   drawFlag();
   drawPlayer();
+  drawHeroMessage();
 
   if (state === 'levelcomplete') {
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
