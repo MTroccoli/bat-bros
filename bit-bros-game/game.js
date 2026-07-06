@@ -34,6 +34,15 @@ const HERO_QUOTE = 'UN HÉROE NO LE DA LA ESPALDA AL CRIMEN. SI NO COMBATÍS EL 
 const GRAPPLE_RANGE = 170;       // how close to a lamppost anchor before Batman auto-latches on
 const SWING_RELEASE_ANGLE = 1.15; // ~66° from vertical: natural release point at the top of the arc
 const GRAPPLE_COOLDOWN_MS = 500;  // prevents instantly re-grabbing the same anchor after letting go
+const TRAPEZE_LATCH_RANGE = 70;   // trapezes latch near their hanging BAR, not the ceiling anchor
+
+// --- Act 1 boss: Bane in the abandoned warehouse ---
+const CONTINUE_COST = 30;         // coins to re-enter the warehouse after a game over there
+const BANE_BIG = { w: 92, h: 150 };
+const BANE_GROW_MS = 1400;
+const BANE_TELEGRAPH_MS = 1800;   // crouch warning before his shockwave jump
+const BANE_HIT_FLASH_MS = 900;
+const BANE_WAVE_SPEED = 5.0;      // shockwave ring expansion px/frame
 
 const SIZES = {
   small: { w: 22, h: 30 },
@@ -46,8 +55,8 @@ const SIZES = {
 // ---------------------------------------------------------------
 function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
-          thugs = [], birds = [], bats = [], swingPoints = [],
-          flag, spawn, name } = spec;
+          thugs = [], birds = [], bats = [], swingPoints = [], houses = [],
+          flag, spawn, name, indoor = false, bane = null } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
 
@@ -70,11 +79,36 @@ function buildLevel(spec) {
     }
   }
 
+  // Gabled-roof houses: a stepped pyramid of solid columns (1-tile steps,
+  // hoppable without the grapple) rising to a 2-tile flat ridge at topRow.
+  // baseRow is the surface the house sits on (street or a plaza rooftop).
+  for (const hs of houses) {
+    for (let i = 0; i < hs.w; i++) {
+      const colTop = hs.topRow + Math.max(0, (hs.w / 2 - 1) - Math.min(i, hs.w - 1 - i));
+      for (let y = colTop; y < hs.baseRow; y++) solid[y][hs.x + i] = true;
+    }
+  }
+
   return {
     name,
-    width, height, groundY,
+    width, height, groundY, indoor,
     solid,
     walls: walls.map(w => ({ x: w.x, w: w.w, topRow: w.topRow })),
+    houses: houses.map(hs => ({
+      x: hs.x, w: hs.w, topRow: hs.topRow, baseRow: hs.baseRow,
+      eaveRow: hs.topRow + hs.w / 2 - 1,
+    })),
+    bane: bane ? {
+      x: bane.x * TILE, y: groundY * TILE - 44,
+      w: 30, h: 44,           // small until he presses the venom button
+      state: 'idle',          // idle | growing | fight | telegraph | jumping
+      hp: bane.hp ?? 5, maxHp: bane.hp ?? 5,
+      vx: 1.3, vy: 0,
+      alive: true,
+      growStart: 0, teleStart: 0, waveAt: 0, hitUntil: 0, deadAt: 0,
+      minX: 3 * TILE, maxX: (width - 4) * TILE,
+    } : null,
+    waves: [],
     coins: coins.map(([x, y]) => ({ x: x * TILE + TILE / 2, y: y * TILE + TILE / 2, taken: false })),
     thugs: thugs.map(g => ({
       x: g.x * TILE, y: g.y * TILE - 26,
@@ -91,14 +125,15 @@ function buildLevel(spec) {
     bats: bats.map(([x, row]) => ({
       x: x * TILE, y: row * TILE - 22, w: 24, h: 20, taken: false,
     })),
-    swingPoints: swingPoints.map(([x, row]) => {
+    swingPoints: swingPoints.map(([x, row, minR]) => {
       // the lamppost pole is drawn down to the first solid surface below the
       // anchor (a rooftop or the street), not blindly to ground level
       let floorTy = height;
       for (let ty = row; ty < height; ty++) {
         if (solid[ty][x]) { floorTy = ty; break; }
       }
-      return { x: x * TILE + 16, y: row * TILE, floorY: floorTy * TILE };
+      // minR set => a trapeze: fixed rope length, latched near its bar
+      return { x: x * TILE + 16, y: row * TILE, floorY: floorTy * TILE, minR: minR ?? null };
     }),
     villain: spec.villain ? {
       x: spec.villain.x * TILE, y: spec.villain.y * TILE - 42,
@@ -141,18 +176,23 @@ const LEVEL_SPECS = [
     ],
     // One building blocks the street — climb it with the lamppost above.
     walls: [{ x: 30, w: 3, topRow: 18 }],
+    // A gabled-roof house sits on the street further on: hop up its stepped
+    // roof (1-tile steps) and over the ridge, where a thug patrols.
+    houses: [{ x: 54, w: 6, topRow: 20, baseRow: 24 }],
     swingPoints: [[31, 16], [49, 16]],
     coins: [
       [9, 20], [39, 20], [67, 20],
       [30, 17], [31, 17], [32, 17],
-      [14, 23], [24, 23], [43, 23], [58, 23], [72, 23],
+      [56, 19], [57, 19],
+      [14, 23], [24, 23], [43, 23], [72, 23],
     ],
     thugs: [
       { x: 12, y: 24, range: [10, 16] },
       { x: 24, y: 24, range: [22, 29] },
       { x: 30, y: 18, range: [30, 32] },
       { x: 40, y: 24, range: [36, 44] },
-      { x: 60, y: 24, range: [56, 64] },
+      { x: 56, y: 20, range: [56, 57] },
+      { x: 62, y: 24, range: [61, 66] },
     ],
     birds: [
       { x: 22, y: 21, range: [20, 27] },
@@ -180,19 +220,22 @@ const LEVEL_SPECS = [
       { x: 41, w: 4, topRow: 16 },  // descending steps on the far side
       { x: 45, w: 4, topRow: 19 },
       { x: 49, w: 4, topRow: 22 },
-      { x: 86, w: 3, topRow: 22 },  // final rooftop, flag on top
+      { x: 86, w: 3, topRow: 22 },  // final rooftop with the exit
     ],
+    // A gabled-roof house crowns the high plaza — cross it over the ridge.
+    houses: [{ x: 34, w: 6, topRow: 10, baseRow: 13 }],
     swingPoints: [[25, 20], [33, 11], [73, 20], [87, 20]],
     coins: [
       [25, 21],
-      [33, 12], [35, 12], [37, 12], [39, 12],
+      [33, 12], [35, 9], [37, 9], [40, 12],
       [61, 24], [81, 24], [87, 21],
       [5, 27], [18, 27], [55, 27], [66, 27],
     ],
     thugs: [
       { x: 6, y: 28, range: [3, 10] },
       { x: 16, y: 28, range: [14, 22] },
-      { x: 34, y: 13, range: [32, 40] },
+      { x: 32, y: 13, range: [32, 33] },
+      { x: 36, y: 10, range: [36, 37] },
       { x: 45, y: 19, range: [45, 48] },
       { x: 56, y: 28, range: [54, 59] },
       { x: 64, y: 28, range: [62, 68] },
@@ -203,13 +246,14 @@ const LEVEL_SPECS = [
       { x: 30, y: 17, range: [26, 36] },
       { x: 66, y: 24, range: [63, 69] },
     ],
-    bats: [[7, 25], [36, 13]],
+    bats: [[7, 25]],
     flag: { x: 87, y: 17 },
     spawn: { x: 2, y: 26 },
   },
   {
-    // The summit: four towers stacked ever higher; the villain patrols the
-    // top roof next to the flag, with the whole city far below.
+    // The summit: four towers stacked ever higher, with a gabled house on
+    // the high plaza; the exit waits on the top roof, and the trail leads
+    // down to Bane's warehouse...
     name: '1-3',
     width: 70, height: 34, groundY: 32,
     pits: [[14, 16], [24, 26]],
@@ -222,13 +266,14 @@ const LEVEL_SPECS = [
       { x: 34, w: 4, topRow: 20 },   // tower 2: grapple from tower 1's roof
       { x: 38, w: 10, topRow: 14 },  // tower 3: the high plaza
       { x: 48, w: 8, topRow: 16 },   // step down, contiguous walk-off
-      { x: 56, w: 8, topRow: 10 },   // tower 4: the summit — villain + flag
+      { x: 56, w: 8, topRow: 10 },   // tower 4: the summit — the exit
     ],
+    houses: [{ x: 40, w: 6, topRow: 11, baseRow: 14 }],
     swingPoints: [[31, 24], [35, 18], [39, 12], [57, 8]],
     coins: [
       [9, 28], [21, 28],
       [31, 25], [35, 19],
-      [40, 13], [42, 13], [44, 13], [46, 13],
+      [39, 13], [42, 10], [43, 10], [46, 13],
       [50, 15], [52, 15],
       [60, 9],
       [5, 31], [19, 31],
@@ -238,19 +283,40 @@ const LEVEL_SPECS = [
       { x: 18, y: 32, range: [17, 23] },
       { x: 28, y: 32, range: [27, 29] },
       { x: 35, y: 20, range: [34, 37] },
-      { x: 42, y: 14, range: [38, 47] },
+      { x: 42, y: 11, range: [42, 43] },
       { x: 50, y: 16, range: [48, 55] },
     ],
     birds: [
       { x: 10, y: 26, range: [6, 13] },
       { x: 50, y: 13, range: [48, 54] },
     ],
-    bats: [[21, 29], [44, 14]],
-    villain: { x: 58, y: 10, range: [56, 62], hp: 3 },
+    bats: [[21, 29], [39, 14]],
     flag: { x: 62, y: 4 },
     spawn: { x: 2, y: 30 },
   },
+  {
+    // Act 1 finale: Bane's abandoned warehouse. A closed arena — when Bane
+    // spots Batman he slams the venom button and grows huge. Two trapezes
+    // hang from the rafters at head height: swing into his head 5 times
+    // (he speeds up on the 3rd hit). His telegraphed jump sends a shockwave
+    // along the floor that only misses you if you're airborne or swinging.
+    name: '1-4',
+    indoor: true,
+    width: 34, height: 15, groundY: 13,
+    pits: [],
+    platforms: [],
+    walls: [],
+    swingPoints: [[12, 2, 210], [21, 2, 210]],
+    coins: [],
+    thugs: [],
+    birds: [],
+    bats: [],
+    bane: { x: 26, hp: 5 },
+    flag: { x: 33, y: 1 }, // unreachable; the level completes when Bane falls
+    spawn: { x: 2, y: 11 },
+  },
 ];
+const BOSS_LEVEL_INDEX = LEVEL_SPECS.length - 1;
 
 // ---------------------------------------------------------------
 // Input
@@ -268,6 +334,11 @@ function requestJump() { jumpBufferUntil = performance.now() + JUMP_BUFFER_MS; }
 function requestShoot() { shootBufferUntil = performance.now() + JUMP_BUFFER_MS; }
 
 window.addEventListener('keydown', e => {
+  if (state === 'cutscene' && ['ArrowUp', 'KeyW', 'Space', 'Enter'].includes(e.code)) {
+    startGame();
+    e.preventDefault();
+    return;
+  }
   if (['ArrowLeft', 'KeyA'].includes(e.code)) keys.left = true;
   if (['ArrowRight', 'KeyD'].includes(e.code)) keys.right = true;
   if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) { keys.jump = true; requestJump(); }
@@ -330,7 +401,8 @@ const overlayTitle = document.getElementById('overlay-title');
 const overlayMsg = document.getElementById('overlay-msg');
 const overlayBtn = document.getElementById('overlay-btn');
 
-let state = 'start'; // start | playing | levelcomplete | win | gameover
+let state = 'start'; // start | cutscene | playing | levelcomplete | win | gameover
+let continueOffer = false; // game over at Bane: offer to spend coins to retry
 let levelIndex = 0;
 let level = null;
 let player = null;
@@ -355,6 +427,7 @@ function newPlayer(spawn, powerState = 'small') {
     vx: 0, vy: 0, onGround: false, facing: 1, dead: false,
     powerState,
     swinging: false, swingAnchor: null, swingRadius: 0, swingAngle: 0, swingAngularVel: 0,
+    swingMinR: null,
     walkDist: 0,
   };
 }
@@ -440,6 +513,21 @@ function tryAttachGrapple(now) {
   if (now < grappleCooldownUntil || !level.swingPoints.length) return;
   const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
   for (const sp of level.swingPoints) {
+    if (sp.minR) {
+      // trapeze: fixed rope length, grabbed by jumping near its hanging bar
+      const barY = sp.y + sp.minR;
+      if (Math.hypot(sp.x - cx, barY - cy) < TRAPEZE_LATCH_RANGE && sp.y < cy) {
+        player.swinging = true;
+        player.swingAnchor = sp;
+        player.swingRadius = sp.minR;
+        player.swingMinR = sp.minR;
+        player.swingAngle = Math.atan2(cx - sp.x, cy - sp.y);
+        const tang = player.vx * Math.cos(player.swingAngle) - player.vy * Math.sin(player.swingAngle);
+        player.swingAngularVel = tang / sp.minR;
+        return;
+      }
+      continue;
+    }
     // Anchors with a rooftop right under them (climb anchors) must not
     // re-grab a player already standing on that roof — otherwise hopping
     // along the rooftop under its own lamppost yo-yos forever. Anchors
@@ -451,6 +539,7 @@ function tryAttachGrapple(now) {
       player.swinging = true;
       player.swingAnchor = sp;
       player.swingRadius = dist;
+      player.swingMinR = null;
       player.swingAngle = Math.atan2(cx - sp.x, cy - sp.y);
       const tangential = player.vx * Math.cos(player.swingAngle) - player.vy * Math.sin(player.swingAngle);
       player.swingAngularVel = tangential / dist;
@@ -465,7 +554,9 @@ function updateSwing(dt, now) {
   // anchor, converting momentum into height. The floor of 44px leaves his
   // feet just above a rooftop that sits 2 tiles below its lamppost, so a
   // release near the top of the reel lands ON the roof instead of under it.
-  player.swingRadius = Math.max(44, player.swingRadius - 0.85 * dt);
+  // Trapezes (swingMinR set) keep their fixed rope length instead.
+  const reelFloor = player.swingMinR ?? 44;
+  player.swingRadius = Math.max(reelFloor, player.swingRadius - (player.swingMinR ? 0 : 0.85) * dt);
   const r = player.swingRadius;
   const angAccel = -(GRAVITY / r) * Math.sin(player.swingAngle);
   player.swingAngularVel += angAccel * dt;
@@ -531,7 +622,23 @@ function loadLevel(idx) {
 function startGame() {
   score = 0; coinsCollected = 0; lives = 3;
   currentPowerState = 'small';
+  continueOffer = false;
+  hud.score.textContent = 0;
+  hud.coins.textContent = 0;
+  hud.lives.textContent = 3;
   loadLevel(0);
+  state = 'playing';
+  overlay.classList.add('hidden');
+}
+
+// Spend coins to jump straight back into the warehouse after falling to Bane.
+function continueAtBoss() {
+  continueOffer = false;
+  coinsCollected = Math.max(0, coinsCollected - CONTINUE_COST);
+  hud.coins.textContent = coinsCollected;
+  lives = 3;
+  hud.lives.textContent = 3;
+  loadLevel(BOSS_LEVEL_INDEX);
   state = 'playing';
   overlay.classList.add('hidden');
 }
@@ -542,7 +649,19 @@ function restartGame() {
 }
 
 overlayBtn.addEventListener('click', () => {
-  if (state === 'start' || state === 'gameover' || state === 'win') startGame();
+  if (continueOffer) { continueAtBoss(); return; }
+  if (state === 'start') {
+    // the story first: Dos Caras kidnapping Robin
+    overlay.classList.add('hidden');
+    state = 'cutscene';
+    return;
+  }
+  if (state === 'gameover' || state === 'win') startGame();
+});
+
+// any tap/keypress skips the intro scene
+canvas.addEventListener('pointerdown', () => {
+  if (state === 'cutscene') startGame();
 });
 
 // ---------------------------------------------------------------
@@ -604,6 +723,15 @@ function killPlayer() {
   hud.lives.textContent = Math.max(lives, 0);
   if (lives <= 0) {
     state = 'gameover';
+    // Falling to Bane doesn't reset the whole game: spend coins to walk
+    // straight back into the warehouse instead.
+    if (levelIndex === BOSS_LEVEL_INDEX && coinsCollected >= CONTINUE_COST) {
+      continueOffer = true;
+      showOverlay('CAÍSTE EN EL GALPÓN',
+        `Bane sigue ahí. Usá ${CONTINUE_COST} de tus ${coinsCollected} monedas para volver a enfrentarlo sin perder tu progreso (o presioná R para reiniciar desde cero).`,
+        `USAR ${CONTINUE_COST} MONEDAS`);
+      return;
+    }
     showOverlay('GAME OVER', `Puntaje final: ${score}. Presioná R o el botón para reintentar.`, 'REINTENTAR');
     return;
   }
@@ -612,6 +740,15 @@ function killPlayer() {
   snapCameraToPlayer();
   timeLeft = LEVEL_TIME;
   invulnUntil = Date.now() + INVULN_TIME;
+  // reset the boss fight positions (Bane keeps the damage already dealt)
+  if (level.bane && level.bane.alive) {
+    const bn = level.bane;
+    bn.x = 26 * TILE;
+    bn.vy = 0;
+    bn.y = level.groundY * TILE - bn.h;
+    if (bn.state !== 'idle') { bn.state = 'fight'; bn.waveAt = performance.now() + 4000; }
+    level.waves.length = 0;
+  }
 }
 
 function damageVillain() {
@@ -657,6 +794,99 @@ function showOverlay(title, msg, btnLabel) {
   overlayMsg.textContent = msg;
   overlayBtn.textContent = btnLabel;
   overlay.classList.remove('hidden');
+}
+
+// ---------------------------------------------------------------
+// Bane (Act 1 boss)
+// ---------------------------------------------------------------
+function baneHeadBox(bn) {
+  return { x: bn.x + bn.w / 2 - 24, y: bn.y - 6, w: 48, h: 44 };
+}
+
+function updateBane(dt, now) {
+  const bn = level.bane;
+  const floorY = level.groundY * TILE;
+
+  if (!bn.alive) {
+    if (bn.deadAt && now - bn.deadAt > 1500 && state === 'playing') completeLevel();
+    return;
+  }
+
+  if (bn.state === 'idle') {
+    // Bane spots Batman and slams the venom button
+    if (player.x > 6 * TILE) {
+      bn.state = 'growing';
+      bn.growStart = now;
+    }
+  } else if (bn.state === 'growing') {
+    const t = Math.min(1, (now - bn.growStart) / BANE_GROW_MS);
+    bn.w = 30 + (BANE_BIG.w - 30) * t;
+    bn.h = 44 + (BANE_BIG.h - 44) * t;
+    bn.y = floorY - bn.h; // feet stay planted while he grows
+    if (t >= 1) {
+      bn.state = 'fight';
+      bn.waveAt = now + 5000;
+    }
+  } else if (bn.state === 'fight') {
+    const speed = bn.hp <= 2 ? 2.3 : 1.3; // 3rd hit taken -> he gets faster
+    bn.x += bn.vx * speed * dt;
+    if (bn.x < bn.minX) { bn.x = bn.minX; bn.vx = Math.abs(bn.vx); }
+    if (bn.x + bn.w > bn.maxX) { bn.x = bn.maxX - bn.w; bn.vx = -Math.abs(bn.vx); }
+    if (now > bn.waveAt) {
+      bn.state = 'telegraph';
+      bn.teleStart = now;
+    }
+  } else if (bn.state === 'telegraph') {
+    // crouched, shaking: the couple of seconds of warning before the jump
+    if (now - bn.teleStart > BANE_TELEGRAPH_MS) {
+      bn.state = 'jumping';
+      bn.vy = -13;
+    }
+  } else if (bn.state === 'jumping') {
+    bn.vy += GRAVITY * dt;
+    bn.y += bn.vy * dt;
+    if (bn.y + bn.h >= floorY) {
+      bn.y = floorY - bn.h;
+      bn.vy = 0;
+      bn.state = 'fight';
+      bn.waveAt = now + (bn.hp <= 2 ? 4200 : 6200);
+      level.waves.push({ x: bn.x + bn.w / 2, r: 26, hit: false });
+    }
+  }
+
+  // shockwaves race along the floor; only grounded players get hit
+  for (const wv of level.waves) {
+    wv.r += BANE_WAVE_SPEED * dt;
+    if (player.onGround && !player.swinging) {
+      const d = Math.abs((player.x + player.w / 2) - wv.x);
+      if (Math.abs(d - wv.r) < 26) hurtPlayer();
+    }
+  }
+  level.waves = level.waves.filter(wv => wv.r < level.pixelWidth);
+  if (state !== 'playing') return;
+
+  // hits: Batman swinging into Bane's head — 5 and he's done
+  if (bn.state !== 'idle' && bn.state !== 'growing') {
+    const head = baneHeadBox(bn);
+    if (player.swinging && now > bn.hitUntil && aabbOverlap(player, head)) {
+      bn.hp--;
+      bn.hitUntil = now + BANE_HIT_FLASH_MS;
+      player.swingAngularVel *= -0.7; // the blow rebounds the swing
+      score += 400;
+      hud.score.textContent = score;
+      if (bn.hp <= 0) {
+        bn.alive = false;
+        bn.deadAt = now;
+        score += 5000;
+        hud.score.textContent = score;
+        return;
+      }
+    }
+    // body contact on the ground hurts Batman (the swing is the safe spot)
+    if (!player.swinging && Date.now() >= invulnUntil && aabbOverlap(player, bn)) {
+      hurtPlayer();
+    }
+  }
 }
 
 function updatePlaying(dt) {
@@ -732,12 +962,13 @@ function updatePlaying(dt) {
     }
   }
 
-  // bats (grow + batarang power, all in one pickup)
+  // bats: in Act 1 the emblem only makes Batman stronger (an extra hit).
+  // The batarang returns as an upgrade in Act 2.
   for (const bat of level.bats) {
     if (bat.taken) continue;
     if (aabbOverlap(player, bat)) {
       bat.taken = true;
-      setPowerState('batarang');
+      setPowerState('big');
       score += BAT_SCORE;
       hud.score.textContent = score;
     }
@@ -807,16 +1038,24 @@ function updatePlaying(dt) {
     }
   }
 
-  // flag
-  const dxf = (player.x + player.w / 2) - level.flag.x;
-  if (Math.abs(dxf) < 18 && player.y + player.h > level.flag.topY) {
-    const { total, defeated } = levelEnemyTotals();
-    const ratio = total === 0 ? 1 : defeated / total;
-    if (ratio >= REQUIRED_DEFEAT_RATIO) {
-      completeLevel();
-      return;
+  // Bane boss fight (warehouse arena)
+  if (level.bane) {
+    updateBane(dt, now);
+    if (state !== 'playing') return; // a shockwave/contact may have ended the run
+  }
+
+  // level exit door (outdoor levels; the warehouse ends when Bane falls)
+  if (!level.indoor) {
+    const dxf = (player.x + player.w / 2) - level.flag.x;
+    if (Math.abs(dxf) < 18 && player.y + player.h > level.flag.topY) {
+      const { total, defeated } = levelEnemyTotals();
+      const ratio = total === 0 ? 1 : defeated / total;
+      if (ratio >= REQUIRED_DEFEAT_RATIO) {
+        completeLevel();
+        return;
+      }
+      heroMessageUntil = Date.now() + HERO_MESSAGE_MS;
     }
-    heroMessageUntil = Date.now() + HERO_MESSAGE_MS;
   }
 
   // timer
@@ -846,7 +1085,9 @@ function update(dt) {
         state = 'playing';
       } else {
         state = 'win';
-        showOverlay('¡GANASTE!', `Completaste todos los niveles. Puntaje final: ${score} con ${coinsCollected} monedas.`, 'JUGAR DE NUEVO');
+        showOverlay('FIN DEL ACTO 1',
+          `Bane cayó. Entre sus cosas, Batman encuentra una moneda quemada de dos caras: la pista que buscaba. Robin sigue secuestrado... la historia continúa en el ACTO 2. Puntaje: ${score} con ${coinsCollected} monedas.`,
+          'JUGAR DE NUEVO');
       }
     }
   }
@@ -903,7 +1144,90 @@ function mixColor(a, b, t) {
   return `rgb(${mixChannel(a[0], b[0], t)},${mixChannel(a[1], b[1], t)},${mixChannel(a[2], b[2], t)})`;
 }
 
+// Abandoned warehouse interior for the Bane fight: corrugated walls,
+// roof trusses, hanging lamps and moonlight through broken windows.
+function drawWarehouseBackground(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
+  g.addColorStop(0, '#141210');
+  g.addColorStop(0.7, '#221d18');
+  g.addColorStop(1, '#191512');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  const par = camera.x * 0.5;
+
+  // corrugated wall lines
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 2;
+  const off = -(par % 18);
+  for (let x = off; x < CANVAS_W; x += 18) {
+    ctx.beginPath(); ctx.moveTo(x, 60); ctx.lineTo(x, level.groundY * TILE); ctx.stroke();
+  }
+  // horizontal girders
+  ctx.fillStyle = '#2b241d';
+  ctx.fillRect(0, 170, CANVAS_W, 10);
+  ctx.fillRect(0, 300, CANVAS_W, 10);
+
+  // broken windows + moonlight shafts
+  const wOff = -(par % 300);
+  for (let i = -1; i < 4; i++) {
+    const wx = wOff + i * 300 + 80;
+    ctx.fillStyle = '#3d4b66';
+    ctx.fillRect(wx, 84, 70, 44);
+    ctx.strokeStyle = '#191512';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(wx, 84, 70, 44);
+    ctx.beginPath(); ctx.moveTo(wx + 35, 84); ctx.lineTo(wx + 35, 128); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(wx, 106); ctx.lineTo(wx + 70, 106); ctx.stroke();
+    ctx.fillStyle = '#191512';
+    ctx.beginPath();
+    ctx.moveTo(wx + 38, 86); ctx.lineTo(wx + 52, 86); ctx.lineTo(wx + 40, 104);
+    ctx.closePath(); ctx.fill();
+    const shaft = ctx.createLinearGradient(wx, 84, wx - 40, level.groundY * TILE);
+    shaft.addColorStop(0, 'rgba(160,190,235,0.09)');
+    shaft.addColorStop(1, 'rgba(160,190,235,0)');
+    ctx.fillStyle = shaft;
+    ctx.beginPath();
+    ctx.moveTo(wx, 84); ctx.lineTo(wx + 70, 84);
+    ctx.lineTo(wx + 30, level.groundY * TILE); ctx.lineTo(wx - 60, level.groundY * TILE);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // ceiling truss
+  ctx.fillStyle = '#191512';
+  ctx.fillRect(0, 0, CANVAS_W, 30);
+  ctx.strokeStyle = '#2f2721';
+  ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(0, 36); ctx.lineTo(CANVAS_W, 36); ctx.stroke();
+  const tOff = -(par % 90);
+  for (let x = tOff - 90; x < CANVAS_W; x += 90) {
+    ctx.beginPath(); ctx.moveTo(x, 36); ctx.lineTo(x + 45, 6); ctx.lineTo(x + 90, 36); ctx.stroke();
+  }
+
+  // hanging lamps with warm pools of light
+  const lOff = -(par % 380);
+  for (let i = -1; i < 4; i++) {
+    const lx = lOff + i * 380 + 200;
+    ctx.strokeStyle = '#0d0b09';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(lx, 38); ctx.lineTo(lx, 72); ctx.stroke();
+    ctx.fillStyle = '#3a3128';
+    ctx.beginPath();
+    ctx.moveTo(lx - 14, 72); ctx.lineTo(lx + 14, 72); ctx.lineTo(lx + 8, 60); ctx.lineTo(lx - 8, 60);
+    ctx.closePath(); ctx.fill();
+    const flick = 0.8 + 0.2 * Math.sin(t / 300 + i * 2.1);
+    const lg = ctx.createRadialGradient(lx, 78, 4, lx, 78, 85);
+    lg.addColorStop(0, `rgba(255,214,130,${0.45 * flick})`);
+    lg.addColorStop(1, 'rgba(255,214,130,0)');
+    ctx.fillStyle = lg;
+    ctx.beginPath(); ctx.arc(lx, 78, 85, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffe9b0';
+    ctx.beginPath(); ctx.arc(lx, 76, 5, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
 function drawBackground(t) {
+  if (level.indoor) { drawWarehouseBackground(t); return; }
   const alt = levelAltitude();
   // vertical parallax: the whole skyline sinks as Batman climbs above it
   const skySink = (level.pixelHeight - CANVAS_H - camera.y) * 0.22;
@@ -1046,6 +1370,13 @@ function wallAt(tx) {
   return null;
 }
 
+function houseAt(tx) {
+  for (const hs of level.houses) {
+    if (tx >= hs.x && tx < hs.x + hs.w) return hs;
+  }
+  return null;
+}
+
 function drawTiles() {
   const tx0 = Math.floor(camera.x / TILE);
   const tx1 = Math.ceil((camera.x + CANVAS_W) / TILE);
@@ -1055,6 +1386,9 @@ function drawTiles() {
     for (let tx = Math.max(0, tx0); tx <= Math.min(level.width - 1, tx1); tx++) {
       if (!level.solid[ty][tx]) continue;
       const px = tx * TILE - camera.x, py = ty * TILE - camera.y;
+      // gabled houses paint their own roof + facade in drawHouses()
+      const hs = houseAt(tx);
+      if (hs && ty < hs.baseRow) continue;
       const wall = ty < level.groundY ? wallAt(tx) : null;
 
       if (wall) {
@@ -1124,8 +1458,102 @@ function drawRooftopProps() {
   }
 }
 
+// Gabled ("2 aguas") houses: brick facade, stepped shingled roof slopes
+// meeting at a flat ridge, attic window, chimney with drifting smoke.
+function drawHouses(t) {
+  for (const hs of level.houses) {
+    const x0 = hs.x * TILE - camera.x;
+    const wpx = hs.w * TILE;
+    if (x0 + wpx < -40 || x0 > CANVAS_W + 40) continue;
+    const eaveY = (hs.eaveRow + 1) * TILE - camera.y;
+    const baseY = hs.baseRow * TILE - camera.y;
+
+    // brick facade
+    ctx.fillStyle = '#4a3a30';
+    ctx.fillRect(x0, eaveY, wpx, baseY - eaveY);
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 1;
+    for (let y = eaveY + 11; y < baseY; y += 11) {
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + wpx, y); ctx.stroke();
+    }
+    // lit windows on the facade
+    if (baseY - eaveY >= 30) {
+      for (let k = 0; k < 2; k++) {
+        const wx = x0 + wpx * (0.22 + k * 0.45);
+        ctx.fillStyle = hash01(hs.x + k * 7) > 0.35 ? '#ffcf6b' : '#1c2438';
+        ctx.fillRect(wx, eaveY + 9, 13, 16);
+        ctx.strokeStyle = '#241f1a';
+        ctx.strokeRect(wx, eaveY + 9, 13, 16);
+      }
+    }
+
+    // stepped roof columns with shingle rows; a diagonal bevel at each step
+    // corner turns the tile staircase into a readable two-slope roofline
+    for (let i = 0; i < hs.w; i++) {
+      const colTop = hs.topRow + Math.max(0, (hs.w / 2 - 1) - Math.min(i, hs.w - 1 - i));
+      const cx0 = (hs.x + i) * TILE - camera.x;
+      const cy0 = colTop * TILE - camera.y;
+      const chh = eaveY - cy0;
+      if (chh <= 0) continue;
+      ctx.fillStyle = '#39415c';
+      ctx.fillRect(cx0, cy0, TILE, chh);
+      ctx.strokeStyle = 'rgba(20,25,44,0.55)';
+      ctx.lineWidth = 1.5;
+      for (let sy = cy0 + 8; sy < eaveY; sy += 8) {
+        ctx.beginPath(); ctx.moveTo(cx0 + 1, sy); ctx.lineTo(cx0 + TILE - 1, sy); ctx.stroke();
+      }
+      // slope highlight along the top of each step
+      ctx.fillStyle = '#99a3c0';
+      ctx.fillRect(cx0, cy0, TILE, 2.5);
+      // corner bevels pointing up toward the ridge
+      const onLeftSlope = i < hs.w / 2 - 1;
+      const onRightSlope = i > hs.w / 2;
+      ctx.fillStyle = '#39415c';
+      if (onLeftSlope) {
+        ctx.beginPath();
+        ctx.moveTo(cx0 + TILE - 13, cy0);
+        ctx.lineTo(cx0 + TILE, cy0);
+        ctx.lineTo(cx0 + TILE, cy0 - 13);
+        ctx.closePath(); ctx.fill();
+      } else if (onRightSlope) {
+        ctx.beginPath();
+        ctx.moveTo(cx0, cy0 - 13);
+        ctx.lineTo(cx0, cy0);
+        ctx.lineTo(cx0 + 13, cy0);
+        ctx.closePath(); ctx.fill();
+      }
+    }
+    // eave fascia
+    ctx.fillStyle = '#22263a';
+    ctx.fillRect(x0 - 6, eaveY - 4, wpx + 12, 5);
+
+    // attic window in the gable, just under the ridge
+    const cxm = x0 + wpx / 2;
+    const atticY = (hs.topRow + 1) * TILE - camera.y + 6;
+    ctx.fillStyle = '#ffcf6b';
+    ctx.beginPath(); ctx.arc(cxm, atticY, 5.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#181b28';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // chimney on the right slope with smoke
+    const chCol = hs.w - 2;
+    const chTop = (hs.topRow + 1) * TILE - camera.y;
+    const chx = (hs.x + chCol) * TILE - camera.x + 10;
+    ctx.fillStyle = '#3a3128';
+    ctx.fillRect(chx, chTop - 20, 13, 20);
+    ctx.fillStyle = '#241f1a';
+    ctx.fillRect(chx - 2, chTop - 24, 17, 5);
+    ctx.fillStyle = 'rgba(200,210,235,0.13)';
+    const puff = (t / 900 + hs.x) % 1;
+    ctx.beginPath(); ctx.ellipse(chx + 8 + puff * 8, chTop - 34 - puff * 14, 8 + puff * 5, 5 + puff * 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(chx + 14 + puff * 12, chTop - 48 - puff * 18, 10 + puff * 6, 6 + puff * 3, 0, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
 function drawSwingPoints(t) {
   for (const sp of level.swingPoints) {
+    if (sp.minR) continue; // trapezes have their own rendering
     const px = sp.x - camera.x;
     if (px < -30 || px > CANVAS_W + 30) continue;
     const ay = sp.y - camera.y;
@@ -1161,12 +1589,57 @@ function drawSwingRope() {
   if (!player.swinging) return;
   const a = player.swingAnchor;
   const px = a.x - camera.x;
+  const hx = player.x + player.w / 2 - camera.x;
+  const hy = player.y + player.h * 0.2 - camera.y;
   ctx.strokeStyle = '#c9cdd6';
   ctx.lineWidth = 2;
+  if (a.minR) {
+    // trapeze: two ropes down to the bar in Batman's hands
+    ctx.beginPath();
+    ctx.moveTo(px - 12, a.y - camera.y);
+    ctx.lineTo(hx - 10, hy);
+    ctx.moveTo(px + 12, a.y - camera.y);
+    ctx.lineTo(hx + 10, hy);
+    ctx.stroke();
+    ctx.fillStyle = '#8a6a42';
+    ctx.fillRect(hx - 15, hy - 2, 30, 5);
+    return;
+  }
   ctx.beginPath();
   ctx.moveTo(px, a.y - camera.y);
-  ctx.lineTo(player.x + player.w / 2 - camera.x, player.y + player.h * 0.2 - camera.y);
+  ctx.lineTo(hx, hy);
   ctx.stroke();
+}
+
+// Idle trapezes hanging from the warehouse rafters, swaying gently.
+function drawTrapezes(t) {
+  for (const sp of level.swingPoints) {
+    if (!sp.minR) continue;
+    if (player.swinging && player.swingAnchor === sp) continue;
+    const ax = sp.x - camera.x;
+    if (ax < -60 || ax > CANVAS_W + 60) continue;
+    const ay = sp.y - camera.y;
+    const sway = Math.sin(t / 800 + sp.x) * 5;
+    const barX = ax + sway;
+    const barY = ay + sp.minR;
+    // ceiling mount
+    ctx.fillStyle = '#2f2721';
+    ctx.fillRect(ax - 16, ay - 6, 32, 7);
+    ctx.strokeStyle = '#c9cdd6';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(ax - 12, ay);
+    ctx.lineTo(barX - 13, barY);
+    ctx.moveTo(ax + 12, ay);
+    ctx.lineTo(barX + 13, barY);
+    ctx.stroke();
+    // wooden bar
+    ctx.fillStyle = '#8a6a42';
+    ctx.fillRect(barX - 19, barY, 38, 6);
+    ctx.strokeStyle = '#241f1a';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(barX - 19, barY, 38, 6);
+  }
 }
 
 function drawCoins(t) {
@@ -1257,21 +1730,46 @@ function drawBirds(t) {
   }
 }
 
-function drawFlag() {
+// Level exit: a rooftop access door with a glowing bat-emblem sign — no
+// more flagpoles. The trigger area is the same as before.
+function drawExit(t) {
+  if (level.indoor) return;
   const px = level.flag.x - camera.x;
-  const topY = level.flag.topY - camera.y;
+  if (px < -60 || px > CANVAS_W + 60) return;
   const baseY = level.flag.y - camera.y;
-  ctx.strokeStyle = '#c7c7c7';
-  ctx.lineWidth = 4;
+  const doorW = 30, doorH = 42;
+
+  // warm glow spilling out
+  const glow = 0.7 + 0.3 * Math.sin(t / 400);
+  const grad = ctx.createRadialGradient(px, baseY - doorH / 2, 6, px, baseY - doorH / 2, 55);
+  grad.addColorStop(0, `rgba(255,209,102,${0.30 * glow})`);
+  grad.addColorStop(1, 'rgba(255,209,102,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath(); ctx.arc(px, baseY - doorH / 2, 55, 0, Math.PI * 2); ctx.fill();
+
+  // doorway housing
+  ctx.fillStyle = '#242c40';
+  ctx.fillRect(px - doorW / 2 - 5, baseY - doorH - 8, doorW + 10, doorH + 8);
+  ctx.fillStyle = '#12151f';
+  ctx.fillRect(px - doorW / 2, baseY - doorH, doorW, doorH);
+  ctx.strokeStyle = '#ffd166';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(px - doorW / 2, baseY - doorH, doorW, doorH);
+  // door handle
+  ctx.fillStyle = '#ffd166';
+  ctx.fillRect(px + doorW / 2 - 7, baseY - doorH / 2, 3, 6);
+
+  // small glowing bat emblem above the door
+  const ey = baseY - doorH - 18;
+  ctx.fillStyle = `rgba(255,224,150,${0.85 * glow})`;
+  ctx.beginPath(); ctx.arc(px, ey, 9, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#12151f';
   ctx.beginPath();
-  ctx.moveTo(px, topY);
-  ctx.lineTo(px, baseY + TILE * 0.5);
-  ctx.stroke();
-  ctx.fillStyle = '#29d985';
-  ctx.beginPath();
-  ctx.moveTo(px, topY + 6);
-  ctx.lineTo(px + 26, topY + 16);
-  ctx.lineTo(px, topY + 26);
+  ctx.moveTo(px, ey - 2);
+  ctx.lineTo(px - 3, ey - 5); ctx.lineTo(px - 2, ey - 2); ctx.lineTo(px - 8, ey - 4);
+  ctx.lineTo(px - 4, ey + 1); ctx.lineTo(px - 3, ey + 4); ctx.lineTo(px, ey + 2);
+  ctx.lineTo(px + 3, ey + 4); ctx.lineTo(px + 4, ey + 1); ctx.lineTo(px + 8, ey - 4);
+  ctx.lineTo(px + 2, ey - 2); ctx.lineTo(px + 3, ey - 5);
   ctx.closePath();
   ctx.fill();
 }
@@ -1495,6 +1993,319 @@ function drawBatarangs() {
   }
 }
 
+// ---------------------------------------------------------------
+// Bane rendering
+// ---------------------------------------------------------------
+function drawBane(t) {
+  const bn = level.bane;
+  if (!bn) return;
+  const floorY = level.groundY * TILE - camera.y;
+
+  if (!bn.alive) {
+    // knocked out flat on the warehouse floor
+    const px = bn.x - camera.x;
+    ctx.fillStyle = '#4a525f';
+    ctx.beginPath();
+    ctx.ellipse(px + bn.w / 2, floorY - 16, bn.w * 0.55, 15, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#e8e4dc';
+    ctx.beginPath();
+    ctx.ellipse(px + bn.w * 0.15, floorY - 18, 14, 11, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#15171c';
+    ctx.fillRect(px + bn.w * 0.15 - 12, floorY - 21, 24, 6);
+    return;
+  }
+
+  const flashing = performance.now() < bn.hitUntil && Math.floor(performance.now() / 90) % 2 === 0;
+  if (flashing) return;
+
+  const px = bn.x - camera.x;
+  let py = bn.y - camera.y;
+  let bw = bn.w, bh = bn.h;
+
+  // telegraph: crouch + tremble before the shockwave jump
+  let shakeX = 0;
+  if (bn.state === 'telegraph') {
+    shakeX = Math.sin(t / 30) * 2.5;
+    py += bh * 0.12;
+    bh *= 0.88;
+    // danger glow on the floor under him
+    ctx.fillStyle = `rgba(255,120,80,${0.18 + 0.12 * Math.sin(t / 90)})`;
+    ctx.beginPath();
+    ctx.ellipse(px + bw / 2, floorY, bw * 1.1, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.save();
+  ctx.translate(shakeX, 0);
+
+  const cx = px + bw / 2;
+  const scale = bh / BANE_BIG.h; // proportions shared by small & grown Bane
+
+  // legs / pants
+  ctx.fillStyle = '#20242c';
+  ctx.fillRect(px + bw * 0.12, py + bh * 0.62, bw * 0.76, bh * 0.38);
+  // torso
+  ctx.fillStyle = '#5b6470';
+  ctx.beginPath();
+  ctx.moveTo(px + bw * 0.10, py + bh * 0.66);
+  ctx.lineTo(px + bw * 0.02, py + bh * 0.26);
+  ctx.quadraticCurveTo(px - bw * 0.08, py + bh * 0.12, px + bw * 0.2, py + bh * 0.10);
+  ctx.lineTo(px + bw * 0.8, py + bh * 0.10);
+  ctx.quadraticCurveTo(px + bw * 1.08, py + bh * 0.12, px + bw * 0.98, py + bh * 0.26);
+  ctx.lineTo(px + bw * 0.90, py + bh * 0.66);
+  ctx.closePath();
+  ctx.fill();
+  // arms
+  ctx.fillStyle = '#6b7482';
+  ctx.beginPath();
+  ctx.ellipse(px - bw * 0.08, py + bh * 0.42, bw * 0.16, bh * 0.28, 0.25, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(px + bw * 1.08, py + bh * 0.42, bw * 0.16, bh * 0.28, -0.25, 0, Math.PI * 2);
+  ctx.fill();
+  // fists
+  ctx.fillStyle = '#20242c';
+  ctx.beginPath(); ctx.arc(px - bw * 0.12, py + bh * 0.68, 11 * scale + 4, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(px + bw * 1.12, py + bh * 0.68, 11 * scale + 4, 0, Math.PI * 2); ctx.fill();
+  // chest harness
+  ctx.strokeStyle = '#171a20';
+  ctx.lineWidth = Math.max(3, 6 * scale);
+  ctx.beginPath();
+  ctx.moveTo(cx - bw * 0.28, py + bh * 0.14); ctx.lineTo(cx + bw * 0.12, py + bh * 0.5);
+  ctx.moveTo(cx + bw * 0.28, py + bh * 0.14); ctx.lineTo(cx - bw * 0.12, py + bh * 0.5);
+  ctx.stroke();
+
+  // head with the luchador mask
+  const headW = bw * 0.46, headH = bh * 0.30;
+  const hx = cx - headW / 2, hy = py - headH * 0.28;
+  ctx.fillStyle = '#e8e4dc';
+  ctx.beginPath();
+  ctx.roundRect(hx, hy, headW, headH, 6);
+  ctx.fill();
+  // black stripes
+  ctx.fillStyle = '#15171c';
+  ctx.fillRect(hx, hy + headH * 0.34, headW, headH * 0.2);
+  ctx.fillRect(cx - headW * 0.09, hy, headW * 0.18, headH);
+  // red eyes
+  ctx.fillStyle = '#ff4444';
+  ctx.fillRect(hx + headW * 0.16, hy + headH * 0.38, headW * 0.17, headH * 0.12);
+  ctx.fillRect(hx + headW * 0.67, hy + headH * 0.38, headW * 0.17, headH * 0.12);
+  // mouth grille
+  ctx.fillStyle = '#454b57';
+  ctx.fillRect(cx - headW * 0.26, hy + headH * 0.68, headW * 0.52, headH * 0.24);
+  ctx.strokeStyle = '#15171c';
+  ctx.lineWidth = 1.5;
+  for (let i = 1; i < 4; i++) {
+    const gx = cx - headW * 0.26 + headW * 0.52 * (i / 4);
+    ctx.beginPath(); ctx.moveTo(gx, hy + headH * 0.68); ctx.lineTo(gx, hy + headH * 0.92); ctx.stroke();
+  }
+  // venom tube + wrist button (green)
+  ctx.strokeStyle = '#39c26a';
+  ctx.lineWidth = Math.max(2.5, 4 * scale);
+  ctx.beginPath();
+  ctx.moveTo(cx + headW * 0.5, hy + headH * 0.55);
+  ctx.quadraticCurveTo(cx + bw * 0.55, hy + headH * 0.6, px + bw * 0.95, py + bh * 0.35);
+  ctx.stroke();
+  ctx.fillStyle = '#2b3038';
+  ctx.fillRect(px + bw * 1.02, py + bh * 0.56, 18 * scale + 6, 9 * scale + 4);
+  ctx.fillStyle = '#39c26a';
+  ctx.beginPath();
+  ctx.arc(px + bw * 1.02 + (18 * scale + 6) / 2, py + bh * 0.56 + (9 * scale + 4) / 2, 3.5 * scale + 1.5, 0, Math.PI * 2);
+  ctx.fill();
+
+  // HP pips over his head (5 head hits to win)
+  if (bn.state !== 'idle') {
+    for (let i = 0; i < bn.maxHp; i++) {
+      ctx.fillStyle = i < bn.hp ? '#ff5e5e' : 'rgba(255,255,255,0.25)';
+      ctx.beginPath();
+      ctx.arc(cx - (bn.maxHp - 1) * 6 + i * 12, hy - 14, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawShockwaves() {
+  const floorY = level.groundY * TILE - camera.y;
+  for (const wv of level.waves) {
+    const px = wv.x - camera.x;
+    const fade = Math.max(0, 1 - wv.r / 700);
+    ctx.strokeStyle = `rgba(255,120,80,${0.65 * fade})`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.ellipse(px, floorY, wv.r, 9 + wv.r * 0.05, 0, Math.PI, 0);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255,190,120,${0.4 * fade})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(px, floorY, Math.max(4, wv.r - 22), 7 + wv.r * 0.04, 0, Math.PI, 0);
+    ctx.stroke();
+  }
+}
+
+// ---------------------------------------------------------------
+// Intro cutscene: Dos Caras drags a tied-up Robin away into the night
+// ---------------------------------------------------------------
+function drawIntroScene(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
+  g.addColorStop(0, '#060812');
+  g.addColorStop(0.7, '#10142c');
+  g.addColorStop(1, '#1a2038');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // stars + moon
+  for (let i = 0; i < 40; i++) {
+    ctx.fillStyle = `rgba(220,230,255,${0.2 + 0.5 * hash01(i * 1.7)})`;
+    ctx.fillRect(hash01(i * 7.31) * CANVAS_W, hash01(i * 3.77) * 150, 2, 2);
+  }
+  ctx.fillStyle = '#eceadb';
+  ctx.beginPath(); ctx.arc(640, 70, 26, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#060812';
+  ctx.beginPath(); ctx.arc(652, 63, 26, 0, Math.PI * 2); ctx.fill();
+
+  const groundYpx = 330;
+
+  // Batman watching from a rooftop, left
+  ctx.fillStyle = '#0c0f1e';
+  ctx.fillRect(0, 160, 190, CANVAS_H - 160);
+  ctx.fillStyle = '#161b30';
+  ctx.fillRect(0, 160, 190, 8);
+  ctx.save();
+  ctx.translate(120, 118);
+  ctx.shadowColor = 'rgba(150,185,230,0.7)';
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = '#131722';
+  ctx.beginPath(); // crouched silhouette with cape
+  ctx.moveTo(0, 42);
+  ctx.lineTo(4, 20); ctx.lineTo(0, 12); ctx.lineTo(6, 0); ctx.lineTo(10, 8);
+  ctx.lineTo(18, 8); ctx.lineTo(22, 0); ctx.lineTo(28, 12);
+  ctx.lineTo(26, 24); ctx.lineTo(40, 34); ctx.lineTo(34, 42);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(9, 14, 5, 2.5);
+  ctx.fillRect(17, 14, 5, 2.5);
+  ctx.restore();
+
+  // getaway van, right — rear doors open
+  ctx.fillStyle = '#23283c';
+  ctx.fillRect(600, groundYpx - 74, 160, 74);
+  ctx.fillStyle = '#181c2c';
+  ctx.fillRect(600, groundYpx - 74, 44, 74);
+  ctx.fillStyle = '#0c0f1a';
+  ctx.beginPath(); ctx.arc(640, groundYpx, 15, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(730, groundYpx, 15, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#101423';
+  ctx.fillRect(586, groundYpx - 70, 14, 70); // open rear door
+  ctx.fillStyle = '#05070d';
+  ctx.fillRect(600, groundYpx - 68, 26, 62); // dark cargo hold
+
+  // street
+  ctx.fillStyle = '#20232f';
+  ctx.fillRect(190, groundYpx, CANVAS_W - 190, CANVAS_H - groundYpx);
+  ctx.fillStyle = '#161923';
+  ctx.fillRect(190, groundYpx, CANVAS_W - 190, 6);
+
+  // streetlamp lighting the kidnapping
+  ctx.strokeStyle = '#3a3f4b';
+  ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(390, groundYpx); ctx.lineTo(390, 150); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(390, 150); ctx.lineTo(420, 162); ctx.stroke();
+  const lg = ctx.createRadialGradient(420, 165, 5, 420, 165, 130);
+  lg.addColorStop(0, 'rgba(255,224,150,0.45)');
+  lg.addColorStop(1, 'rgba(255,224,150,0)');
+  ctx.fillStyle = lg;
+  ctx.beginPath(); ctx.arc(420, 165, 130, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffe096';
+  ctx.beginPath(); ctx.arc(420, 164, 6, 0, Math.PI * 2); ctx.fill();
+
+  // --- Dos Caras dragging Robin toward the van ---
+  const dx = 470, dy = groundYpx - 78;
+  // split suit: dark half / purple half
+  ctx.fillStyle = '#2a2e38';
+  ctx.fillRect(dx, dy + 26, 17, 52);
+  ctx.fillStyle = '#5a2d8c';
+  ctx.fillRect(dx + 17, dy + 26, 17, 52);
+  // split face
+  ctx.fillStyle = '#e8b88a';
+  ctx.fillRect(dx + 3, dy, 14, 24);
+  ctx.fillStyle = '#a2303c'; // burned half
+  ctx.fillRect(dx + 17, dy, 14, 24);
+  ctx.fillStyle = '#141824'; // hair
+  ctx.fillRect(dx + 1, dy - 5, 32, 8);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(dx + 7, dy + 8, 4, 3);
+  ctx.fillStyle = '#ffdd55'; // wild eye on the scarred side
+  ctx.fillRect(dx + 22, dy + 8, 5, 4);
+  ctx.fillStyle = '#701f28';
+  ctx.fillRect(dx + 17, dy + 16, 14, 2.5); // scarred grin
+  ctx.fillStyle = '#10131c';
+  ctx.fillRect(dx + 2, dy + 78, 12, 8);
+  ctx.fillRect(dx + 20, dy + 78, 12, 8);
+  // his arm gripping Robin
+  ctx.strokeStyle = '#5a2d8c';
+  ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.moveTo(dx + 31, dy + 34); ctx.lineTo(dx + 62, dy + 46); ctx.stroke();
+
+  // Robin: tied with rope, being dragged
+  const rx = 530, ry = groundYpx - 60;
+  ctx.save();
+  ctx.translate(rx, ry);
+  ctx.rotate(0.15);
+  ctx.fillStyle = '#c0392b'; // tunic
+  ctx.fillRect(0, 14, 24, 26);
+  ctx.fillStyle = '#f1c40f'; // small cape
+  ctx.beginPath();
+  ctx.moveTo(22, 16); ctx.lineTo(36, 34); ctx.lineTo(24, 40); ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#e8b88a'; // face
+  ctx.fillRect(4, -6, 16, 20);
+  ctx.fillStyle = '#141824'; // hair
+  ctx.fillRect(2, -10, 20, 7);
+  ctx.fillStyle = '#0c0d10'; // domino mask
+  ctx.fillRect(4, 0, 16, 5);
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(6, 1, 4, 3);
+  ctx.fillRect(14, 1, 4, 3);
+  ctx.fillStyle = '#1e8449'; // legs
+  ctx.fillRect(2, 40, 9, 14);
+  ctx.fillRect(13, 40, 9, 14);
+  // ropes around the torso
+  ctx.strokeStyle = '#cfd0c9';
+  ctx.lineWidth = 3;
+  for (const yy of [18, 25, 32]) {
+    ctx.beginPath(); ctx.moveTo(-1, yy); ctx.lineTo(25, yy); ctx.stroke();
+  }
+  ctx.restore();
+  // help cry
+  ctx.fillStyle = '#dbe4ff';
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('¡BATMAN!', rx + 14, ry - 26);
+
+  // story panel
+  ctx.fillStyle = 'rgba(6,8,16,0.92)';
+  ctx.fillRect(40, 386, CANVAS_W - 80, 84);
+  ctx.strokeStyle = '#ffd166';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(40, 386, CANVAS_W - 80, 84);
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 15px monospace';
+  ctx.fillText('ACTO 1 — LA PISTA', CANVAS_W / 2, 408);
+  ctx.fillStyle = '#dbe4ff';
+  ctx.font = '12px monospace';
+  ctx.fillText('Dos Caras secuestró a Robin y desapareció en la noche.', CANVAS_W / 2, 428);
+  ctx.fillText('Seguí su rastro por los techos hasta el galpón de Bane, su matón.', CANVAS_W / 2, 444);
+  if (Math.floor(t / 500) % 2 === 0) {
+    ctx.fillStyle = '#29d985';
+    ctx.font = 'bold 12px monospace';
+    ctx.fillText('TOCÁ LA PANTALLA O SALTÁ PARA EMPEZAR', CANVAS_W / 2, 462);
+  }
+}
+
 function drawHeroMessage() {
   if (Date.now() >= heroMessageUntil) return;
   const { total, defeated } = levelEnemyTotals();
@@ -1530,16 +2341,20 @@ function render(t) {
   drawBackground(t);
   drawSwingPoints(t);
   drawTiles();
+  drawHouses(t);
   drawRooftopProps();
   drawTrash(t);
+  drawExit(t);
   drawCoins(t);
   drawBats(t);
   drawBatarangs();
+  drawTrapezes(t);
   drawSwingRope();
   drawThugs();
   drawBirds(t);
   drawVillain();
-  drawFlag();
+  drawBane(t);
+  drawShockwaves();
   drawPlayer();
   drawHeroMessage();
 
@@ -1566,9 +2381,11 @@ function loop(now) {
   if (state === 'playing' || state === 'levelcomplete') {
     update(dt);
     render(now);
+  } else if (state === 'cutscene') {
+    drawIntroScene(now);
   }
   requestAnimationFrame(loop);
 }
 
-showOverlay('BIT BROS', 'Gotham de noche: los edificios bloquean la calle y la única salida es hacia arriba. Saltá cerca de un poste de luz para engancharte con la cuerda, balanceate hasta los techos y avanzá por las alturas. Pisá ladrones, esquivá pájaros y agarrá el emblema de Batman para tirar batarangs. En la cima de la última torre te espera un villano con sonrisa siniestra.', 'JUGAR');
+showOverlay('BIT BROS — ACTO 1', 'Dos Caras secuestró a Robin. La única pista lleva al galpón de Bane, al otro lado de los techos de Gotham. Saltá cerca de un poste de luz para engancharte con la cuerda, trepá casas y edificios, pisá ladrones y esquivá pájaros. El emblema de Batman te hace más fuerte. Al final del camino, Bane te espera en su galpón.', 'JUGAR');
 requestAnimationFrame(loop);

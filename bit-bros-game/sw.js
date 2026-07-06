@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bit-bros-v3';
+const CACHE_NAME = 'bit-bros-v4';
 const ASSETS = [
   './',
   './index.html',

@@ -149,6 +149,9 @@ canvas {
 
 .touch-jump { width: 68px; height: 68px; }
 
+/* The batarang is an Act 2 upgrade — no shoot button in Act 1. */
+#btn-shoot { display: none; }
+
 @media (hover: none) and (pointer: coarse) {
   .float-controls { display: flex; }
 }
