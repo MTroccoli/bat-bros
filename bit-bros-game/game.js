@@ -1,5 +1,5 @@
 /* ============================================================
-   BIT BROS — platformer clásico en Canvas 2D, sin dependencias.
+   BIT BROS — platformer de Gotham en Canvas 2D, sin dependencias.
    ============================================================ */
 
 const TILE = 32;
@@ -21,17 +21,21 @@ const LEVEL_TIME = 400;
 
 const JUMP_BUFFER_MS = 140;   // a jump press is remembered briefly so a tap never gets lost to frame timing
 const COYOTE_MS = 90;         // short grace window to jump after walking off a ledge
-const SHOOT_COOLDOWN_MS = 400;
-const FIREBALL_SPEED = 6.5;
-const FIREBALL_GRAVITY = 0.5;
-const FIREBALL_LIFESPAN_MS = 2500;
+const SHOOT_COOLDOWN_MS = 500;
+const BATARANG_SPEED = 7.5;
+const BATARANG_RANGE = 260;
+const BATARANG_LIFESPAN_MS = 3000;
 const MUSHROOM_SCORE = 1000;
-const FLOWER_SCORE = 1000;
+const BAT_SCORE = 1000;
+
+const GRAPPLE_RANGE = 170;       // how close to a lamppost anchor before Batman auto-latches on
+const SWING_RELEASE_ANGLE = 1.15; // ~66° from vertical: natural release point at the top of the arc
+const GRAPPLE_COOLDOWN_MS = 500;  // prevents instantly re-grabbing the same anchor after letting go
 
 const SIZES = {
   small: { w: 22, h: 30 },
   big: { w: 24, h: 40 },
-  fire: { w: 24, h: 40 },
+  batarang: { w: 24, h: 40 },
 };
 
 // ---------------------------------------------------------------
@@ -39,7 +43,8 @@ const SIZES = {
 // ---------------------------------------------------------------
 function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], coins = [],
-          goombas = [], mushrooms = [], flowers = [], flag, spawn, name } = spec;
+          thugs = [], birds = [], mushrooms = [], bats = [], swingPoints = [],
+          flag, spawn, name } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
 
@@ -59,18 +64,25 @@ function buildLevel(spec) {
     width, height, groundY,
     solid,
     coins: coins.map(([x, y]) => ({ x: x * TILE + TILE / 2, y: y * TILE + TILE / 2, taken: false })),
-    goombas: goombas.map(g => ({
-      x: g.x * TILE, y: g.y * TILE - 24,
-      w: 26, h: 24,
+    thugs: thugs.map(g => ({
+      x: g.x * TILE, y: g.y * TILE - 26,
+      w: 24, h: 26,
       minX: g.range[0] * TILE, maxX: g.range[1] * TILE,
-      vx: 1.2, alive: true, squash: 0,
+      vx: 1.2, alive: true,
+    })),
+    birds: birds.map(b => ({
+      x: b.x * TILE, y: b.y * TILE, baseY: b.y * TILE,
+      w: 26, h: 20,
+      minX: b.range[0] * TILE, maxX: b.range[1] * TILE,
+      vx: 1.7, alive: true,
     })),
     mushrooms: mushrooms.map(([x, row]) => ({
       x: x * TILE, y: row * TILE - 22, w: 24, h: 22, taken: false,
     })),
-    flowers: flowers.map(([x, row]) => ({
-      x: x * TILE, y: row * TILE - 24, w: 22, h: 24, taken: false,
+    bats: bats.map(([x, row]) => ({
+      x: x * TILE, y: row * TILE - 22, w: 24, h: 20, taken: false,
     })),
+    swingPoints: swingPoints.map(([x, row]) => ({ x: x * TILE + 16, y: row * TILE })),
     villain: spec.villain ? {
       x: spec.villain.x * TILE, y: spec.villain.y * TILE - 42,
       w: 30, h: 42,
@@ -104,21 +116,24 @@ const LEVEL_SPECS = [
       [56, 8], [57, 8],
       [14, 12], [24, 12], [36, 12], [48, 12], [62, 12],
     ],
-    goombas: [
+    thugs: [
       { x: 12, y: 13, range: [10, 17] },
       { x: 25, y: 13, range: [23, 39] },
       { x: 46, y: 13, range: [43, 51] },
       { x: 58, y: 13, range: [55, 66] },
     ],
+    birds: [
+      { x: 20, y: 9, range: [17, 27] },
+    ],
     mushrooms: [[6, 13]],
-    flowers: [[31, 9]],
+    bats: [[31, 9]],
     flag: { x: 66, y: 3 },
     spawn: { x: 2, y: 11 },
   },
   {
     name: '1-2',
-    width: 85, height: 15, groundY: 13,
-    pits: [[10, 11], [24, 26], [38, 39], [55, 58], [70, 71]],
+    width: 100, height: 15, groundY: 13,
+    pits: [[10, 11], [24, 26], [38, 39], [55, 58], [70, 71], [86, 93]],
     // Platforms sit 4 tiles above the ground (clearing a running player's
     // head, well within the jump's ~5-tile max height) and are spaced with
     // at least 5 clear tiles of runway on both sides so a jump never clips
@@ -128,23 +143,31 @@ const LEVEL_SPECS = [
       { x: 46, y: 9, w: 3 },
       { x: 63, y: 9, w: 3 },
     ],
+    // A gap too wide to jump (8 tiles) — the only way across is to leap up
+    // toward the streetlamp and swing, Batman-style.
+    swingPoints: [[89, 6]],
     coins: [
       [17, 8],
       [47, 8],
       [64, 8], [65, 8],
-      [3, 12], [20, 12], [33, 12], [52, 12], [67, 12], [79, 12],
+      [3, 12], [20, 12], [33, 12], [52, 12], [67, 12], [79, 12], [96, 12],
     ],
-    goombas: [
+    thugs: [
       { x: 6, y: 13, range: [3, 9] },
       { x: 16, y: 13, range: [13, 22] },
       { x: 30, y: 13, range: [28, 36] },
       { x: 44, y: 13, range: [41, 53] },
       { x: 62, y: 13, range: [60, 68] },
       { x: 78, y: 13, range: [74, 83] },
+      { x: 96, y: 13, range: [94, 99] },
+    ],
+    birds: [
+      { x: 23, y: 9, range: [21, 29] },
+      { x: 88, y: 9, range: [84, 96] },
     ],
     mushrooms: [[3, 13]],
-    flowers: [[47, 9]],
-    flag: { x: 82, y: 3 },
+    bats: [[47, 9]],
+    flag: { x: 97, y: 3 },
     spawn: { x: 2, y: 11 },
   },
   {
@@ -172,7 +195,7 @@ const LEVEL_SPECS = [
       [81, 8], [82, 8],
       [5, 12], [24, 12], [42, 12], [56, 12], [70, 12], [85, 12],
     ],
-    goombas: [
+    thugs: [
       { x: 6, y: 13, range: [3, 8] },
       { x: 16, y: 13, range: [13, 19] },
       { x: 27, y: 13, range: [24, 31] },
@@ -181,8 +204,12 @@ const LEVEL_SPECS = [
       { x: 65, y: 13, range: [62, 70] },
       { x: 80, y: 13, range: [76, 86] },
     ],
+    birds: [
+      { x: 19, y: 9, range: [17, 25] },
+      { x: 57, y: 9, range: [55, 63] },
+    ],
     mushrooms: [[3, 13]],
-    flowers: [[28, 9]],
+    bats: [[28, 9]],
     villain: { x: 95, y: 13, range: [92, 98], hp: 3 },
     flag: { x: 97, y: 3 },
     spawn: { x: 2, y: 11 },
@@ -221,7 +248,7 @@ window.addEventListener('keyup', e => {
 
 // Pointer Events unify touch/mouse/pen with a single listener set and, via
 // setPointerCapture, keep tracking the press even if the finger slides off
-// the button — this is what was causing left/right/jump to randomly "not work".
+// the button.
 function bindButton(id, onDown, onUp) {
   const el = document.getElementById(id);
   const down = e => { e.preventDefault(); el.setPointerCapture?.(e.pointerId); onDown(); };
@@ -267,8 +294,9 @@ let timeAccum = 0;
 let invulnUntil = 0;
 let stateTimer = 0;
 let frameTime = 0;
-let currentPowerState = 'small'; // small | big | fire — carries over between levels, resets on death
-let fireballs = [];
+let currentPowerState = 'small'; // small | big | batarang — carries over between levels, resets on death
+let batarangs = [];
+let grappleCooldownUntil = 0;
 
 function newPlayer(spawn, powerState = 'small') {
   const size = SIZES[powerState];
@@ -276,6 +304,7 @@ function newPlayer(spawn, powerState = 'small') {
     x: spawn.x, y: spawn.y, w: size.w, h: size.h,
     vx: 0, vy: 0, onGround: false, facing: 1, dead: false,
     powerState,
+    swinging: false, swingAnchor: null, swingRadius: 0, swingAngle: 0, swingAngularVel: 0,
   };
 }
 
@@ -290,54 +319,112 @@ function setPowerState(newState) {
   currentPowerState = newState;
 }
 
-function spawnFireball() {
-  fireballs.push({
+function spawnBatarang() {
+  batarangs.push({
     x: player.facing > 0 ? player.x + player.w : player.x - 10,
-    y: player.y + player.h * 0.55,
-    vx: FIREBALL_SPEED * player.facing,
-    vy: 2,
-    r: 7,
+    y: player.y + player.h * 0.4,
+    vx: BATARANG_SPEED * player.facing,
+    traveled: 0,
+    phase: 'out',
+    rot: 0,
     bornAt: performance.now(),
     alive: true,
   });
 }
 
-function updateFireballs(dt) {
-  for (const fb of fireballs) {
-    if (!fb.alive) continue;
-    fb.vy += FIREBALL_GRAVITY * dt;
-    fb.x += fb.vx * dt;
-    fb.y += fb.vy * dt;
+function updateBatarangs(dt) {
+  for (const b of batarangs) {
+    if (!b.alive) continue;
+    b.rot += 0.4 * dt;
 
-    if (performance.now() - fb.bornAt > FIREBALL_LIFESPAN_MS) { fb.alive = false; continue; }
-    if (fb.y > level.pixelHeight + 60) { fb.alive = false; continue; }
+    if (performance.now() - b.bornAt > BATARANG_LIFESPAN_MS) { b.alive = false; continue; }
 
-    if (fb.vy > 0 && isSolidTile(Math.floor(fb.x / TILE), Math.floor((fb.y + fb.r) / TILE))) {
-      fb.y = Math.floor((fb.y + fb.r) / TILE) * TILE - fb.r;
-      fb.vy = -Math.abs(fb.vy) * 0.7 - 3;
+    if (b.phase === 'out') {
+      const step = b.vx * dt;
+      b.x += step;
+      b.traveled += Math.abs(step);
+      const leadTx = Math.floor((b.x + (b.vx > 0 ? 8 : -8)) / TILE);
+      if (b.traveled >= BATARANG_RANGE || isSolidTile(leadTx, Math.floor(b.y / TILE))) {
+        b.phase = 'back';
+      }
+    } else {
+      const dx = (player.x + player.w / 2) - b.x;
+      const dy = (player.y + player.h / 2) - b.y;
+      const d = Math.hypot(dx, dy) || 1;
+      b.x += (dx / d) * BATARANG_SPEED * dt;
+      b.y += (dy / d) * BATARANG_SPEED * dt;
+      if (d < 20) { b.alive = false; continue; }
     }
-    const leadTx = Math.floor((fb.x + (fb.vx > 0 ? fb.r : -fb.r)) / TILE);
-    if (isSolidTile(leadTx, Math.floor(fb.y / TILE))) { fb.alive = false; continue; }
 
-    for (const g of level.goombas) {
+    if (b.y > level.pixelHeight + 60) { b.alive = false; continue; }
+
+    for (const g of level.thugs) {
       if (!g.alive) continue;
-      if (fb.x + fb.r > g.x && fb.x - fb.r < g.x + g.w && fb.y + fb.r > g.y && fb.y - fb.r < g.y + g.h) {
+      if (b.x + 8 > g.x && b.x - 8 < g.x + g.w && b.y + 8 > g.y && b.y - 8 < g.y + g.h) {
         g.alive = false;
-        fb.alive = false;
         score += 100;
         hud.score.textContent = score;
         break;
       }
     }
-
+    for (const bd of level.birds) {
+      if (!bd.alive) continue;
+      if (b.x + 8 > bd.x && b.x - 8 < bd.x + bd.w && b.y + 8 > bd.y && b.y - 8 < bd.y + bd.h) {
+        bd.alive = false;
+        score += 100;
+        hud.score.textContent = score;
+        break;
+      }
+    }
     const v = level.villain;
-    if (fb.alive && v && v.alive && Date.now() >= v.hitUntil &&
-        fb.x + fb.r > v.x && fb.x - fb.r < v.x + v.w && fb.y + fb.r > v.y && fb.y - fb.r < v.y + v.h) {
-      fb.alive = false;
+    if (v && v.alive && Date.now() >= v.hitUntil &&
+        b.x + 8 > v.x && b.x - 8 < v.x + v.w && b.y + 8 > v.y && b.y - 8 < v.y + v.h) {
       damageVillain();
     }
   }
-  fireballs = fireballs.filter(fb => fb.alive);
+  batarangs = batarangs.filter(b => b.alive);
+}
+
+function tryAttachGrapple(now) {
+  if (now < grappleCooldownUntil || !level.swingPoints.length) return;
+  const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
+  for (const sp of level.swingPoints) {
+    const dist = Math.hypot(sp.x - cx, sp.y - cy);
+    if (dist < GRAPPLE_RANGE && sp.y < cy) {
+      player.swinging = true;
+      player.swingAnchor = sp;
+      player.swingRadius = dist;
+      player.swingAngle = Math.atan2(cx - sp.x, cy - sp.y);
+      const tangential = player.vx * Math.cos(player.swingAngle) - player.vy * Math.sin(player.swingAngle);
+      player.swingAngularVel = tangential / dist;
+      return;
+    }
+  }
+}
+
+function updateSwing(dt, now) {
+  const a = player.swingAnchor;
+  const r = player.swingRadius;
+  const angAccel = -(GRAVITY / r) * Math.sin(player.swingAngle);
+  player.swingAngularVel += angAccel * dt;
+  player.swingAngle += player.swingAngularVel * dt;
+
+  const cx = a.x + r * Math.sin(player.swingAngle);
+  const cy = a.y + r * Math.cos(player.swingAngle);
+  player.x = cx - player.w / 2;
+  player.y = cy - player.h / 2;
+  player.vx = player.swingAngularVel * r * Math.cos(player.swingAngle);
+  player.vy = -player.swingAngularVel * r * Math.sin(player.swingAngle);
+  if (Math.abs(player.vx) > 0.5) player.facing = player.vx > 0 ? 1 : -1;
+  player.onGround = false;
+
+  const releasedByJump = now < jumpBufferUntil;
+  if (releasedByJump || Math.abs(player.swingAngle) > SWING_RELEASE_ANGLE) {
+    player.swinging = false;
+    player.swingAnchor = null;
+    grappleCooldownUntil = now + GRAPPLE_COOLDOWN_MS;
+    if (releasedByJump) { player.vy -= 3; jumpBufferUntil = 0; }
+  }
 }
 
 function loadLevel(idx) {
@@ -347,7 +434,8 @@ function loadLevel(idx) {
   camera.x = 0;
   timeLeft = LEVEL_TIME;
   timeAccum = 0;
-  fireballs = [];
+  batarangs = [];
+  grappleCooldownUntil = 0;
   hud.level.textContent = level.name;
 }
 
@@ -453,7 +541,7 @@ function damageVillain() {
 function hurtPlayer() {
   if (Date.now() < invulnUntil) return;
   if (player.powerState !== 'small') {
-    setPowerState(player.powerState === 'fire' ? 'big' : 'small');
+    setPowerState(player.powerState === 'batarang' ? 'big' : 'small');
     invulnUntil = Date.now() + INVULN_TIME;
     return;
   }
@@ -474,46 +562,53 @@ function showOverlay(title, msg, btnLabel) {
 }
 
 function updatePlaying(dt) {
-  // horizontal input
-  const accel = player.onGround ? MOVE_ACCEL : AIR_ACCEL;
-  if (keys.left && !keys.right) {
-    player.vx -= accel * dt;
-    player.facing = -1;
-  } else if (keys.right && !keys.left) {
-    player.vx += accel * dt;
-    player.facing = 1;
-  } else if (player.onGround) {
-    player.vx *= FRICTION;
-    if (Math.abs(player.vx) < 0.05) player.vx = 0;
-  }
-  player.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, player.vx));
-
-  // jump: buffered press + coyote time, so a tap always registers even if it
-  // lands a frame or two before touching ground / after leaving a ledge
   const now = performance.now();
-  if (player.onGround) coyoteUntil = now + COYOTE_MS;
-  if (now < jumpBufferUntil && now < coyoteUntil) {
-    player.vy = JUMP_VELOCITY;
-    player.onGround = false;
-    jumpBufferUntil = 0;
-    coyoteUntil = 0;
-  }
-  if (!keys.jump && player.vy < JUMP_VELOCITY * JUMP_CUT) {
-    player.vy = JUMP_VELOCITY * JUMP_CUT;
+
+  if (player.swinging) {
+    updateSwing(dt, now);
+  } else {
+    // horizontal input
+    const accel = player.onGround ? MOVE_ACCEL : AIR_ACCEL;
+    if (keys.left && !keys.right) {
+      player.vx -= accel * dt;
+      player.facing = -1;
+    } else if (keys.right && !keys.left) {
+      player.vx += accel * dt;
+      player.facing = 1;
+    } else if (player.onGround) {
+      player.vx *= FRICTION;
+      if (Math.abs(player.vx) < 0.05) player.vx = 0;
+    }
+    player.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, player.vx));
+
+    // jump: buffered press + coyote time, so a tap always registers even if it
+    // lands a frame or two before touching ground / after leaving a ledge
+    if (player.onGround) coyoteUntil = now + COYOTE_MS;
+    if (now < jumpBufferUntil && now < coyoteUntil) {
+      player.vy = JUMP_VELOCITY;
+      player.onGround = false;
+      jumpBufferUntil = 0;
+      coyoteUntil = 0;
+    }
+    if (!keys.jump && player.vy < JUMP_VELOCITY * JUMP_CUT) {
+      player.vy = JUMP_VELOCITY * JUMP_CUT;
+    }
+
+    // gravity
+    player.vy += GRAVITY * dt;
+    if (player.vy > MAX_FALL) player.vy = MAX_FALL;
+
+    moveAndCollide(player, dt);
+
+    if (!player.onGround) tryAttachGrapple(now);
   }
 
-  // shoot (fire flower only)
-  if (now < shootBufferUntil && player.powerState === 'fire' && now - lastShotAt > SHOOT_COOLDOWN_MS) {
-    spawnFireball();
+  // batarang throw (works whether swinging or not)
+  if (now < shootBufferUntil && player.powerState === 'batarang' && now - lastShotAt > SHOOT_COOLDOWN_MS) {
+    spawnBatarang();
     lastShotAt = now;
     shootBufferUntil = 0;
   }
-
-  // gravity
-  player.vy += GRAVITY * dt;
-  if (player.vy > MAX_FALL) player.vy = MAX_FALL;
-
-  moveAndCollide(player, dt);
 
   // fell into a pit
   if (player.y > level.pixelHeight + 60) {
@@ -546,34 +641,54 @@ function updatePlaying(dt) {
     }
   }
 
-  // flowers (fire power)
-  for (const f of level.flowers) {
-    if (f.taken) continue;
-    if (aabbOverlap(player, f)) {
-      f.taken = true;
-      setPowerState('fire');
-      score += FLOWER_SCORE;
+  // bats (batarang power)
+  for (const bat of level.bats) {
+    if (bat.taken) continue;
+    if (aabbOverlap(player, bat)) {
+      bat.taken = true;
+      setPowerState('batarang');
+      score += BAT_SCORE;
       hud.score.textContent = score;
     }
   }
 
-  updateFireballs(dt);
+  updateBatarangs(dt);
 
-  // goombas
-  for (const g of level.goombas) {
+  // thugs
+  for (const g of level.thugs) {
     if (!g.alive) continue;
     g.x += g.vx * dt;
     if (g.x < g.minX) { g.x = g.minX; g.vx = Math.abs(g.vx); }
     if (g.x + g.w > g.maxX) { g.x = g.maxX - g.w; g.vx = -Math.abs(g.vx); }
 
-    const overlapX = player.x < g.x + g.w && player.x + player.w > g.x;
-    const overlapY = player.y < g.y + g.h && player.y + player.h > g.y;
-    if (overlapX && overlapY) {
+    if (aabbOverlap(player, g)) {
       const stomped = player.vy > 0 && (player.y + player.h - g.y) < STOMP_TOLERANCE;
       if (stomped) {
         g.alive = false;
         player.vy = STOMP_BOUNCE;
         score += 100;
+        hud.score.textContent = score;
+      } else {
+        hurtPlayer();
+        return;
+      }
+    }
+  }
+
+  // birds
+  for (const b of level.birds) {
+    if (!b.alive) continue;
+    b.x += b.vx * dt;
+    if (b.x < b.minX) { b.x = b.minX; b.vx = Math.abs(b.vx); }
+    if (b.x + b.w > b.maxX) { b.x = b.maxX - b.w; b.vx = -Math.abs(b.vx); }
+    b.y = b.baseY + Math.sin(now / 300 + b.x * 0.04) * 10;
+
+    if (aabbOverlap(player, b)) {
+      const stomped = player.vy > 0 && (player.y + player.h - b.y) < STOMP_TOLERANCE;
+      if (stomped) {
+        b.alive = false;
+        player.vy = STOMP_BOUNCE;
+        score += 150;
         hud.score.textContent = score;
       } else {
         hurtPlayer();
@@ -642,31 +757,105 @@ function update(dt) {
 // ---------------------------------------------------------------
 // Render
 // ---------------------------------------------------------------
-function drawBackground() {
+function hash01(n) {
+  const x = Math.sin(n * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+function drawSkylineRow(offset, baseline, buildingW, maxH, seed, withWindows, t, buildingColor) {
+  const count = Math.ceil(CANVAS_W / buildingW) + 3;
+  const startIdx = Math.floor(offset / buildingW) - 1;
+  for (let i = startIdx; i < startIdx + count; i++) {
+    const bx = i * buildingW - offset;
+    const h = 70 + hash01(i * seed) * maxH;
+    const by = baseline - h;
+    ctx.fillStyle = buildingColor; // windows below reassign fillStyle, so reset it each building
+    ctx.fillRect(bx, by, buildingW - 4, h + 200);
+    // rooftop antenna on some buildings
+    if (hash01(i * seed + 5) > 0.7) {
+      ctx.fillRect(bx + buildingW * 0.4, by - 14, 2, 14);
+    }
+    if (withWindows) {
+      const cols = Math.max(1, Math.floor((buildingW - 8) / 9));
+      const rows = Math.max(1, Math.floor((h - 10) / 14));
+      for (let cx = 0; cx < cols; cx++) {
+        for (let ry = 0; ry < rows; ry++) {
+          const seedN = i * 97 + cx * 13 + ry * 7;
+          if (hash01(seedN) < 0.45) continue; // this window is dark
+          const flicker = Math.sin(t / 500 + seedN * 3.1) > -0.75; // occasional blink
+          if (!flicker) continue;
+          ctx.fillStyle = hash01(seedN + 1) > 0.85 ? '#7ad7ff' : '#ffcf6b';
+          ctx.fillRect(bx + 4 + cx * 9, by + 8 + ry * 14, 4, 6);
+        }
+      }
+    }
+  }
+}
+
+function drawBackground(t) {
   const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
-  g.addColorStop(0, '#5c94fc');
-  g.addColorStop(1, '#9fd0ff');
+  g.addColorStop(0, '#080b1c');
+  g.addColorStop(0.55, '#121736');
+  g.addColorStop(1, '#232a4d');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  // parallax hills
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  const parallax = camera.x * 0.35;
-  for (let i = -1; i < 8; i++) {
-    const bx = i * 220 - (parallax % 220);
+  // moon
+  ctx.fillStyle = '#eceadb';
+  ctx.beginPath();
+  ctx.arc(660, 75, 32, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#121736';
+  ctx.beginPath();
+  ctx.arc(674, 66, 32, 0, Math.PI * 2);
+  ctx.fill();
+
+  // thin drifting clouds in front of the moon
+  ctx.fillStyle = 'rgba(200,210,235,0.12)';
+  const cloudP = camera.x * 0.08;
+  for (let i = -1; i < 4; i++) {
+    const cx = i * 260 - (cloudP % 260);
     ctx.beginPath();
-    ctx.arc(bx, CANVAS_H - 40, 70, Math.PI, 0);
+    ctx.ellipse(cx, 110, 90, 14, 0, 0, Math.PI * 2);
     ctx.fill();
   }
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  const parallax2 = camera.x * 0.6;
-  for (let i = -1; i < 10; i++) {
-    const cx = i * 160 - (parallax2 % 160) + 40;
-    ctx.beginPath();
-    ctx.arc(cx, 60, 18, 0, Math.PI * 2);
-    ctx.arc(cx + 22, 55, 22, 0, Math.PI * 2);
-    ctx.arc(cx + 46, 60, 16, 0, Math.PI * 2);
-    ctx.fill();
+
+  // far skyline (slow parallax, no windows, flat silhouette)
+  drawSkylineRow(camera.x * 0.15, 300, 46, 140, 0.9, false, t, '#161a35');
+
+  // near skyline (faster parallax, lit flickering windows)
+  drawSkylineRow(camera.x * 0.35, 340, 34, 190, 1.7, true, t, '#0c0f22');
+}
+
+function drawTrash(t) {
+  for (let tx = Math.max(0, Math.floor(camera.x / TILE) - 1); tx <= Math.ceil((camera.x + CANVAS_W) / TILE); tx++) {
+    if (tx < 0 || tx >= level.width || !level.solid[level.groundY][tx]) continue;
+    const r = hash01(tx * 3.7);
+    if (r > 0.62) continue; // most tiles are clean
+    const px = tx * TILE - camera.x;
+    const py = level.groundY * TILE;
+    if (r < 0.22) {
+      // crumpled can
+      ctx.fillStyle = '#6b7280';
+      ctx.fillRect(px + 12, py - 9, 7, 9);
+      ctx.fillStyle = '#4b5160';
+      ctx.fillRect(px + 12, py - 9, 7, 2);
+    } else if (r < 0.42) {
+      // paper scrap
+      ctx.fillStyle = '#cfd0c9';
+      ctx.save();
+      ctx.translate(px + 10, py - 4);
+      ctx.rotate(hash01(tx * 9.1) - 0.5);
+      ctx.fillRect(-6, -5, 11, 8);
+      ctx.restore();
+    } else {
+      // newspaper page
+      ctx.fillStyle = '#b9bcb2';
+      ctx.fillRect(px + 6, py - 3, 16, 5);
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(px + 6, py - 3, 16, 5);
+    }
   }
 }
 
@@ -679,18 +868,64 @@ function drawTiles() {
       const px = tx * TILE - camera.x, py = ty * TILE;
       const exposedTop = ty === 0 || !level.solid[ty - 1][tx];
       if (exposedTop) {
-        ctx.fillStyle = '#5cc25c';
-        ctx.fillRect(px, py, TILE, 8);
-        ctx.fillStyle = '#8b5a2b';
-        ctx.fillRect(px, py + 8, TILE, TILE - 8);
+        ctx.fillStyle = '#565c6b';
+        ctx.fillRect(px, py, TILE, 7);
+        ctx.fillStyle = '#282c36';
+        ctx.fillRect(px, py + 7, TILE, TILE - 7);
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+        ctx.strokeRect(px + 4, py + 2, TILE - 8, 2);
       } else {
-        ctx.fillStyle = '#8b5a2b';
+        ctx.fillStyle = '#282c36';
         ctx.fillRect(px, py, TILE, TILE);
       }
-      ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
       ctx.strokeRect(px + 0.5, py + 0.5, TILE - 1, TILE - 1);
     }
   }
+}
+
+function drawSwingPoints(t) {
+  for (const sp of level.swingPoints) {
+    const px = sp.x - camera.x;
+    if (px < -30 || px > CANVAS_W + 30) continue;
+    const poleBottom = level.groundY * TILE;
+    ctx.strokeStyle = '#3a3f4b';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(px, sp.y);
+    ctx.lineTo(px, poleBottom);
+    ctx.stroke();
+    // lamp arm
+    ctx.beginPath();
+    ctx.moveTo(px, sp.y);
+    ctx.lineTo(px + 22, sp.y + 10);
+    ctx.stroke();
+    // glowing lamp head
+    const glow = 0.6 + 0.4 * Math.abs(Math.sin(t / 500 + sp.x));
+    const grad = ctx.createRadialGradient(px + 22, sp.y + 10, 2, px + 22, sp.y + 10, 22);
+    grad.addColorStop(0, `rgba(255,224,150,${0.8 * glow})`);
+    grad.addColorStop(1, 'rgba(255,224,150,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(px + 22, sp.y + 10, 22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ffe096';
+    ctx.beginPath();
+    ctx.arc(px + 22, sp.y + 10, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawSwingRope() {
+  if (!player.swinging) return;
+  const a = player.swingAnchor;
+  const px = a.x - camera.x;
+  ctx.strokeStyle = '#c9cdd6';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(px, a.y);
+  ctx.lineTo(player.x + player.w / 2 - camera.x, player.y + player.h * 0.2);
+  ctx.stroke();
 }
 
 function drawCoins(t) {
@@ -713,27 +948,65 @@ function drawCoins(t) {
   }
 }
 
-function drawGoombas() {
-  for (const g of level.goombas) {
+function drawThugs() {
+  for (const g of level.thugs) {
     if (!g.alive) continue;
     const px = g.x - camera.x;
     if (px < -40 || px > CANVAS_W + 40) continue;
-    ctx.fillStyle = '#8b4a2b';
+
+    ctx.fillStyle = '#15171c';
+    ctx.fillRect(px + 4, g.y + g.h - 7, 6, 7);
+    ctx.fillRect(px + g.w - 10, g.y + g.h - 7, 6, 7);
+
+    ctx.fillStyle = '#3d4250';
+    ctx.fillRect(px + 2, g.y + 9, g.w - 4, g.h - 16);
+
+    ctx.fillStyle = '#2a2e38';
     ctx.beginPath();
-    ctx.ellipse(px + g.w / 2, g.y + g.h / 2, g.w / 2, g.h / 2, 0, 0, Math.PI * 2);
+    ctx.arc(px + g.w / 2, g.y + 9, g.w / 2 - 1, Math.PI, 0);
     ctx.fill();
-    ctx.fillStyle = '#5c2f16';
-    ctx.fillRect(px + 2, g.y + g.h - 6, 8, 6);
-    ctx.fillRect(px + g.w - 10, g.y + g.h - 6, 8, 6);
-    ctx.fillStyle = '#fff';
+    ctx.fillRect(px + 2, g.y + 7, g.w - 4, 5);
+
+    ctx.fillStyle = '#0e0f13';
     ctx.beginPath();
-    ctx.arc(px + g.w / 2 - 5, g.y + g.h / 2 - 2, 4, 0, Math.PI * 2);
-    ctx.arc(px + g.w / 2 + 5, g.y + g.h / 2 - 2, 4, 0, Math.PI * 2);
+    ctx.ellipse(px + g.w / 2, g.y + 10, g.w * 0.24, 5, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#000';
+
+    ctx.fillStyle = '#ffd166';
+    ctx.fillRect(px + g.w * 0.32, g.y + 9, 2.5, 2.5);
+    ctx.fillRect(px + g.w * 0.62, g.y + 9, 2.5, 2.5);
+  }
+}
+
+function drawBirds(t) {
+  for (const b of level.birds) {
+    if (!b.alive) continue;
+    const px = b.x - camera.x;
+    if (px < -40 || px > CANVAS_W + 40) continue;
+    const flap = Math.sin(t / 90 + b.x) * 9;
+    const cy = b.y + b.h / 2;
+
+    ctx.fillStyle = '#181a22';
     ctx.beginPath();
-    ctx.arc(px + g.w / 2 - 5, g.y + g.h / 2 - 2, 2, 0, Math.PI * 2);
-    ctx.arc(px + g.w / 2 + 5, g.y + g.h / 2 - 2, 2, 0, Math.PI * 2);
+    ctx.moveTo(px + b.w / 2, cy);
+    ctx.lineTo(px - 6, cy - flap);
+    ctx.lineTo(px + b.w * 0.35, cy + 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(px + b.w / 2, cy);
+    ctx.lineTo(px + b.w + 6, cy - flap);
+    ctx.lineTo(px + b.w * 0.65, cy + 3);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(px + b.w / 2, cy, b.w * 0.28, b.h * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#ff5e5e';
+    ctx.beginPath();
+    ctx.arc(px + b.w * 0.62, cy - 2, 1.6, 0, Math.PI * 2);
     ctx.fill();
   }
 }
@@ -762,18 +1035,19 @@ function drawPlayer() {
   const cowlH = 10, faceH = 8, shoesH = 6;
   const bodyTop = cowlH + faceH - 1;
   const suitH = h - bodyTop;
-  const accent = player.powerState === 'fire' ? '#ff8a3d' : '#ffd166';
+  const accent = player.powerState === 'batarang' ? '#ffe066' : '#ffd166';
 
   ctx.save();
   ctx.translate(px + w / 2, player.y);
   ctx.scale(player.facing, 1);
   ctx.translate(-w / 2, 0);
 
-  // cape trailing behind (opposite the facing direction)
+  // cape trailing behind (opposite the facing direction; flares out while swinging)
+  const flare = player.swinging ? 0.35 : 0;
   ctx.fillStyle = '#14161c';
   ctx.beginPath();
   ctx.moveTo(w * 0.3, cowlH - 2);
-  ctx.lineTo(-w * 0.6, h * 0.55);
+  ctx.lineTo(-w * (0.6 + flare), h * (0.55 - flare * 0.3));
   ctx.lineTo(-w * 0.2, h);
   ctx.lineTo(w * 0.55, bodyTop + 2);
   ctx.closePath();
@@ -912,55 +1186,89 @@ function drawMushrooms() {
   }
 }
 
-function drawFlowers(t) {
-  for (const f of level.flowers) {
-    if (f.taken) continue;
-    const px = f.x - camera.x;
+function drawBats(t) {
+  for (const bat of level.bats) {
+    if (bat.taken) continue;
+    const px = bat.x - camera.x;
     if (px < -30 || px > CANVAS_W + 30) continue;
-    const bob = Math.sin(t / 260 + f.x) * 1.5;
-    const cx = px + f.w / 2, cy = f.y + f.h / 2 + bob;
-    ctx.strokeStyle = '#29d985';
-    ctx.lineWidth = 3;
+    const bob = Math.sin(t / 260 + bat.x) * 2;
+    const cx = px + bat.w / 2, cy = bat.y + bat.h / 2 + bob;
+    const spread = 0.8 + 0.2 * Math.sin(t / 110 + bat.x);
+
+    ctx.fillStyle = '#1c1e26';
     ctx.beginPath();
-    ctx.moveTo(cx, cy + 6);
-    ctx.lineTo(cx, f.y + f.h);
-    ctx.stroke();
-    ctx.fillStyle = '#fff';
-    for (let i = 0; i < 4; i++) {
-      const ang = (Math.PI / 2) * i + Math.PI / 4;
-      ctx.beginPath();
-      ctx.arc(cx + Math.cos(ang) * 6, cy + Math.sin(ang) * 6, 5, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.fillStyle = '#ff8a3d';
+    ctx.moveTo(cx, cy);
+    ctx.quadraticCurveTo(cx - bat.w * 0.55 * spread, cy - 10, cx - bat.w * 0.5 * spread, cy + 6);
+    ctx.quadraticCurveTo(cx - bat.w * 0.2, cy + 2, cx, cy + 4);
+    ctx.closePath();
+    ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+    ctx.moveTo(cx, cy);
+    ctx.quadraticCurveTo(cx + bat.w * 0.55 * spread, cy - 10, cx + bat.w * 0.5 * spread, cy + 6);
+    ctx.quadraticCurveTo(cx + bat.w * 0.2, cy + 2, cx, cy + 4);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, bat.w * 0.16, bat.h * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, cy - bat.h * 0.28);
+    ctx.lineTo(cx - 2, cy - bat.h * 0.5);
+    ctx.lineTo(cx, cy - bat.h * 0.22);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx + 4, cy - bat.h * 0.28);
+    ctx.lineTo(cx + 2, cy - bat.h * 0.5);
+    ctx.lineTo(cx, cy - bat.h * 0.22);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#ffd166';
+    ctx.beginPath();
+    ctx.arc(cx - 2.5, cy - 1, 1.3, 0, Math.PI * 2);
+    ctx.arc(cx + 2.5, cy - 1, 1.3, 0, Math.PI * 2);
     ctx.fill();
   }
 }
 
-function drawFireballs() {
-  for (const fb of fireballs) {
-    const px = fb.x - camera.x;
-    ctx.fillStyle = '#ff7a1a';
+function drawBatarangs() {
+  for (const b of batarangs) {
+    const px = b.x - camera.x;
+    ctx.save();
+    ctx.translate(px, b.y);
+    ctx.rotate(b.rot);
+    ctx.fillStyle = '#c9cdd6';
     ctx.beginPath();
-    ctx.arc(px, fb.y, fb.r, 0, Math.PI * 2);
+    ctx.moveTo(0, -8);
+    ctx.lineTo(3, 0);
+    ctx.lineTo(8, 3);
+    ctx.lineTo(0, 1);
+    ctx.lineTo(-8, 3);
+    ctx.lineTo(-3, 0);
+    ctx.closePath();
     ctx.fill();
     ctx.fillStyle = '#ffd166';
     ctx.beginPath();
-    ctx.arc(px, fb.y, fb.r * 0.5, 0, Math.PI * 2);
+    ctx.arc(0, 0, 1.6, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
 }
 
 function render(t) {
-  drawBackground();
+  drawBackground(t);
+  drawSwingPoints(t);
   drawTiles();
+  drawTrash(t);
   drawCoins(t);
   drawMushrooms();
-  drawFlowers(t);
-  drawFireballs();
-  drawGoombas();
+  drawBats(t);
+  drawBatarangs();
+  drawSwingRope();
+  drawThugs();
+  drawBirds(t);
   drawVillain();
   drawFlag();
   drawPlayer();
@@ -992,5 +1300,5 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-showOverlay('BIT BROS', 'Un héroe murciélago corre y salta por la ciudad: pisá enemigos, agarrá el hongo para crecer y la flor para tirar fuego. Al final del último nivel te espera un villano con sonrisa siniestra.', 'JUGAR');
+showOverlay('BIT BROS', 'Gotham de noche: corré por los techos y callejones, pisá a los ladrones y esquivá a los pájaros. Agarrá el hongo para crecer y el murciélago especial para tirar batarangs. Saltá cerca de un poste de luz para engancharte y balancearte. Al final del último nivel te espera un villano con sonrisa siniestra.', 'JUGAR');
 requestAnimationFrame(loop);
