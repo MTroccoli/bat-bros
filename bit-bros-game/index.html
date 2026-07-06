@@ -23,18 +23,13 @@
 </div>
 
 <div id="game-wrap">
-  <div id="gutter-left" class="side-gutter">
-    <button id="btn-left" class="touch-btn">◀</button>
-    <button id="btn-right" class="touch-btn">▶</button>
-  </div>
-
   <div id="canvas-area">
     <div id="hud">
       <div class="hud-item">SCORE <span id="hud-score">0</span></div>
       <div class="hud-item">COINS <span id="hud-coins">0</span></div>
       <div class="hud-item">VIDAS <span id="hud-lives">3</span></div>
       <div class="hud-item">NIVEL <span id="hud-level">1-1</span></div>
-      <div class="hud-item">TIEMPO <span id="hud-time">400</span></div>
+      <div class="hud-item">TIEMPO <span id="hud-time">500</span></div>
     </div>
 
     <canvas id="game" width="800" height="480"></canvas>
@@ -42,7 +37,7 @@
     <div id="overlay" class="overlay hidden">
       <div class="overlay-box">
         <h1 id="overlay-title">BIT BROS</h1>
-        <p id="overlay-msg">Gotham de noche: corré por los techos y callejones, pisá a los ladrones y esquivá a los pájaros. Agarrá el emblema de Batman para crecer y tirar batarangs. Saltá cerca de un poste de luz para engancharte y balancearte por los huecos más anchos. Al final del último nivel te espera un villano con sonrisa siniestra.</p>
+        <p id="overlay-msg">Gotham de noche: los edificios bloquean la calle y la única salida es hacia arriba. Saltá cerca de un poste de luz para engancharte con la cuerda, balanceate hasta los techos y avanzá por las alturas. Pisá ladrones, esquivá pájaros y agarrá el emblema de Batman para tirar batarangs. En la cima de la última torre te espera un villano con sonrisa siniestra.</p>
         <div id="overlay-controls">
           <span>⟵ ⟶ / A D : mover</span>
           <span>ESPACIO / ↑ / W : saltar (y balancearte cerca de un poste)</span>
@@ -52,11 +47,15 @@
         <button id="overlay-btn">JUGAR</button>
       </div>
     </div>
-  </div>
 
-  <div id="gutter-right" class="side-gutter">
-    <button id="btn-shoot" class="touch-btn touch-fire">🪃</button>
-    <button id="btn-jump" class="touch-btn touch-jump">⤒</button>
+    <div id="controls-left" class="float-controls">
+      <button id="btn-left" class="touch-btn">◀</button>
+      <button id="btn-right" class="touch-btn">▶</button>
+    </div>
+    <div id="controls-right" class="float-controls">
+      <button id="btn-shoot" class="touch-btn touch-fire">🪃</button>
+      <button id="btn-jump" class="touch-btn touch-jump">⤒</button>
+    </div>
   </div>
 </div>
 

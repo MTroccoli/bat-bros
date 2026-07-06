@@ -27,19 +27,6 @@ html, body {
   min-width: 0;
 }
 
-.side-gutter {
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-  flex: 0 0 92px;
-  background: #111528;
-  border: 3px solid #3a4a7a;
-}
-#gutter-left { border-right: none; padding-left: env(safe-area-inset-left, 0px); }
-#gutter-right { border-left: none; padding-right: env(safe-area-inset-right, 0px); }
-
 #hud {
   display: flex;
   justify-content: space-between;
@@ -66,21 +53,26 @@ canvas {
   image-rendering: pixelated;
 }
 
+/* margin:auto on the box (instead of align/justify center on the flex
+   container) keeps it perfectly centered when it fits AND lets the overlay
+   scroll from the top instead of clipping when it doesn't. */
 .overlay {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(6, 8, 16, 0.88);
   display: flex;
-  align-items: center;
-  justify-content: center;
   text-align: center;
   padding: 20px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 .overlay.hidden { display: none; }
 
 .overlay-box {
   max-width: 460px;
+  margin: auto;
 }
 
 #overlay-title {
@@ -125,6 +117,21 @@ canvas {
   box-shadow: 0 2px 0 #1a9c5e;
 }
 
+/* Touch controls float over the canvas edges: arrows side by side on the
+   left, batarang + jump side by side on the right. Hidden on mouse devices. */
+.float-controls {
+  display: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  z-index: 5;
+}
+#controls-left { left: calc(12px + env(safe-area-inset-left, 0px)); }
+#controls-right { right: calc(12px + env(safe-area-inset-right, 0px)); }
+
 .touch-btn {
   touch-action: none;
   -webkit-touch-callout: none;
@@ -134,8 +141,8 @@ canvas {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  border: 2px solid rgba(255,255,255,0.4);
-  background: rgba(255,255,255,0.08);
+  border: 2px solid rgba(255,255,255,0.35);
+  background: rgba(20, 25, 45, 0.45);
   color: #fff;
   font-size: 20px;
 }
@@ -143,7 +150,7 @@ canvas {
 .touch-jump { width: 68px; height: 68px; }
 
 @media (hover: none) and (pointer: coarse) {
-  .side-gutter { display: flex; }
+  .float-controls { display: flex; }
 }
 
 #rotate-overlay {
@@ -185,9 +192,8 @@ canvas {
   #rotate-overlay { display: flex; }
 }
 
-/* Phones in landscape: fill the screen edge-to-edge top and bottom, with
-   the HUD floating over the canvas and the touch buttons living in their
-   own side columns instead of a bar that eats into the game height. */
+/* Phones in landscape: the game fills the whole screen edge to edge, the
+   HUD floats over the top of the canvas and the controls float on the sides. */
 @media (hover: none) and (pointer: coarse) and (orientation: landscape) {
   html, body { height: 100dvh; }
 
@@ -212,23 +218,13 @@ canvas {
 
   canvas {
     height: 100%;
-    border-top: none;
-    border-bottom: none;
+    border: none;
   }
 
-  /* The start overlay's title + long blurb + control list can be taller
-     than a short landscape viewport, pushing the JUGAR button past the
-     bottom edge. Shrink the text and allow scrolling as a fallback so the
-     button is always reachable. */
-  .overlay {
-    align-items: flex-start;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    touch-action: pan-y;
-    padding: 10px 20px;
-  }
+  /* Compact overlay text so the JUGAR button always fits on short screens
+     (the margin:auto + overflow-y fallback above handles the extreme cases). */
   #overlay-controls { display: none; }
-  #overlay-title { font-size: 1.5rem; margin-bottom: 8px; }
-  #overlay-msg { font-size: 11px; line-height: 1.4; margin-bottom: 10px; }
-  #overlay-btn { padding: 8px 24px; font-size: 14px; }
+  #overlay-title { font-size: 1.6rem; margin-bottom: 8px; }
+  #overlay-msg { font-size: 11px; line-height: 1.5; margin-bottom: 12px; }
+  #overlay-btn { padding: 9px 26px; font-size: 14px; }
 }
