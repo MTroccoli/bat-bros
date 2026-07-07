@@ -138,7 +138,7 @@ function buildLevel(spec) {
     bats: bats.map(([x, row]) => ({
       x: x * TILE, y: row * TILE - 22, w: 24, h: 20, taken: false,
     })),
-    swingPoints: swingPoints.map(([x, row, minR]) => {
+    swingPoints: swingPoints.map(([x, row, minR, manual]) => {
       // the lamppost pole is drawn down to the first solid surface below the
       // anchor (a rooftop or the street), not blindly to ground level
       let floorTy = height;
@@ -146,7 +146,9 @@ function buildLevel(spec) {
         if (solid[ty][x]) { floorTy = ty; break; }
       }
       // minR set => a trapeze: fixed rope length, latched near its bar
-      return { x: x * TILE + 16, y: row * TILE, floorY: floorTy * TILE, minR: minR ?? null };
+      // manual set => never auto-latch; the player must press JUMP again in
+      // mid-air to grab it (used for Bane's central over-the-head hook)
+      return { x: x * TILE + 16, y: row * TILE, floorY: floorTy * TILE, minR: minR ?? null, manual: !!manual };
     }),
     villain: spec.villain ? {
       x: spec.villain.x * TILE, y: spec.villain.y * TILE - 42,
@@ -374,9 +376,9 @@ const LEVEL_SPECS = [
     ],
     walls: [],
     // ceiling hooks above each gargoyle, plus a central one high against the
-    // roof: too high to reach from the floor, so Batman can only grab it by
-    // leaping off a gargoyle to swing across to the other one
-    swingPoints: [[11, 4], [16, 2], [22, 4]],
+    // roof: leap off a gargoyle and press JUMP again in mid-air to grab it and
+    // swing across (the 4th field flags it as a manual, press-to-latch hook)
+    swingPoints: [[11, 4], [16, 2, null, true], [22, 4]],
     coins: [],
     thugs: [],
     birds: [],
@@ -449,7 +451,7 @@ window.addEventListener('keydown', e => {
   // never lost to frame timing (touch buttons go through handleCaveUIInput).
   const confirmCode = ['ArrowUp', 'KeyW', 'Space', 'KeyX', 'Enter'].includes(e.code);
   if (state === 'computer') {
-    if (confirmCode) { level.cave.choiceSel = 0; state = 'choice'; e.preventDefault(); }
+    if (confirmCode) { state = 'choice'; e.preventDefault(); }
     return;
   }
   if (state === 'choice') {
@@ -564,6 +566,7 @@ let state = 'start'; // start | cutscene | playing | computer | choice | levelco
 let playerName = '';       // set from the start menu
 let startLevelIndex = 0;   // where startGame() begins (0 = new game, >0 = continue)
 let savedMaxLevel = 0;     // furthest level this player has reached (for Continue)
+let gameOverCount = 0;     // how many game overs this player has (shown on the Batcave computer)
 let continueOffer = false; // game over at Bane: offer to spend coins to retry
 let cutsceneStart = 0;
 let levelIndex = 0;
@@ -696,6 +699,24 @@ function tryAttachGrapple(now) {
         player.swingAngle = Math.atan2(cx - sp.x, cy - sp.y);
         const tang = player.vx * Math.cos(player.swingAngle) - player.vy * Math.sin(player.swingAngle);
         player.swingAngularVel = tang / sp.minR;
+        return;
+      }
+      continue;
+    }
+    if (sp.manual) {
+      // Bane's central hook: no auto-latch. Batman must be airborne and press
+      // JUMP again to grab it (rising or falling both count once pressed).
+      if (player.onGround || now >= jumpBufferUntil) continue;
+      const d = Math.hypot(sp.x - cx, sp.y - cy);
+      if (d < GRAPPLE_RANGE && sp.y < cy) {
+        jumpBufferUntil = 0; // consume the press so it doesn't do anything else
+        player.swinging = true;
+        player.swingAnchor = sp;
+        player.swingRadius = d;
+        player.swingMinR = null;
+        player.swingAngle = Math.atan2(cx - sp.x, cy - sp.y);
+        const tang = player.vx * Math.cos(player.swingAngle) - player.vy * Math.sin(player.swingAngle);
+        player.swingAngularVel = tang / d;
         return;
       }
       continue;
@@ -904,6 +925,51 @@ function saveProgress(name, level) {
   } catch (e) {}
 }
 
+// --- Game-over tally per player (shown only on the Batcave computer) ---
+// Stored in the same bitbros_players row via a `game_overs` column. The
+// column must exist in Supabase (see the SQL in ACT2_PLAN.md); if it isn't
+// there yet this degrades to a localStorage-only count without breaking the
+// level save, which is written in its own request.
+function localGOKey(name) { return 'bitbros:go:' + name.trim().toLowerCase(); }
+function localGetGO(name) {
+  const v = parseInt(localStorage.getItem(localGOKey(name)), 10);
+  return Number.isFinite(v) ? v : 0;
+}
+
+async function loadGameOvers(name) {
+  const local = localGetGO(name);
+  try {
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 4000);
+    const r = await fetch(
+      `${SUPA_PLAYERS}?name=eq.${encodeURIComponent(name.trim())}&select=game_overs`,
+      { headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY }, signal: ctl.signal });
+    clearTimeout(timer);
+    if (r && r.ok) {
+      const rows = await r.json();
+      const remote = rows.length ? (rows[0].game_overs | 0) : 0;
+      return Math.max(remote, local);
+    }
+  } catch (e) { /* column missing / offline: fall back to local */ }
+  return local;
+}
+
+function saveGameOvers(name, count) {
+  try { localStorage.setItem(localGOKey(name), String(count)); } catch (e) {}
+  try {
+    // separate upsert so a missing game_overs column never breaks last_level
+    fetch(`${SUPA_PLAYERS}?on_conflict=name`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates',
+      },
+      body: JSON.stringify({ name: name.trim(), game_overs: count | 0, updated_at: new Date().toISOString() }),
+    }).catch(() => {});
+  } catch (e) {}
+}
+
 // ---------------------------------------------------------------
 // Start menu flow: name -> (new game | continue)
 // ---------------------------------------------------------------
@@ -924,7 +990,7 @@ async function submitName() {
   localStorage.setItem('bitbros:lastName', name);
   btnNameOk.disabled = true;
   btnNameOk.textContent = 'CARGANDO…';
-  savedMaxLevel = await loadProgress(name);
+  [savedMaxLevel, gameOverCount] = await Promise.all([loadProgress(name), loadGameOvers(name)]);
   btnNameOk.disabled = false;
   btnNameOk.textContent = 'ACEPTAR';
 
@@ -1069,6 +1135,9 @@ function killPlayer() {
   hud.lives.textContent = Math.max(lives, 0);
   if (lives <= 0) {
     state = 'gameover';
+    // record the game over for this player (shown on the Batcave computer)
+    gameOverCount++;
+    if (playerName) saveGameOvers(playerName, gameOverCount);
     // Falling to Bane doesn't reset the whole game: spend coins to walk
     // straight back into the warehouse instead.
     if (levelIndex === BOSS_LEVEL_INDEX && coinsCollected >= CONTINUE_COST) {
@@ -1347,8 +1416,11 @@ function updatePlaying(dt) {
       jumpBufferUntil = 0;
       player.vx = 0;
       cv.openedAt = now;
-      if (!cv.computerDone) { cv.computerDone = true; state = 'computer'; }
-      else { cv.choiceSel = cv.weaponChosen === 'batigarra' ? 1 : 0; state = 'choice'; }
+      cv.computerDone = true;
+      // always show the expediente first (it carries the player's game-over
+      // record); pressing jump there moves on to the weapon choice
+      cv.choiceSel = cv.weaponChosen === 'batigarra' ? 1 : 0;
+      state = 'computer';
       return;
     }
     // returning to the entrance door opens a "replay an Act 1 level" menu.
@@ -2092,9 +2164,23 @@ function drawExpedienteScreen(now) {
   ctx.font = '12px monospace'; ctx.textAlign = 'left';
   lines.forEach(([txt, col], i) => { ctx.fillStyle = col; ctx.fillText(txt, x + 190, y + 66 + i * 26); });
 
+  // Batcomputer's private record on the vigilante using it — the game-over
+  // tally is only ever shown here, on this screen.
+  const boxX = x + 190, boxY = y + 232, boxW = w - 230, boxH = 44;
+  ctx.strokeStyle = 'rgba(127,212,255,0.45)'; ctx.lineWidth = 1;
+  ctx.strokeRect(boxX, boxY, boxW, boxH);
+  ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left';
+  ctx.fillText('REGISTRO BATCOMPUTADORA', boxX + 10, boxY + 16);
+  ctx.fillStyle = '#e8f0fb'; ctx.font = '12px monospace';
+  ctx.fillText(`VIGILANTE: ${(playerName || '—').toUpperCase()}`, boxX + 10, boxY + 34);
+  ctx.fillStyle = '#ff5e5e'; ctx.textAlign = 'right';
+  ctx.font = 'bold 14px monospace';
+  ctx.fillText(`GAME OVERS: ${gameOverCount}`, boxX + boxW - 10, boxY + 30);
+  ctx.textAlign = 'left';
+
   const blink = Math.floor(now / 400) % 2 === 0;
   ctx.fillStyle = '#ffd166'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
-  if (blink) ctx.fillText('▶ SALTO / DISPARAR PARA CONTINUAR', CANVAS_W / 2, y + h - 20);
+  if (blink) ctx.fillText('▶ SALTO / DISPARAR PARA CONTINUAR', CANVAS_W / 2, y + h - 18);
 }
 
 // full-screen weapon-choice panel (state 'choice')
@@ -2213,7 +2299,7 @@ function handleCaveUIInput(now) {
   const cv = level.cave;
   const confirm = now < jumpBufferUntil || now < shootBufferUntil;
   if (state === 'computer') {
-    if (confirm) { jumpBufferUntil = 0; shootBufferUntil = 0; cv.choiceSel = 0; state = 'choice'; }
+    if (confirm) { jumpBufferUntil = 0; shootBufferUntil = 0; state = 'choice'; }
   } else if (state === 'choice') {
     if (keys.left && !keys.right) cv.choiceSel = 0;
     if (keys.right && !keys.left) cv.choiceSel = 1;
@@ -2612,7 +2698,12 @@ function drawSwingPoints(t) {
     if (px < -30 || px > CANVAS_W + 30) continue;
     const ay = sp.y - camera.y;
     if (level.indoor || level.cave) {
-      // warehouse / cave: a glowing grapple hook chained to the roof
+      // warehouse / cave: a glowing grapple hook chained to the roof.
+      // A manual (press-to-latch) hook glows cyan and pulses harder to read
+      // as "press JUMP here".
+      const manual = sp.manual;
+      const core = manual ? '150,230,255' : '255,224,150';
+      const ring = manual ? '#8fe0ff' : '#ffe096';
       ctx.strokeStyle = level.cave ? '#2a3350' : '#4a4136';
       ctx.lineWidth = 3;
       ctx.beginPath();
@@ -2621,15 +2712,23 @@ function drawSwingPoints(t) {
       ctx.stroke();
       ctx.fillStyle = level.cave ? '#1b2338' : '#2f2721';
       ctx.fillRect(px - 9, 36 - camera.y, 18, 6);
-      const hookGlow = 0.6 + 0.4 * Math.abs(Math.sin(t / 500 + sp.x));
-      const hg = ctx.createRadialGradient(px, ay, 2, px, ay, 22);
-      hg.addColorStop(0, `rgba(255,224,150,${0.7 * hookGlow})`);
-      hg.addColorStop(1, 'rgba(255,224,150,0)');
+      const hookGlow = 0.6 + 0.4 * Math.abs(Math.sin(t / (manual ? 300 : 500) + sp.x));
+      const rad = manual ? 26 : 22;
+      const hg = ctx.createRadialGradient(px, ay, 2, px, ay, rad);
+      hg.addColorStop(0, `rgba(${core},${(manual ? 0.85 : 0.7) * hookGlow})`);
+      hg.addColorStop(1, `rgba(${core},0)`);
       ctx.fillStyle = hg;
-      ctx.beginPath(); ctx.arc(px, ay, 22, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#ffe096';
+      ctx.beginPath(); ctx.arc(px, ay, rad, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = ring;
       ctx.lineWidth = 3.5;
       ctx.beginPath(); ctx.arc(px, ay + 4, 6, -0.3, Math.PI + 0.5); ctx.stroke();
+      // tiny "jump to grab" hint above the manual hook
+      if (manual) {
+        ctx.fillStyle = `rgba(143,224,255,${0.55 + 0.35 * hookGlow})`;
+        ctx.font = 'bold 10px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('SALTÁ', px, ay - 16);
+      }
       continue;
     }
     const poleBottom = sp.floorY - camera.y;

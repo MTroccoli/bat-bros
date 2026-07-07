@@ -112,3 +112,20 @@ mano en el navegador. Recomiendo (a) antes de diseñar `2-1`.
 - **Fase 3 — Jefe Two-Face + arena `2-4`** con la mecánica de la moneda y Robin.
 - **Fase 4 — Remate**: portada del Acto 2, textos de final, bump de caché,
   (opcional) arnés de test y verificación de alcanzabilidad.
+
+## Base de datos — columna `game_overs` (Supabase)
+
+El contador de game overs por jugador se guarda en la fila del jugador en
+`bitbros_players`, en una columna `game_overs`. Con la clave publishable no se
+puede alterar el esquema desde el juego, así que hay que crear la columna una
+sola vez en el **SQL Editor** de Supabase:
+
+```sql
+alter table bitbros_players
+  add column if not exists game_overs integer not null default 0;
+```
+
+Hasta que exista, el contador funciona igual pero **solo en localStorage** (no
+se sincroniza entre dispositivos); el guardado de nivel nunca se ve afectado
+porque el `game_overs` se escribe en un request aparte. El valor solo se
+muestra en la pantalla de la Batcomputadora (estado `computer`).
