@@ -359,9 +359,10 @@ const LEVEL_SPECS = [
       { x: 21, w: 2, y: 6 },
     ],
     walls: [],
-    // ceiling hooks above each gargoyle, plus a central one between them so
-    // Batman can swing from gargoyle to gargoyle over Bane's head
-    swingPoints: [[11, 4], [16, 4], [22, 4]],
+    // ceiling hooks above each gargoyle, plus a central one high against the
+    // roof: too high to reach from the floor, so Batman can only grab it by
+    // leaping off a gargoyle to swing across to the other one
+    swingPoints: [[11, 4], [16, 2], [22, 4]],
     coins: [],
     thugs: [],
     birds: [],
@@ -398,10 +399,7 @@ const LEVEL_SPECS = [
     houses: [],
     // two ceiling hooks over the plateau to test the new weapon / the swing
     swingPoints: [[44, 3], [50, 3]],
-    coins: [
-      [6, 12], [12, 12], [18, 12],
-      [25, 10], [34, 8], [46, 8], [52, 8],
-    ],
+    coins: [],   // no coins in the Batcave — it's an interlude, not a level
     thugs: [],
     birds: [],
     bats: [],
@@ -520,9 +518,18 @@ const menuGreet = document.getElementById('menu-greet');
 const btnNew = document.getElementById('btn-new');
 const btnContinue = document.getElementById('btn-continue');
 const btnChangeName = document.getElementById('btn-change-name');
+const btnShoot = document.getElementById('btn-shoot');
+
+// Show/hide the on-screen fire button and set its icon for the active weapon.
+// It only appears once Batman is armed (from the Batcave choice onward).
+function updateWeaponButton() {
+  if (!btnShoot) return;
+  const armed = currentPowerState === 'batarang' || currentPowerState === 'batigarra';
+  btnShoot.style.display = armed ? 'flex' : '';
+  btnShoot.textContent = currentPowerState === 'batigarra' ? '🪝' : '🪃';
+}
 
 let state = 'start'; // start | cutscene | playing | computer | choice | levelcomplete | win | gameover
-let uiPrev = { left: false, right: false, jump: false, shoot: false }; // edge detection for the Batcave UI
 let playerName = '';       // set from the start menu
 let startLevelIndex = 0;   // where startGame() begins (0 = new game, >0 = continue)
 let savedMaxLevel = 0;     // furthest level this player has reached (for Continue)
@@ -573,6 +580,7 @@ function setPowerState(newState) {
   player.y += oldH - size.h; // keep feet planted when growing/shrinking
   player.powerState = newState;
   currentPowerState = newState;
+  updateWeaponButton();
 }
 
 function spawnBatarang() {
@@ -776,6 +784,7 @@ function loadLevel(idx) {
 function startGame() {
   score = 0; coinsCollected = 0; lives = 3;
   currentPowerState = 'small';
+  updateWeaponButton();
   continueOffer = false;
   hud.score.textContent = 0;
   hud.coins.textContent = 0;
@@ -1160,6 +1169,16 @@ function baneHeadBox(bn) {
   return { x: bn.x + bn.w / 2 - 24, y: bn.y - 6, w: 48, h: 44 };
 }
 
+// True while Bane's body overlaps (or nearly overlaps) a gargoyle column —
+// he must never launch his shockwave jump from directly under a perch.
+function baneUnderGargoyle(bn) {
+  const cx = bn.x + bn.w / 2;
+  return level.perches.some(p => {
+    const gcx = (p.x + p.w / 2) * TILE;
+    return Math.abs(cx - gcx) < (p.w * TILE) / 2 + bn.w / 2 + 10;
+  });
+}
+
 function updateBane(dt, now) {
   const bn = level.bane;
   const floorY = level.groundY * TILE;
@@ -1199,9 +1218,14 @@ function updateBane(dt, now) {
     if (bn.x < bn.minX) { bn.x = bn.minX; bn.vx = Math.abs(bn.vx); }
     if (bn.x + bn.w > bn.maxX) { bn.x = bn.maxX - bn.w; bn.vx = -Math.abs(bn.vx); }
     if (Math.abs(bn.vx) > 0.1) bn.facing = bn.vx > 0 ? 1 : -1;
+    // only leap once he's clear of a gargoyle column — never jump under a perch
     if (now > bn.waveAt) {
-      bn.state = 'telegraph';
-      bn.teleStart = now;
+      if (baneUnderGargoyle(bn)) {
+        bn.waveAt = now + 250; // keep stalking, try again shortly
+      } else {
+        bn.state = 'telegraph';
+        bn.teleStart = now;
+      }
     }
   } else if (bn.state === 'telegraph') {
     // crouched, shaking: the couple of seconds of warning before the jump
@@ -1267,6 +1291,28 @@ function updateBane(dt, now) {
 
 function updatePlaying(dt) {
   const now = performance.now();
+
+  // Batcave: standing by the batcomputer and pressing JUMP opens it. The
+  // first time shows Two-Face's file then the weapon choice; afterwards it
+  // jumps straight to the choice so the weapon can be swapped after testing.
+  // Handled before the jump/movement code so the press opens the PC instead
+  // of making Batman hop.
+  if (level.cave) {
+    const cv = level.cave;
+    // no onGround gate: the player rests exactly on a tile boundary here, so
+    // onGround flickers frame to frame — proximity alone is the trigger, and
+    // this runs before the jump code so the press opens the PC, not a hop
+    cv.nearPC = !player.swinging &&
+      Math.abs(player.x + player.w / 2 - cv.computerX) < CAVE_COMPUTER_TRIGGER;
+    if (cv.nearPC && now < jumpBufferUntil) {
+      jumpBufferUntil = 0;
+      player.vx = 0;
+      cv.openedAt = now;
+      if (!cv.computerDone) { cv.computerDone = true; state = 'computer'; }
+      else { cv.choiceSel = cv.weaponChosen === 'batigarra' ? 1 : 0; state = 'choice'; }
+      return;
+    }
+  }
 
   if (player.swinging) {
     updateSwing(dt, now);
@@ -1426,19 +1472,11 @@ function updatePlaying(dt) {
     if (state !== 'playing') return; // a shockwave/contact may have ended the run
   }
 
-  // Batcave: walking up to the batcomputer opens the expediente (once), and
-  // the exit door only lets Batman through once a weapon was chosen
+  // Batcave: ambient bats/drips, and the exit door only lets Batman through
+  // once a weapon was chosen (the batcomputer itself is opened on jump, up top)
   if (level.cave) {
     const cv = level.cave;
     updateCaveAmbience(dt, now);
-    if (!cv.computerDone && Math.abs(player.x + player.w / 2 - cv.computerX) < CAVE_COMPUTER_TRIGGER) {
-      cv.computerDone = true;
-      cv.openedAt = now;
-      player.vx = 0;
-      uiPrev = { left: keys.left, right: keys.right, jump: keys.jump, shoot: keys.shoot };
-      state = 'computer';
-      return;
-    }
     if (cv.weaponChosen && player.x + player.w >= cv.doorX - 4) {
       completeLevel();
       return;
@@ -1759,6 +1797,16 @@ function drawCaveProps(t) {
 
   // the batcomputer
   drawCaveComputer(cv.computerX - camera.x, cy(cv.plateauY));
+
+  // "press JUMP" prompt while Batman stands by the computer
+  if (cv.nearPC && (state === 'playing')) {
+    const promptX = cv.computerX - camera.x;
+    const promptY = cy(cv.plateauY) - 172 + Math.sin(t / 250) * 3;
+    ctx.fillStyle = '#ffd166';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(cv.weaponChosen ? '▲ SALTÁ: cambiar arma' : '▲ SALTÁ: Batcomputadora', promptX, promptY);
+  }
 
   // exit door, hard right on the plateau
   const dx = cv.doorX - camera.x;
