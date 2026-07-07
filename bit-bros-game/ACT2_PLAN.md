@@ -90,6 +90,23 @@ mano en el navegador. Recomiendo (a) antes de diseñar `2-1`.
 
 - **Fase 0 — Cimientos**: refactor de selección de jefe a partir del spec +
   interludio de transición de acto + batarang de arranque en el Acto 2.
+  - ✅ `BOSS_LEVEL_INDEX` ya no es "el último nivel" sino el que lleva `bane`
+    (`LEVEL_SPECS.findIndex(s => s.bane)`), así que se pueden encadenar más
+    niveles después del jefe.
+- **Fase 1.5 — La Baticueva** ✅ *(implementada)*: interludio jugable de 3
+  cuadros entre el jefe Bane (`1-4`) y el Acto 2.
+  - Nivel `CUEVA` en `LEVEL_SPECS` con `cave: {...}` (entrada, computadora,
+    moneda, T-Rex, puerta, terrazas de ascenso).
+  - Escena de cueva propia: fondo con degradado + estalactitas + gotas que
+    caen y hacen ondas, murciélagos que **abren los ojos y vuelan** al
+    acercarse Batman, T-Rex y moneda gigante como trofeos.
+  - Al tocar la Batcomputadora: pantalla de **expediente de Two-Face** →
+    **elección de arma** (Batarang vs. Batigarra) → se equipa y se abre la
+    puerta de salida a la derecha.
+  - **Batigarra** implementada como `powerState`: se dispara como arma
+    (gancho dorado) y, durante el swing, da control total de la cuerda
+    (`disparar` = acortar, `abajo` = alargar, `izq/der` = impulso) sin
+    auto-liberación. Se usará a fondo en los niveles del Acto 2.
 - **Fase 1 — `2-1` (muelles)**: primer nivel jugable, introduce el `gunman`.
 - **Fase 2 — `2-2` y `2-3`**: palacio de justicia + casino.
 - **Fase 3 — Jefe Two-Face + arena `2-4`** con la mecánica de la moneda y Robin.

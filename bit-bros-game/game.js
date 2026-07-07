@@ -48,7 +48,18 @@ const SIZES = {
   small: { w: 22, h: 30 },
   big: { w: 24, h: 40 },
   batarang: { w: 24, h: 40 },
+  batigarra: { w: 24, h: 40 },
 };
+
+// --- Baticueva (interludio entre actos) ---
+const CAVE_BAT_WAKE_RANGE = 150;  // px: player proximity that opens a bat's eyes
+const CAVE_BAT_WAKE_MS = 350;     // eyes-open pause before taking flight
+const CAVE_DROP_INTERVAL_MS = 1400;
+const CAVE_COMPUTER_TRIGGER = 110; // px halfwidth around the batcomputer that opens the expediente
+// batigarra rope control (while swinging)
+const GARRA_REEL_SPEED = 1.6;     // px/frame reeling in (shoot held) / letting out (down held)
+const GARRA_MIN_RADIUS = 44;
+const GARRA_PUMP = 0.0018;        // angular impulse per frame from left/right while swinging
 
 // ---------------------------------------------------------------
 // Level builder: programmatic spec -> tile grid + entity lists
@@ -56,7 +67,7 @@ const SIZES = {
 function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [],
-          spawn, name, indoor = false, bane = null } = spec;
+          spawn, name, indoor = false, bane = null, cave = null } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
 
@@ -144,9 +155,54 @@ function buildLevel(spec) {
     } : null,
     // gargoyle perches (indoor boss arenas draw a statue under each platform)
     perches: indoor ? platforms.map(p => ({ x: p.x, w: p.w, y: p.y })) : [],
+    cave: cave ? buildCaveState(cave, width, height, groundY, solid) : null,
     spawn: { x: spawn.x * TILE, y: spawn.y * TILE },
     pixelWidth: width * TILE,
     pixelHeight: height * TILE,
+  };
+}
+
+// The Baticueva's decorative + interactive state: trophy/computer positions,
+// ambient bats that wake and fly when Batman walks near, dripping water
+// columns, and the ceiling stalactites (all deterministic via hash01).
+function buildCaveState(cave, width, height, groundY, solid) {
+  const floorBelow = (txx) => {
+    const tx = Math.max(0, Math.min(width - 1, txx));
+    for (let ty = 2; ty < height; ty++) {
+      if (solid[ty][tx]) return ty * TILE;
+    }
+    return groundY * TILE;
+  };
+  // stalactites across the whole cave; shorter where the plateau rises so
+  // they never crowd the batcomputer or the trophies
+  const stalactites = [];
+  for (let x = 40; x < width * TILE; x += 78) {
+    const overPlateau = floorBelow(Math.floor(x / TILE)) < groundY * TILE;
+    const len = overPlateau ? 22 + hash01(x) * 22 : 36 + hash01(x) * 66;
+    stalactites.push({ x, len, w: 12 + hash01(x * 2) * 16 });
+  }
+  return {
+    entranceX: cave.entrance * TILE,
+    computerX: cave.computer * TILE,
+    pennyX: cave.penny * TILE,
+    trexX: cave.trex * TILE,
+    doorX: cave.door * TILE,
+    plateauY: cave.plateauRow * TILE,
+    computerDone: false,
+    weaponChosen: null,   // 'batarang' | 'batigarra'
+    choiceSel: 0,
+    openedAt: 0,
+    stalactites,
+    ambientBats: (cave.batTiles || []).map((tx, i) => ({
+      x0: tx * TILE, x: tx * TILE, y: 42, baseY: 42,
+      state: 'sleep',     // sleep | wake | fly
+      wakeAt: 0, vx: hash01(i * 7) > 0.5 ? 2 : -2, seed: i,
+    })),
+    dropCols: (cave.dropTiles || []).map((tx, i) => ({
+      x: tx * TILE + 12, tipY: 60, floorY: floorBelow(tx),
+      lastAt: -hash01(i * 13) * CAVE_DROP_INTERVAL_MS,
+      drops: [], ripples: [],
+    })),
   };
 }
 
@@ -312,13 +368,52 @@ const LEVEL_SPECS = [
     bane: { x: 26, hp: 5 },
     spawn: { x: 2, y: 11 },
   },
+  {
+    // Interlude: the Batcave. Three screens — (1) a full flat stretch of
+    // bare cave from the entrance, (2) the cave itself climbs in rock
+    // terraces up to the batcomputer showing Two-Face's file, (3) the
+    // trophies (giant penny + T-Rex) and the exit door at the far right.
+    // The computer opens the expediente and the batarang/batigarra choice.
+    name: 'CUEVA',
+    cave: {
+      entrance: 1,     // arch, drawn at the left wall
+      computer: 40,    // batcomputer center (tile)
+      penny: 57,
+      trex: 65,
+      door: 73,
+      plateauRow: 7,
+      batTiles: [5, 9, 14, 19, 22, 35, 48, 55, 68],
+      dropTiles: [7, 16, 45, 60],
+    },
+    width: 76, height: 15, groundY: 13,
+    pits: [],
+    platforms: [],
+    // the ascent: solid rock terraces (2-tile rises, all jumpable)
+    walls: [
+      { x: 25, w: 3, topRow: 11 },
+      { x: 28, w: 3, topRow: 9 },
+      { x: 31, w: 45, topRow: 7 },
+    ],
+    houses: [],
+    swingPoints: [],
+    coins: [
+      [6, 12], [12, 12], [18, 12],
+      [26, 10], [29, 8],
+      [34, 6], [46, 6], [52, 6],
+    ],
+    thugs: [],
+    birds: [],
+    bats: [],
+    spawn: { x: 2, y: 11 },
+  },
 ];
-const BOSS_LEVEL_INDEX = LEVEL_SPECS.length - 1;
+// the boss arena is the level that carries a `bane` spec, not just "the last one"
+const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);
 
 // ---------------------------------------------------------------
 // Input
 // ---------------------------------------------------------------
-const keys = { left: false, right: false, jump: false, shoot: false };
+const keys = { left: false, right: false, jump: false, shoot: false, down: false };
 
 // Jump/shoot presses are buffered by timestamp (not sampled per-frame), so a
 // quick tap always registers even if it happens to fall between two frames.
@@ -336,10 +431,25 @@ window.addEventListener('keydown', e => {
     e.preventDefault();
     return;
   }
+  // Batcave UI screens are driven straight from keydown so a quick tap is
+  // never lost to frame timing (touch buttons go through handleCaveUIInput).
+  const confirmCode = ['ArrowUp', 'KeyW', 'Space', 'KeyX', 'Enter'].includes(e.code);
+  if (state === 'computer') {
+    if (confirmCode) { level.cave.choiceSel = 0; state = 'choice'; e.preventDefault(); }
+    return;
+  }
+  if (state === 'choice') {
+    if (['ArrowLeft', 'KeyA'].includes(e.code)) level.cave.choiceSel = 0;
+    else if (['ArrowRight', 'KeyD'].includes(e.code)) level.cave.choiceSel = 1;
+    else if (confirmCode) chooseCaveWeapon();
+    e.preventDefault();
+    return;
+  }
   if (['ArrowLeft', 'KeyA'].includes(e.code)) keys.left = true;
   if (['ArrowRight', 'KeyD'].includes(e.code)) keys.right = true;
   if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) { keys.jump = true; requestJump(); }
   if (['KeyX', 'ShiftLeft', 'ShiftRight'].includes(e.code)) { keys.shoot = true; requestShoot(); }
+  if (['ArrowDown', 'KeyS'].includes(e.code)) keys.down = true;
   if (e.code === 'KeyR') restartGame();
   if (['Space', 'ArrowUp'].includes(e.code)) e.preventDefault();
 });
@@ -348,6 +458,7 @@ window.addEventListener('keyup', e => {
   if (['ArrowRight', 'KeyD'].includes(e.code)) keys.right = false;
   if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) keys.jump = false;
   if (['KeyX', 'ShiftLeft', 'ShiftRight'].includes(e.code)) keys.shoot = false;
+  if (['ArrowDown', 'KeyS'].includes(e.code)) keys.down = false;
 });
 
 // Pointer Events unify touch/mouse/pen with a single listener set and, via
@@ -409,7 +520,8 @@ const btnNew = document.getElementById('btn-new');
 const btnContinue = document.getElementById('btn-continue');
 const btnChangeName = document.getElementById('btn-change-name');
 
-let state = 'start'; // start | cutscene | playing | levelcomplete | win | gameover
+let state = 'start'; // start | cutscene | playing | computer | choice | levelcomplete | win | gameover
+let uiPrev = { left: false, right: false, jump: false, shoot: false }; // edge detection for the Batcave UI
 let playerName = '';       // set from the start menu
 let startLevelIndex = 0;   // where startGame() begins (0 = new game, >0 = continue)
 let savedMaxLevel = 0;     // furthest level this player has reached (for Continue)
@@ -472,6 +584,7 @@ function spawnBatarang() {
     rot: 0,
     bornAt: performance.now(),
     alive: true,
+    type: player.powerState, // 'batarang' | 'batigarra' — picks the sprite
   });
 }
 
@@ -577,8 +690,19 @@ function updateSwing(dt, now) {
   // feet just above a rooftop that sits 2 tiles below its lamppost, so a
   // release near the top of the reel lands ON the roof instead of under it.
   // Trapezes (swingMinR set) keep their fixed rope length instead.
-  const reelFloor = player.swingMinR ?? 44;
-  player.swingRadius = Math.max(reelFloor, player.swingRadius - (player.swingMinR ? 0 : 0.85) * dt);
+  const isGarra = player.powerState === 'batigarra' && !player.swingMinR;
+  if (isGarra) {
+    // The batigarra gives Batman full rope control instead of the automatic
+    // reel: hold shoot (the grapple trigger) to reel IN, down to let rope OUT,
+    // and left/right to pump the swing for extra momentum.
+    if (keys.shoot) player.swingRadius = Math.max(GARRA_MIN_RADIUS, player.swingRadius - GARRA_REEL_SPEED * dt);
+    if (keys.down) player.swingRadius = Math.min(GRAPPLE_RANGE, player.swingRadius + GARRA_REEL_SPEED * dt);
+    if (keys.left && !keys.right) player.swingAngularVel -= GARRA_PUMP * dt;
+    if (keys.right && !keys.left) player.swingAngularVel += GARRA_PUMP * dt;
+  } else {
+    const reelFloor = player.swingMinR ?? 44;
+    player.swingRadius = Math.max(reelFloor, player.swingRadius - (player.swingMinR ? 0 : 0.85) * dt);
+  }
   const r = player.swingRadius;
   const angAccel = -(GRAVITY / r) * Math.sin(player.swingAngle);
   player.swingAngularVel += angAccel * dt;
@@ -593,8 +717,10 @@ function updateSwing(dt, now) {
   if (Math.abs(player.vx) > 0.5) player.facing = player.vx > 0 ? 1 : -1;
   player.onGround = false;
 
+  // the batigarra never auto-releases: total control means Batman lets go
+  // only when the player asks for it
   const releasedByJump = now < jumpBufferUntil;
-  if (releasedByJump || Math.abs(player.swingAngle) > SWING_RELEASE_ANGLE) {
+  if (releasedByJump || (!isGarra && Math.abs(player.swingAngle) > SWING_RELEASE_ANGLE)) {
     player.swinging = false;
     player.swingAnchor = null;
     grappleCooldownUntil = now + GRAPPLE_COOLDOWN_MS;
@@ -931,7 +1057,7 @@ function damageVillain() {
 function hurtPlayer() {
   if (Date.now() < invulnUntil) return;
   if (player.powerState !== 'small') {
-    setPowerState(player.powerState === 'batarang' ? 'big' : 'small');
+    setPowerState(player.powerState === 'batarang' || player.powerState === 'batigarra' ? 'big' : 'small');
     invulnUntil = Date.now() + INVULN_TIME;
     return;
   }
@@ -1165,8 +1291,11 @@ function updatePlaying(dt) {
     if (!player.onGround) tryAttachGrapple(now);
   }
 
-  // batarang throw (works whether swinging or not)
-  if (now < shootBufferUntil && player.powerState === 'batarang' && now - lastShotAt > SHOOT_COOLDOWN_MS) {
+  // batarang / batigarra throw (the batigarra's trigger doubles as the rope
+  // reel while swinging, so it never fires mid-swing)
+  const canShoot = player.powerState === 'batarang' ||
+    (player.powerState === 'batigarra' && !player.swinging);
+  if (now < shootBufferUntil && canShoot && now - lastShotAt > SHOOT_COOLDOWN_MS) {
     spawnBatarang();
     lastShotAt = now;
     shootBufferUntil = 0;
@@ -1277,9 +1406,26 @@ function updatePlaying(dt) {
     if (state !== 'playing') return; // a shockwave/contact may have ended the run
   }
 
-  // level exit: simply reach the right edge of the map (outdoor levels;
-  // the warehouse ends when Bane falls)
-  if (!level.indoor && player.x + player.w >= level.pixelWidth - 6) {
+  // Batcave: walking up to the batcomputer opens the expediente (once), and
+  // the exit door only lets Batman through once a weapon was chosen
+  if (level.cave) {
+    const cv = level.cave;
+    updateCaveAmbience(dt, now);
+    if (!cv.computerDone && Math.abs(player.x + player.w / 2 - cv.computerX) < CAVE_COMPUTER_TRIGGER) {
+      cv.computerDone = true;
+      cv.openedAt = now;
+      player.vx = 0;
+      uiPrev = { left: keys.left, right: keys.right, jump: keys.jump, shoot: keys.shoot };
+      state = 'computer';
+      return;
+    }
+    if (cv.weaponChosen && player.x + player.w >= cv.doorX - 4) {
+      completeLevel();
+      return;
+    }
+  } else if (!level.indoor && player.x + player.w >= level.pixelWidth - 6) {
+    // level exit: simply reach the right edge of the map (outdoor levels;
+    // the warehouse ends when Bane falls)
     const { total, defeated } = levelEnemyTotals();
     const ratio = total === 0 ? 1 : defeated / total;
     if (ratio >= REQUIRED_DEFEAT_RATIO) {
@@ -1316,8 +1462,9 @@ function update(dt) {
         state = 'playing';
       } else {
         state = 'win';
-        showOverlay('FIN DEL ACTO 1',
-          `Bane cayó. Entre sus cosas, Batman encuentra una moneda quemada de dos caras: la pista que buscaba. Robin sigue secuestrado... la historia continúa en el ACTO 2. Puntaje: ${score} con ${coinsCollected} monedas.`,
+        const arma = currentPowerState === 'batigarra' ? 'batigarra' : 'batarang';
+        showOverlay('RUMBO AL ACTO 2',
+          `Con la ${arma} en el cinturón, Batman deja la Baticueva rumbo a los muelles de Gotham. Two-Face tiene a Robin... la historia continúa en el ACTO 2. Puntaje: ${score} con ${coinsCollected} monedas.`,
           'JUGAR DE NUEVO');
       }
     }
@@ -1457,7 +1604,452 @@ function drawWarehouseBackground(t) {
   }
 }
 
+// ---------------------------------------------------------------
+// Baticueva: ambience update + the whole cave scene (background,
+// trophies, batcomputer, exit door) and the two UI screens.
+// ---------------------------------------------------------------
+function updateCaveAmbience(dt, now) {
+  const cv = level.cave;
+  const pcx = player.x + player.w / 2;
+
+  for (const b of cv.ambientBats) {
+    if (b.state === 'sleep') {
+      if (Math.abs(pcx - b.x0) < CAVE_BAT_WAKE_RANGE) { b.state = 'wake'; b.wakeAt = now; }
+    } else if (b.state === 'wake') {
+      if (now - b.wakeAt > CAVE_BAT_WAKE_MS) b.state = 'fly';
+    } else {
+      b.x += b.vx * dt;
+      // patrol a stretch of ceiling, turning at the caves edges
+      if (b.x < b.x0 - 130) b.vx = Math.abs(b.vx);
+      if (b.x > b.x0 + 130) b.vx = -Math.abs(b.vx);
+      b.y = b.baseY + 22 + Math.sin(now / 260 + b.seed) * 16;
+      if (b.x < 20) b.vx = Math.abs(b.vx);
+      if (b.x > level.pixelWidth - 20) b.vx = -Math.abs(b.vx);
+    }
+  }
+
+  for (const dc of cv.dropCols) {
+    if (now - dc.lastAt > CAVE_DROP_INTERVAL_MS) {
+      dc.lastAt = now;
+      dc.drops.push({ y: dc.tipY, vy: 0 });
+    }
+    for (const d of dc.drops) { d.vy += 0.5 * dt; d.y += d.vy * dt; }
+    dc.drops = dc.drops.filter(d => {
+      if (d.y >= dc.floorY) { dc.ripples.push({ born: now, r: 2 }); return false; }
+      return true;
+    });
+    for (const rp of dc.ripples) rp.r += 0.5 * dt;
+    dc.ripples = dc.ripples.filter(rp => now - rp.born < 700);
+  }
+}
+
+function drawCaveBackground(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
+  g.addColorStop(0, '#070b16');
+  g.addColorStop(0.5, '#101830');
+  g.addColorStop(1, '#0a0f1e');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  // parallax rock blobs
+  const par = camera.x * 0.4;
+  for (let i = 0; i < 26; i++) {
+    const bx = (hash01(i * 3 + 1) * (level.pixelWidth) - par);
+    const wrapped = ((bx % level.pixelWidth) + level.pixelWidth) % level.pixelWidth;
+    const by = 70 + hash01(i * 7 + 2) * 320;
+    const br = 45 + hash01(i * 5 + 3) * 95;
+    ctx.fillStyle = 'rgba(28,36,62,0.5)';
+    ctx.beginPath();
+    ctx.ellipse(wrapped, by, br, br * 0.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // light shaft over the batcomputer
+  const cx = level.cave.computerX - camera.x;
+  ctx.fillStyle = 'rgba(80,160,255,0.05)';
+  ctx.beginPath();
+  ctx.moveTo(cx - 70, 0); ctx.lineTo(cx + 70, 0);
+  ctx.lineTo(cx + 120, CANVAS_H); ctx.lineTo(cx - 120, CANVAS_H);
+  ctx.closePath(); ctx.fill();
+
+  // ceiling band + stalactites
+  ctx.fillStyle = '#1b2338';
+  ctx.beginPath();
+  ctx.moveTo(0, 0); ctx.lineTo(0, 40);
+  for (let x = 0; x <= CANVAS_W; x += 36) {
+    ctx.lineTo(x + 18, 28 + hash01((x + camera.x) + 5) * 20);
+  }
+  ctx.lineTo(CANVAS_W, 40); ctx.lineTo(CANVAS_W, 0);
+  ctx.closePath(); ctx.fill();
+
+  for (const s of level.cave.stalactites) {
+    const sx = s.x - camera.x;
+    if (sx < -30 || sx > CANVAS_W + 30) continue;
+    const grad = ctx.createLinearGradient(sx, 36, sx, 36 + s.len);
+    grad.addColorStop(0, '#202840');
+    grad.addColorStop(1, '#131a2e');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(sx - s.w / 2, 36);
+    ctx.quadraticCurveTo(sx - s.w * 0.2, 36 + s.len * 0.55, sx, 36 + s.len);
+    ctx.quadraticCurveTo(sx + s.w * 0.2, 36 + s.len * 0.55, sx + s.w / 2, 36);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+// props drawn after the terrain: entrance arch, dripping water, trophies,
+// the batcomputer, the exit door and the ambient bats
+function drawCaveProps(t) {
+  const cv = level.cave;
+  const cy = (wy) => wy - camera.y;
+
+  // entrance arch at the far left, on the ground
+  const ex = cv.entranceX - camera.x;
+  if (ex > -60 && ex < CANVAS_W + 20) {
+    const gy = level.groundY * TILE - camera.y;
+    ctx.fillStyle = '#02040c';
+    ctx.beginPath();
+    ctx.moveTo(ex - 18, gy);
+    ctx.lineTo(ex - 18, gy - 70);
+    ctx.quadraticCurveTo(ex, gy - 100, ex + 18, gy - 70);
+    ctx.lineTo(ex + 18, gy);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // dripping water columns + puddle ripples
+  for (const dc of cv.dropCols) {
+    const dx = dc.x - camera.x;
+    if (dx < -20 || dx > CANVAS_W + 20) continue;
+    ctx.fillStyle = '#9fe0ff';
+    for (const d of dc.drops) ctx.fillRect(dx - 1.5, cy(d.y), 3, 8);
+    ctx.strokeStyle = 'rgba(127,212,255,0.4)';
+    ctx.lineWidth = 1;
+    for (const rp of dc.ripples) {
+      ctx.globalAlpha = Math.max(0, 1 - (t - rp.born) / 700);
+      ctx.beginPath();
+      ctx.ellipse(dx, cy(dc.floorY) - 2, rp.r, rp.r * 0.35, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // giant penny + T-Rex, standing on the plateau
+  drawCavePenny(cv.pennyX - camera.x, cy(cv.plateauY) - 58, 1);
+  drawCaveTrex(cv.trexX - camera.x, cy(cv.plateauY) + 2, 0.72, true);
+
+  // the batcomputer
+  drawCaveComputer(cv.computerX - camera.x, cy(cv.plateauY));
+
+  // exit door, hard right on the plateau
+  const dx = cv.doorX - camera.x;
+  const gy2 = cv.plateauY - camera.y;
+  ctx.fillStyle = '#02040c';
+  ctx.beginPath();
+  ctx.moveTo(dx - 22, gy2);
+  ctx.lineTo(dx - 22, gy2 - 78);
+  ctx.quadraticCurveTo(dx, gy2 - 110, dx + 22, gy2 - 78);
+  ctx.lineTo(dx + 22, gy2);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = cv.weaponChosen ? 'rgba(255,209,102,0.85)' : 'rgba(127,150,200,0.4)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  // a small bat glyph marks the way out once armed
+  if (cv.weaponChosen) {
+    ctx.fillStyle = 'rgba(255,209,102,0.9)';
+    const bx = dx, by = gy2 - 92, s = 9;
+    ctx.beginPath();
+    ctx.moveTo(bx - s, by); ctx.lineTo(bx - s * 0.25, by - s * 0.6); ctx.lineTo(bx, by);
+    ctx.lineTo(bx + s * 0.25, by - s * 0.6); ctx.lineTo(bx + s, by); ctx.lineTo(bx, by + s * 0.6);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // ambient bats near the ceiling
+  for (const b of cv.ambientBats) {
+    const bx = b.x - camera.x;
+    if (bx < -20 || bx > CANVAS_W + 20) continue;
+    const by = cy(b.y);
+    if (b.state === 'fly') {
+      // flying emblem silhouette
+      ctx.fillStyle = '#0c0d10';
+      const s = 9;
+      ctx.beginPath();
+      ctx.moveTo(bx - s, by); ctx.lineTo(bx - s * 0.25, by - s * 0.6); ctx.lineTo(bx, by);
+      ctx.lineTo(bx + s * 0.25, by - s * 0.6); ctx.lineTo(bx + s, by); ctx.lineTo(bx, by + s * 0.6);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ff3b30';
+      ctx.fillRect(bx - 2.5, by - 1, 1.6, 1.6);
+      ctx.fillRect(bx + 1, by - 1, 1.6, 1.6);
+    } else {
+      // hanging upside-down, folded wings; eyes open once awake
+      ctx.fillStyle = '#0c0d10';
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.quadraticCurveTo(bx - 7, by + 10, bx - 3, by + 20);
+      ctx.lineTo(bx - 4, by + 25); ctx.lineTo(bx - 1, by + 22);
+      ctx.lineTo(bx + 1, by + 22); ctx.lineTo(bx + 4, by + 25);
+      ctx.lineTo(bx + 3, by + 20);
+      ctx.quadraticCurveTo(bx + 7, by + 10, bx, by);
+      ctx.closePath(); ctx.fill();
+      if (b.state === 'wake') {
+        ctx.fillStyle = '#ff3b30';
+        ctx.fillRect(bx - 3, by + 18, 2, 2);
+        ctx.fillRect(bx + 1, by + 18, 2, 2);
+      }
+    }
+  }
+}
+
+function drawCavePenny(cx, cy, s) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(s, s);
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath(); ctx.ellipse(2, 60, 60, 8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.rotate(-0.1);
+  ctx.fillStyle = '#8f6a1e';
+  ctx.beginPath(); ctx.ellipse(0, 0, 56, 60, 0, 0, Math.PI * 2); ctx.fill();
+  const pg = ctx.createRadialGradient(-16, -20, 6, 0, 0, 62);
+  pg.addColorStop(0, '#ffe096'); pg.addColorStop(0.55, '#ffd166'); pg.addColorStop(1, '#c9962e');
+  ctx.fillStyle = pg;
+  ctx.beginPath(); ctx.ellipse(0, 0, 50, 54, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#b8860b'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(0, 0, 43, 47, 0, 0, Math.PI * 2); ctx.stroke();
+  // embossed profile bust
+  ctx.fillStyle = '#c9962e';
+  ctx.beginPath();
+  ctx.moveTo(-5, -30); ctx.quadraticCurveTo(13, -30, 14, -12);
+  ctx.quadraticCurveTo(14, 6, 9, 11); ctx.lineTo(14, 27);
+  ctx.quadraticCurveTo(-2, 32, -14, 27); ctx.lineTo(-11, 9);
+  ctx.quadraticCurveTo(-20, 7, -16, 0); ctx.lineTo(-21, -4);
+  ctx.lineTo(-16, -9); ctx.quadraticCurveTo(-21, -23, -5, -30);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#8f6a1e';
+  ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('ONE CENT', 0, 42);
+  ctx.restore();
+}
+
+function drawCaveTrex(gx, gy, s, flip) {
+  ctx.save();
+  ctx.translate(gx, gy);
+  ctx.scale(s * (flip ? -1 : 1), s);
+  const G1 = '#2c6e49', G2 = '#1f5136', G3 = '#173d29';
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.beginPath(); ctx.ellipse(0, 0, 100, 8, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = G2;
+  ctx.beginPath();
+  ctx.moveTo(8, -118); ctx.quadraticCurveTo(-75, -112, -122, -62);
+  ctx.quadraticCurveTo(-70, -80, -2, -72); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = G3;
+  ctx.beginPath(); ctx.ellipse(12, -66, 22, 30, 0.1, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(14, -46, 15, 42); ctx.fillRect(6, -8, 36, 8);
+  ctx.fillStyle = G1;
+  ctx.beginPath(); ctx.ellipse(30, -100, 54, 37, -0.22, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(52, -128); ctx.quadraticCurveTo(72, -162, 82, -186);
+  ctx.lineTo(112, -172); ctx.quadraticCurveTo(92, -140, 78, -112); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(76, -196); ctx.quadraticCurveTo(96, -210, 122, -204);
+  ctx.lineTo(158, -190); ctx.lineTo(156, -176); ctx.lineTo(84, -170); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = G2;
+  ctx.beginPath();
+  ctx.moveTo(88, -166); ctx.lineTo(150, -142); ctx.lineTo(140, -132); ctx.lineTo(84, -156); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#e8e6df';
+  for (let i = 0; i < 5; i++) {
+    const tx = 106 + i * 11;
+    ctx.beginPath(); ctx.moveTo(tx, -178); ctx.lineTo(tx + 4, -178); ctx.lineTo(tx + 2, -170); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = '#f1c40f'; ctx.fillRect(92, -194, 4, 4);
+  ctx.strokeStyle = G2; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(64, -104); ctx.lineTo(78, -92); ctx.lineTo(74, -84); ctx.stroke();
+  ctx.lineCap = 'butt';
+  ctx.fillStyle = G1;
+  ctx.beginPath(); ctx.ellipse(38, -62, 25, 33, 0.08, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(40, -42, 17, 40); ctx.fillRect(32, -8, 42, 9);
+  ctx.beginPath(); ctx.moveTo(74, -8); ctx.lineTo(86, -4); ctx.lineTo(74, 1); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// split Two-Face portrait in a 150×170 box at the current origin
+function drawTwoFacePortrait(ctx) {
+  ctx.fillStyle = '#e8b88a'; ctx.fillRect(0, 20, 75, 95);
+  ctx.fillStyle = '#5a2d8c'; ctx.fillRect(75, 20, 75, 95);
+  ctx.fillStyle = '#241f1a'; ctx.fillRect(0, 6, 75, 18);
+  ctx.fillStyle = '#1a1510';
+  ctx.beginPath();
+  ctx.moveTo(75, 24); ctx.lineTo(75, 2); ctx.lineTo(88, 14); ctx.lineTo(99, 0);
+  ctx.lineTo(111, 13); ctx.lineTo(123, 2); ctx.lineTo(136, 12); ctx.lineTo(150, 3);
+  ctx.lineTo(150, 24); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#3d1c66'; ctx.lineWidth = 2;
+  for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(86 + i * 18, 30); ctx.lineTo(96 + i * 18, 108); ctx.stroke(); }
+  ctx.fillStyle = '#241f1a'; ctx.fillRect(26, 47, 20, 4);
+  ctx.fillStyle = '#fff'; ctx.fillRect(29, 55, 15, 8);
+  ctx.fillStyle = '#0c0d10'; ctx.fillRect(35, 57, 4, 4);
+  ctx.fillStyle = '#f1c40f'; ctx.fillRect(100, 50, 21, 13);
+  ctx.fillStyle = '#0c0d10'; ctx.fillRect(108, 54, 5, 5);
+  ctx.fillStyle = '#c9995f'; ctx.fillRect(62, 80, 11, 5);
+  ctx.fillStyle = '#a3703f'; ctx.fillRect(36, 98, 32, 3);
+  ctx.fillStyle = '#e8e6df'; ctx.fillRect(80, 92, 46, 14);
+  ctx.strokeStyle = '#191512'; ctx.lineWidth = 1.5; ctx.strokeRect(80, 92, 46, 14);
+  for (let i = 1; i < 5; i++) { ctx.beginPath(); ctx.moveTo(80 + i * 9.2, 92); ctx.lineTo(80 + i * 9.2, 106); ctx.stroke(); }
+  ctx.fillStyle = '#e8b88a'; ctx.fillRect(55, 115, 20, 13);
+  ctx.fillStyle = '#5a2d8c'; ctx.fillRect(75, 115, 20, 13);
+  ctx.fillStyle = '#16181e'; ctx.fillRect(0, 128, 75, 42);
+  ctx.fillStyle = '#e8e6df'; ctx.fillRect(75, 128, 75, 42);
+  ctx.fillStyle = '#7a1f2b'; ctx.fillRect(69, 130, 6, 24);
+  ctx.fillStyle = '#2E7FD9'; ctx.fillRect(75, 130, 6, 24);
+  ctx.strokeStyle = 'rgba(127,212,255,0.9)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(75, 0); ctx.lineTo(75, 170); ctx.stroke();
+}
+
+function drawCaveComputer(cx, plateauScreenY) {
+  const scrW = 230, scrH = 138;
+  const x = cx - scrW / 2, y = plateauScreenY - scrH - 18;
+  // stand + desk
+  ctx.fillStyle = '#161b26';
+  ctx.fillRect(cx - 11, y + scrH, 22, 18);
+  ctx.fillStyle = '#14181f';
+  ctx.fillRect(cx - 96, plateauScreenY - 10, 192, 10);
+  const btnCols = ['#7fd4ff', '#29d985', '#ffd166', '#ff5e5e'];
+  for (let i = 0; i < 12; i++) { ctx.fillStyle = btnCols[i % 4]; ctx.fillRect(cx - 84 + i * 14, plateauScreenY - 8, 5, 3); }
+  // screen frame
+  ctx.save();
+  ctx.shadowColor = 'rgba(80,180,255,0.8)'; ctx.shadowBlur = 16;
+  ctx.fillStyle = '#202737'; ctx.fillRect(x, y, scrW, scrH);
+  ctx.restore();
+  ctx.fillStyle = '#0b2438'; ctx.fillRect(x + 6, y + 6, scrW - 12, scrH - 12);
+  // Two-Face + mini file
+  ctx.save();
+  ctx.translate(x + 16, y + 16); ctx.scale(0.6, 0.6);
+  drawTwoFacePortrait(ctx);
+  ctx.restore();
+  const tx = x + 118;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 10px monospace'; ctx.fillText('HARVEY DENT', tx, y + 30);
+  ctx.font = '9px monospace';
+  ctx.fillStyle = '#ff5e5e'; ctx.fillText('ALIAS: TWO-FACE', tx, y + 46);
+  ctx.fillStyle = '#ffd166'; ctx.fillText('REHÉN: ROBIN', tx, y + 62);
+  ctx.fillStyle = '#29d985'; ctx.fillText('IR A: MUELLES', tx, y + 78);
+  ctx.fillStyle = '#ff5e5e'; ctx.fillRect(tx, y + 92, 62, 16);
+  ctx.fillStyle = '#0b2438'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('SE BUSCA', tx + 31, y + 103);
+  ctx.textAlign = 'left';
+}
+
+// full-screen expediente panel (state 'computer')
+function drawExpedienteScreen(now) {
+  ctx.fillStyle = 'rgba(2,4,10,0.72)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  const x = 40, y = 40, w = CANVAS_W - 80, h = CANVAS_H - 80;
+  ctx.save();
+  ctx.shadowColor = 'rgba(80,180,255,0.5)'; ctx.shadowBlur = 20;
+  ctx.fillStyle = '#232a3a'; ctx.fillRect(x, y, w, h);
+  ctx.restore();
+  ctx.fillStyle = '#061826'; ctx.fillRect(x + 8, y + 8, w - 16, h - 16);
+  ctx.fillStyle = '#0a2438'; ctx.fillRect(x + 8, y + 8, w - 16, 24);
+  ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'left';
+  ctx.fillText('BATCOMPUTADORA — EXPEDIENTE: TWO-FACE', x + 18, y + 25);
+
+  ctx.save();
+  ctx.translate(x + 30, y + 54); ctx.scale(0.86, 0.86);
+  drawTwoFacePortrait(ctx);
+  ctx.restore();
+
+  const lines = [
+    ['> IDENTIDAD: HARVEY DENT, EX-FISCAL', '#bfe3ff'],
+    ['> ALIAS: TWO-FACE — CICATRIZ DE ÁCIDO', '#bfe3ff'],
+    ['> M.O.: DECIDE CADA CRIMEN CON UNA MONEDA', '#ff5e5e'],
+    ['> EVIDENCIA: LA MONEDA QUEMADA ES SU FIRMA', '#bfe3ff'],
+    ['> REHÉN: ROBIN — SECTOR PUERTO', '#ffd166'],
+    ['► RUTA: BATICUEVA → MUELLES · ACTO 2', '#29d985'],
+  ];
+  ctx.font = '12px monospace'; ctx.textAlign = 'left';
+  lines.forEach(([txt, col], i) => { ctx.fillStyle = col; ctx.fillText(txt, x + 190, y + 66 + i * 26); });
+
+  const blink = Math.floor(now / 400) % 2 === 0;
+  ctx.fillStyle = '#ffd166'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+  if (blink) ctx.fillText('▶ SALTO / DISPARAR PARA CONTINUAR', CANVAS_W / 2, y + h - 20);
+}
+
+// full-screen weapon-choice panel (state 'choice')
+function drawChoiceScreen(now) {
+  const cv = level.cave;
+  ctx.fillStyle = 'rgba(2,4,10,0.82)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.fillStyle = '#ffd166'; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('NUEVO EQUIPO DISPONIBLE', CANVAS_W / 2, 60);
+  ctx.fillStyle = '#9fb4d8'; ctx.font = '12px monospace';
+  ctx.fillText('La Batcomputadora fabricó dos herramientas — elegí', CANVAS_W / 2, 84);
+
+  const cards = [
+    { x: 96, title: '1. BATARANG', c: '#ffe066', lines: ['Arma arrojadiza clásica', 'Derriba enemigos a distancia'] },
+    { x: 424, title: '2. BATIGARRA', c: '#7fd4ff', lines: ['Se dispara como arma', 'Control total del balanceo:', 'impulso · acortar/alargar cuerda'] },
+  ];
+  cards.forEach((card, i) => {
+    const sel = cv.choiceSel === i;
+    ctx.save();
+    if (sel) { ctx.shadowColor = 'rgba(255,209,102,0.55)'; ctx.shadowBlur = 16; }
+    ctx.fillStyle = '#0e1420'; ctx.fillRect(card.x, 108, 280, 250);
+    ctx.restore();
+    ctx.strokeStyle = sel ? '#ffd166' : '#3a4664'; ctx.lineWidth = sel ? 3 : 2;
+    ctx.strokeRect(card.x, 108, 280, 250);
+    // icon
+    ctx.save();
+    ctx.translate(card.x + 140, 180);
+    if (i === 0) {
+      ctx.fillStyle = card.c;
+      ctx.rotate(-0.3);
+      ctx.beginPath();
+      ctx.moveTo(-40, 0); ctx.quadraticCurveTo(-18, -17, -5, -12); ctx.lineTo(-4, -19);
+      ctx.lineTo(-1, -12); ctx.lineTo(1, -12); ctx.lineTo(4, -19); ctx.lineTo(5, -12);
+      ctx.quadraticCurveTo(18, -17, 40, 0); ctx.quadraticCurveTo(22, -1, 14, 7);
+      ctx.quadraticCurveTo(6, 1, 0, 9); ctx.quadraticCurveTo(-6, 1, -14, 7);
+      ctx.quadraticCurveTo(-22, -1, -40, 0); ctx.closePath(); ctx.fill();
+    } else {
+      // grapple gun + hook + rope
+      ctx.fillStyle = '#6b7280'; ctx.fillRect(-30, -8, 40, 16);
+      ctx.fillStyle = '#171920'; ctx.fillRect(-20, 8, 12, 22);
+      ctx.strokeStyle = '#c9cdd6'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(10, 0); ctx.quadraticCurveTo(40, -26, 60, -40); ctx.stroke();
+      ctx.strokeStyle = card.c; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(60, -48); ctx.lineTo(60, -32); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(60, -47); ctx.quadraticCurveTo(48, -45, 50, -34); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(60, -47); ctx.quadraticCurveTo(72, -45, 70, -34); ctx.stroke();
+      ctx.lineCap = 'butt';
+    }
+    ctx.restore();
+    ctx.fillStyle = card.c; ctx.font = 'bold 17px monospace'; ctx.textAlign = 'center';
+    ctx.fillText(card.title, card.x + 140, 268);
+    ctx.fillStyle = '#bfd0ea'; ctx.font = '11px monospace';
+    card.lines.forEach((l, j) => ctx.fillText(l, card.x + 140, 292 + j * 17));
+  });
+
+  ctx.fillStyle = '#9fb4d8'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('◄ ►  elegir      SALTO  confirmar', CANVAS_W / 2, 392);
+}
+
+function chooseCaveWeapon() {
+  const cv = level.cave;
+  cv.weaponChosen = cv.choiceSel === 1 ? 'batigarra' : 'batarang';
+  setPowerState(cv.weaponChosen);
+  state = 'playing';
+}
+
+// Touch path only: the jump/shoot buttons buffer a press; arrows are held.
+function handleCaveUIInput(now) {
+  const cv = level.cave;
+  const confirm = now < jumpBufferUntil || now < shootBufferUntil;
+  if (state === 'computer') {
+    if (confirm) { jumpBufferUntil = 0; shootBufferUntil = 0; cv.choiceSel = 0; state = 'choice'; }
+  } else if (state === 'choice') {
+    if (keys.left && !keys.right) cv.choiceSel = 0;
+    if (keys.right && !keys.left) cv.choiceSel = 1;
+    if (confirm) { jumpBufferUntil = 0; shootBufferUntil = 0; chooseCaveWeapon(); }
+  }
+}
+
 function drawBackground(t) {
+  if (level.cave) { drawCaveBackground(t); return; }
   if (level.indoor) { drawWarehouseBackground(t); return; }
   const alt = levelAltitude();
   // vertical parallax: the whole skyline sinks as Batman climbs above it
@@ -1563,6 +2155,7 @@ function drawBatSignal(t, sink = 0) {
 }
 
 function drawTrash(t) {
+  if (level.cave) return; // no street litter inside the Batcave
   for (let tx = Math.max(0, Math.floor(camera.x / TILE) - 1); tx <= Math.ceil((camera.x + CANVAS_W) / TILE); tx++) {
     if (tx < 0 || tx >= level.width || !level.solid[level.groundY][tx]) continue;
     const r = hash01(tx * 3.7);
@@ -1620,19 +2213,22 @@ function drawTiles() {
       // gabled houses paint their own roof + facade in drawHouses()
       const hs = houseAt(tx);
       if (hs && ty < hs.baseRow) continue;
-      // grapple towers paint their own brick facade + roof in drawWalls()
-      if (ty < level.groundY && wallAt(tx)) continue;
+      // grapple towers paint their own brick facade + roof in drawWalls();
+      // in the cave, "walls" are plain rock terraces drawn right here
+      if (!level.cave && ty < level.groundY && wallAt(tx)) continue;
 
+      const topCol = level.cave ? '#4a5578' : '#565c6b';
+      const bodyCol = level.cave ? '#1c2440' : '#282c36';
       const exposedTop = ty === 0 || !level.solid[ty - 1][tx];
       if (exposedTop) {
-        ctx.fillStyle = '#565c6b';
+        ctx.fillStyle = topCol;
         ctx.fillRect(px, py, TILE, 7);
-        ctx.fillStyle = '#282c36';
+        ctx.fillStyle = bodyCol;
         ctx.fillRect(px, py + 7, TILE, TILE - 7);
         ctx.strokeStyle = 'rgba(0,0,0,0.3)';
         ctx.strokeRect(px + 4, py + 2, TILE - 8, 2);
       } else {
-        ctx.fillStyle = '#282c36';
+        ctx.fillStyle = bodyCol;
         ctx.fillRect(px, py, TILE, TILE);
       }
       ctx.strokeStyle = 'rgba(0,0,0,0.25)';
@@ -1647,6 +2243,7 @@ function drawTiles() {
 // solid block topRow..ground); this is purely the look. Batman walks along
 // the roof at topRow, in front of the rooftop props.
 function drawWalls(t) {
+  if (level.cave) return; // cave terraces are plain rock, painted in drawTiles()
   const groundPx = level.groundY * TILE - camera.y;
   for (const w of level.walls) {
     const x0 = w.x * TILE - camera.x;
@@ -2037,7 +2634,7 @@ function drawPlayer() {
   const cowlH = 10, faceH = 8, shoesH = 6;
   const bodyTop = cowlH + faceH - 1;
   const suitH = h - bodyTop;
-  const accent = player.powerState === 'batarang' ? '#ffe066' : '#ffd166';
+  const accent = (player.powerState === 'batarang' || player.powerState === 'batigarra') ? '#ffe066' : '#ffd166';
 
   // walk-cycle: driven by distance travelled (not time), so the legs and a
   // little body bob animate only while actually moving on the ground —
@@ -2231,20 +2828,31 @@ function drawBatarangs() {
     ctx.save();
     ctx.translate(px, b.y - camera.y);
     ctx.rotate(b.rot);
-    ctx.fillStyle = '#c9cdd6';
-    ctx.beginPath();
-    ctx.moveTo(0, -8);
-    ctx.lineTo(3, 0);
-    ctx.lineTo(8, 3);
-    ctx.lineTo(0, 1);
-    ctx.lineTo(-8, 3);
-    ctx.lineTo(-3, 0);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = '#ffd166';
-    ctx.beginPath();
-    ctx.arc(0, 0, 1.6, 0, Math.PI * 2);
-    ctx.fill();
+    if (b.type === 'batigarra') {
+      // grappling hook: a gold three-tine claw instead of a spinning blade
+      ctx.strokeStyle = '#ffd166';
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(0, 7); ctx.lineTo(0, -7); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, -6); ctx.quadraticCurveTo(-8, -4, -7, 4); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, -6); ctx.quadraticCurveTo(8, -4, 7, 4); ctx.stroke();
+      ctx.lineCap = 'butt';
+    } else {
+      ctx.fillStyle = '#c9cdd6';
+      ctx.beginPath();
+      ctx.moveTo(0, -8);
+      ctx.lineTo(3, 0);
+      ctx.lineTo(8, 3);
+      ctx.lineTo(0, 1);
+      ctx.lineTo(-8, 3);
+      ctx.lineTo(-3, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#ffd166';
+      ctx.beginPath();
+      ctx.arc(0, 0, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 }
@@ -2996,6 +3604,7 @@ function render(t) {
   drawBackground(t);
   drawSwingPoints(t);
   drawTiles();
+  if (level.cave) drawCaveProps(t);
   drawWalls(t);
   drawGargoyles();
   drawHouses(t);
@@ -3045,6 +3654,12 @@ function loop(now) {
   if (state === 'playing' || state === 'levelcomplete') {
     update(dt);
     render(now);
+  } else if (state === 'computer' || state === 'choice') {
+    // Batcave UI: the frozen scene stays behind the expediente / choice panel
+    render(now);
+    if (state === 'computer') drawExpedienteScreen(now);
+    else drawChoiceScreen(now);
+    handleCaveUIInput(now);
   } else if (state === 'cutscene') {
     const ct = now - cutsceneStart;
     if (ct > CUT_TOTAL) startGame();
