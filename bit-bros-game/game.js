@@ -56,7 +56,7 @@ const SIZES = {
 function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [],
-          flag, spawn, name, indoor = false, bane = null } = spec;
+          spawn, name, indoor = false, bane = null } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
 
@@ -141,14 +141,8 @@ function buildLevel(spec) {
       minX: spec.villain.range[0] * TILE, maxX: spec.villain.range[1] * TILE,
       vx: 1.4, alive: true, hp: spec.villain.hp ?? 3, hitUntil: 0,
     } : null,
-    flag: (() => {
-      // plant the flag on whatever surface is under it — a rooftop or the street
-      let baseTy = groundY;
-      for (let ty = flag.y; ty < height; ty++) {
-        if (solid[ty][flag.x]) { baseTy = ty; break; }
-      }
-      return { x: flag.x * TILE + TILE / 2, y: baseTy * TILE, topY: flag.y * TILE };
-    })(),
+    // gargoyle perches (indoor boss arenas draw a statue under each platform)
+    perches: indoor ? platforms.map(p => ({ x: p.x, w: p.w, y: p.y })) : [],
     spawn: { x: spawn.x * TILE, y: spawn.y * TILE },
     pixelWidth: width * TILE,
     pixelHeight: height * TILE,
@@ -199,7 +193,6 @@ const LEVEL_SPECS = [
       { x: 47, y: 20, range: [45, 53] },
     ],
     bats: [[39, 21]],
-    flag: { x: 75, y: 14 },
     spawn: { x: 2, y: 22 },
   },
   {
@@ -247,7 +240,6 @@ const LEVEL_SPECS = [
       { x: 66, y: 24, range: [63, 69] },
     ],
     bats: [[7, 25]],
-    flag: { x: 87, y: 17 },
     spawn: { x: 2, y: 26 },
   },
   {
@@ -291,28 +283,32 @@ const LEVEL_SPECS = [
       { x: 50, y: 13, range: [48, 54] },
     ],
     bats: [[21, 29], [39, 14]],
-    flag: { x: 62, y: 4 },
     spawn: { x: 2, y: 30 },
   },
   {
     // Act 1 finale: Bane's abandoned warehouse. A closed arena — when Bane
-    // spots Batman he slams the venom button and grows huge. Two trapezes
-    // hang from the rafters at head height: swing into his head 5 times
-    // (he speeds up on the 3rd hit). His telegraphed jump sends a shockwave
-    // along the floor that only misses you if you're airborne or swinging.
+    // spots Batman he slams the venom button and grows huge. Two stone
+    // gargoyles flank the arena: grapple up onto a perch and dive onto his
+    // head — 5 hits win, he speeds up on the 3rd. His telegraphed jump
+    // sends a shockwave along the floor that only misses airborne players.
     name: '1-4',
     indoor: true,
     width: 34, height: 15, groundY: 13,
     pits: [],
-    platforms: [],
+    // gargoyle perches: stand on the statue and dive onto Bane's head
+    platforms: [
+      { x: 10, w: 2, y: 6 },
+      { x: 21, w: 2, y: 6 },
+    ],
     walls: [],
-    swingPoints: [[12, 2, 210], [21, 2, 210]],
+    // ceiling hooks above each gargoyle — jump under one and the rope
+    // reels Batman up onto the perch
+    swingPoints: [[11, 4], [22, 4]],
     coins: [],
     thugs: [],
     birds: [],
     bats: [],
     bane: { x: 26, hp: 5 },
-    flag: { x: 33, y: 1 }, // unreachable; the level completes when Bane falls
     spawn: { x: 2, y: 11 },
   },
 ];
@@ -403,6 +399,7 @@ const overlayBtn = document.getElementById('overlay-btn');
 
 let state = 'start'; // start | cutscene | playing | levelcomplete | win | gameover
 let continueOffer = false; // game over at Bane: offer to spend coins to retry
+let cutsceneStart = 0;
 let levelIndex = 0;
 let level = null;
 let player = null;
@@ -415,6 +412,7 @@ let timeAccum = 0;
 let invulnUntil = 0;
 let stateTimer = 0;
 let heroMessageUntil = 0;
+let allCoinsBonus = false;
 let frameTime = 0;
 let currentPowerState = 'small'; // small | big | batarang — carries over between levels, resets on death
 let batarangs = [];
@@ -528,12 +526,15 @@ function tryAttachGrapple(now) {
       }
       continue;
     }
-    // Anchors with a rooftop right under them (climb anchors) must not
-    // re-grab a player already standing on that roof — otherwise hopping
-    // along the rooftop under its own lamppost yo-yos forever. Anchors
+    // Climb anchors (a rooftop right under them) have two guards: never
+    // re-grab a player already standing on that roof, and only latch while
+    // RISING — dropping down off a roof must never snag the rope. Anchors
     // hanging over pits have no nearby floor and always latch.
     const hasCloseFloor = sp.floorY - sp.y <= TILE * 4;
-    if (hasCloseFloor && player.y + player.h < sp.floorY + 6) continue;
+    if (hasCloseFloor) {
+      if (player.y + player.h < sp.floorY + 6) continue;
+      if (player.vy >= 0) continue;
+    }
     const dist = Math.hypot(sp.x - cx, sp.y - cy);
     if (dist < GRAPPLE_RANGE && sp.y < cy) {
       player.swinging = true;
@@ -654,6 +655,7 @@ overlayBtn.addEventListener('click', () => {
     // the story first: Dos Caras kidnapping Robin
     overlay.classList.add('hidden');
     state = 'cutscene';
+    cutsceneStart = performance.now();
     return;
   }
   if (state === 'gameover' || state === 'win') startGame();
@@ -787,6 +789,13 @@ function completeLevel() {
   state = 'levelcomplete';
   stateTimer = 1400;
   score += Math.floor(timeLeft) * 5;
+  // collecting every coin in the level earns an extra life
+  allCoinsBonus = level.coins.length > 0 && level.coins.every(c => c.taken);
+  if (allCoinsBonus) {
+    lives++;
+    hud.lives.textContent = lives;
+    stateTimer = 2200; // linger so the bonus line can be read
+  }
 }
 
 function showOverlay(title, msg, btnLabel) {
@@ -854,10 +863,12 @@ function updateBane(dt, now) {
     }
   }
 
-  // shockwaves race along the floor; only grounded players get hit
+  // shockwaves race along the floor; only players standing at street level
+  // get hit — a gargoyle perch or a jump clears them
   for (const wv of level.waves) {
     wv.r += BANE_WAVE_SPEED * dt;
-    if (player.onGround && !player.swinging) {
+    const atFloor = player.y + player.h > (level.groundY * TILE) - 4;
+    if (player.onGround && atFloor && !player.swinging) {
       const d = Math.abs((player.x + player.w / 2) - wv.x);
       if (Math.abs(d - wv.r) < 26) hurtPlayer();
     }
@@ -865,13 +876,15 @@ function updateBane(dt, now) {
   level.waves = level.waves.filter(wv => wv.r < level.pixelWidth);
   if (state !== 'playing') return;
 
-  // hits: Batman swinging into Bane's head — 5 and he's done
+  // hits: dive from a gargoyle perch onto Bane's head — 5 and he's done
   if (bn.state !== 'idle' && bn.state !== 'growing') {
     const head = baneHeadBox(bn);
-    if (player.swinging && now > bn.hitUntil && aabbOverlap(player, head)) {
+    const stompingHead = !player.swinging && player.vy > 1.5 &&
+      aabbOverlap(player, head) && (player.y + player.h - head.y) < 22;
+    if (stompingHead && now > bn.hitUntil) {
       bn.hp--;
       bn.hitUntil = now + BANE_HIT_FLASH_MS;
-      player.swingAngularVel *= -0.7; // the blow rebounds the swing
+      player.vy = STOMP_BOUNCE; // bounce off the blow, back toward a perch
       score += 400;
       hud.score.textContent = score;
       if (bn.hp <= 0) {
@@ -882,8 +895,9 @@ function updateBane(dt, now) {
         return;
       }
     }
-    // body contact on the ground hurts Batman (the swing is the safe spot)
-    if (!player.swinging && Date.now() >= invulnUntil && aabbOverlap(player, bn)) {
+    // body contact hurts Batman, except while Bane reels from a head hit
+    if (!player.swinging && now >= bn.hitUntil &&
+        Date.now() >= invulnUntil && aabbOverlap(player, bn)) {
       hurtPlayer();
     }
   }
@@ -1044,18 +1058,16 @@ function updatePlaying(dt) {
     if (state !== 'playing') return; // a shockwave/contact may have ended the run
   }
 
-  // level exit door (outdoor levels; the warehouse ends when Bane falls)
-  if (!level.indoor) {
-    const dxf = (player.x + player.w / 2) - level.flag.x;
-    if (Math.abs(dxf) < 18 && player.y + player.h > level.flag.topY) {
-      const { total, defeated } = levelEnemyTotals();
-      const ratio = total === 0 ? 1 : defeated / total;
-      if (ratio >= REQUIRED_DEFEAT_RATIO) {
-        completeLevel();
-        return;
-      }
-      heroMessageUntil = Date.now() + HERO_MESSAGE_MS;
+  // level exit: simply reach the right edge of the map (outdoor levels;
+  // the warehouse ends when Bane falls)
+  if (!level.indoor && player.x + player.w >= level.pixelWidth - 6) {
+    const { total, defeated } = levelEnemyTotals();
+    const ratio = total === 0 ? 1 : defeated / total;
+    if (ratio >= REQUIRED_DEFEAT_RATIO) {
+      completeLevel();
+      return;
     }
+    heroMessageUntil = Date.now() + HERO_MESSAGE_MS;
   }
 
   // timer
@@ -1557,6 +1569,27 @@ function drawSwingPoints(t) {
     const px = sp.x - camera.x;
     if (px < -30 || px > CANVAS_W + 30) continue;
     const ay = sp.y - camera.y;
+    if (level.indoor) {
+      // warehouse: a glowing grapple hook chained to the roof truss
+      ctx.strokeStyle = '#4a4136';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(px, 40 - camera.y);
+      ctx.lineTo(px, ay);
+      ctx.stroke();
+      ctx.fillStyle = '#2f2721';
+      ctx.fillRect(px - 9, 36 - camera.y, 18, 6);
+      const hookGlow = 0.6 + 0.4 * Math.abs(Math.sin(t / 500 + sp.x));
+      const hg = ctx.createRadialGradient(px, ay, 2, px, ay, 22);
+      hg.addColorStop(0, `rgba(255,224,150,${0.7 * hookGlow})`);
+      hg.addColorStop(1, 'rgba(255,224,150,0)');
+      ctx.fillStyle = hg;
+      ctx.beginPath(); ctx.arc(px, ay, 22, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#ffe096';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath(); ctx.arc(px, ay + 4, 6, -0.3, Math.PI + 0.5); ctx.stroke();
+      continue;
+    }
     const poleBottom = sp.floorY - camera.y;
     ctx.strokeStyle = '#3a3f4b';
     ctx.lineWidth = 4;
@@ -1728,50 +1761,6 @@ function drawBirds(t) {
     ctx.arc(px + b.w * 0.62, cy - 2, 1.8, 0, Math.PI * 2);
     ctx.fill();
   }
-}
-
-// Level exit: a rooftop access door with a glowing bat-emblem sign — no
-// more flagpoles. The trigger area is the same as before.
-function drawExit(t) {
-  if (level.indoor) return;
-  const px = level.flag.x - camera.x;
-  if (px < -60 || px > CANVAS_W + 60) return;
-  const baseY = level.flag.y - camera.y;
-  const doorW = 30, doorH = 42;
-
-  // warm glow spilling out
-  const glow = 0.7 + 0.3 * Math.sin(t / 400);
-  const grad = ctx.createRadialGradient(px, baseY - doorH / 2, 6, px, baseY - doorH / 2, 55);
-  grad.addColorStop(0, `rgba(255,209,102,${0.30 * glow})`);
-  grad.addColorStop(1, 'rgba(255,209,102,0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath(); ctx.arc(px, baseY - doorH / 2, 55, 0, Math.PI * 2); ctx.fill();
-
-  // doorway housing
-  ctx.fillStyle = '#242c40';
-  ctx.fillRect(px - doorW / 2 - 5, baseY - doorH - 8, doorW + 10, doorH + 8);
-  ctx.fillStyle = '#12151f';
-  ctx.fillRect(px - doorW / 2, baseY - doorH, doorW, doorH);
-  ctx.strokeStyle = '#ffd166';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(px - doorW / 2, baseY - doorH, doorW, doorH);
-  // door handle
-  ctx.fillStyle = '#ffd166';
-  ctx.fillRect(px + doorW / 2 - 7, baseY - doorH / 2, 3, 6);
-
-  // small glowing bat emblem above the door
-  const ey = baseY - doorH - 18;
-  ctx.fillStyle = `rgba(255,224,150,${0.85 * glow})`;
-  ctx.beginPath(); ctx.arc(px, ey, 9, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#12151f';
-  ctx.beginPath();
-  ctx.moveTo(px, ey - 2);
-  ctx.lineTo(px - 3, ey - 5); ctx.lineTo(px - 2, ey - 2); ctx.lineTo(px - 8, ey - 4);
-  ctx.lineTo(px - 4, ey + 1); ctx.lineTo(px - 3, ey + 4); ctx.lineTo(px, ey + 2);
-  ctx.lineTo(px + 3, ey + 4); ctx.lineTo(px + 4, ey + 1); ctx.lineTo(px + 8, ey - 4);
-  ctx.lineTo(px + 2, ey - 2); ctx.lineTo(px + 3, ey - 5);
-  ctx.closePath();
-  ctx.fill();
 }
 
 function drawPlayer() {
@@ -1993,6 +1982,113 @@ function drawBatarangs() {
   }
 }
 
+// Front-facing stone gargoyles: Batman's perches in the boss arena. The
+// platform tile is the statue's flat head-top; below it glares a fanged
+// demon face with horns and folded wings, on a brick pillar.
+function drawGargoyles() {
+  for (const p of level.perches) {
+    const x0 = p.x * TILE - camera.x;
+    const wpx = p.w * TILE;
+    if (x0 + wpx < -60 || x0 > CANVAS_W + 60) continue;
+    const topY = p.y * TILE - camera.y;
+    const floorY = level.groundY * TILE - camera.y;
+    const cx = x0 + wpx / 2;
+    const stone = '#6e7889', dark = '#525b6b', hi = '#8f9ab2';
+
+    // brick pillar
+    ctx.fillStyle = '#463c34';
+    ctx.fillRect(cx - 17, topY + 86, 34, floorY - topY - 86);
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 1;
+    for (let y = topY + 96; y < floorY; y += 12) {
+      ctx.beginPath(); ctx.moveTo(cx - 17, y); ctx.lineTo(cx + 17, y); ctx.stroke();
+    }
+    // pedestal cap
+    ctx.fillStyle = '#39404e';
+    ctx.beginPath();
+    ctx.moveTo(x0 - 4, topY + 86);
+    ctx.lineTo(x0 + wpx + 4, topY + 86);
+    ctx.lineTo(x0 + wpx - 10, topY + 74);
+    ctx.lineTo(x0 + 10, topY + 74);
+    ctx.closePath(); ctx.fill();
+
+    // folded wings flaring at the sides
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.moveTo(x0 + 4, topY + 16);
+    ctx.lineTo(x0 - 16, topY - 2);
+    ctx.lineTo(x0 - 8, topY + 44);
+    ctx.lineTo(x0 + 6, topY + 56);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x0 + wpx - 4, topY + 16);
+    ctx.lineTo(x0 + wpx + 16, topY - 2);
+    ctx.lineTo(x0 + wpx + 8, topY + 44);
+    ctx.lineTo(x0 + wpx - 6, topY + 56);
+    ctx.closePath(); ctx.fill();
+
+    // head block (the face) under the standing ledge
+    ctx.fillStyle = stone;
+    ctx.beginPath();
+    ctx.roundRect(x0 + 2, topY + 8, wpx - 4, 68, 10);
+    ctx.fill();
+    // horns at the ledge corners
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.moveTo(x0 + 4, topY + 12); ctx.lineTo(x0 - 2, topY - 12); ctx.lineTo(x0 + 16, topY + 6);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x0 + wpx - 4, topY + 12); ctx.lineTo(x0 + wpx + 2, topY - 12); ctx.lineTo(x0 + wpx - 16, topY + 6);
+    ctx.closePath(); ctx.fill();
+    // standing ledge (the platform surface)
+    ctx.fillStyle = hi;
+    ctx.fillRect(x0 - 2, topY, wpx + 4, 5);
+    ctx.fillStyle = dark;
+    ctx.fillRect(x0 - 2, topY + 5, wpx + 4, 3);
+
+    // heavy brow + glowing amber eyes
+    ctx.fillStyle = dark;
+    ctx.fillRect(x0 + 8, topY + 18, wpx - 16, 7);
+    ctx.save();
+    ctx.fillStyle = '#ffb347';
+    ctx.shadowColor = '#ffb347';
+    ctx.shadowBlur = 7;
+    ctx.beginPath(); ctx.arc(cx - 14, topY + 30, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 14, topY + 30, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    // snout
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.moveTo(cx - 6, topY + 36); ctx.lineTo(cx + 6, topY + 36); ctx.lineTo(cx, topY + 46);
+    ctx.closePath(); ctx.fill();
+
+    // snarling mouth with fangs
+    ctx.fillStyle = '#23262e';
+    ctx.beginPath();
+    ctx.roundRect(cx - 20, topY + 50, 40, 18, 5);
+    ctx.fill();
+    ctx.fillStyle = '#e8e4dc';
+    // upper fangs
+    ctx.beginPath();
+    ctx.moveTo(cx - 15, topY + 50); ctx.lineTo(cx - 9, topY + 50); ctx.lineTo(cx - 12, topY + 61);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx + 9, topY + 50); ctx.lineTo(cx + 15, topY + 50); ctx.lineTo(cx + 12, topY + 61);
+    ctx.closePath(); ctx.fill();
+    // lower fangs
+    ctx.beginPath();
+    ctx.moveTo(cx - 5, topY + 68); ctx.lineTo(cx + 1, topY + 68); ctx.lineTo(cx - 2, topY + 58);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx + 4, topY + 68); ctx.lineTo(cx + 10, topY + 68); ctx.lineTo(cx + 7, topY + 58);
+    ctx.closePath(); ctx.fill();
+    // clawed feet gripping the pedestal
+    ctx.fillStyle = dark;
+    ctx.fillRect(x0 + 8, topY + 74, 10, 8);
+    ctx.fillRect(x0 + wpx - 18, topY + 74, 10, 8);
+  }
+}
+
 // ---------------------------------------------------------------
 // Bane rendering
 // ---------------------------------------------------------------
@@ -2004,16 +2100,18 @@ function drawBane(t) {
   if (!bn.alive) {
     // knocked out flat on the warehouse floor
     const px = bn.x - camera.x;
-    ctx.fillStyle = '#4a525f';
+    ctx.fillStyle = '#c9a17a';
     ctx.beginPath();
     ctx.ellipse(px + bn.w / 2, floorY - 16, bn.w * 0.55, 15, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#e8e4dc';
+    ctx.fillStyle = '#16181e';
+    ctx.fillRect(px + bn.w * 0.22, floorY - 26, bn.w * 0.56, 14);
+    ctx.fillStyle = '#ded9cf';
     ctx.beginPath();
-    ctx.ellipse(px + bn.w * 0.15, floorY - 18, 14, 11, 0, 0, Math.PI * 2);
+    ctx.ellipse(px + bn.w * 0.12, floorY - 18, 14, 11, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#15171c';
-    ctx.fillRect(px + bn.w * 0.15 - 12, floorY - 21, 24, 6);
+    ctx.fillStyle = '#101216';
+    ctx.fillRect(px + bn.w * 0.12 - 12, floorY - 21, 24, 6);
     return;
   }
 
@@ -2030,7 +2128,6 @@ function drawBane(t) {
     shakeX = Math.sin(t / 30) * 2.5;
     py += bh * 0.12;
     bh *= 0.88;
-    // danger glow on the floor under him
     ctx.fillStyle = `rgba(255,120,80,${0.18 + 0.12 * Math.sin(t / 90)})`;
     ctx.beginPath();
     ctx.ellipse(px + bw / 2, floorY, bw * 1.1, 10, 0, 0, Math.PI * 2);
@@ -2041,81 +2138,142 @@ function drawBane(t) {
   ctx.translate(shakeX, 0);
 
   const cx = px + bw / 2;
-  const scale = bh / BANE_BIG.h; // proportions shared by small & grown Bane
+  const scale = bh / BANE_BIG.h;
+  const skin = '#c9a17a', skinShade = '#a67f5c', skinHi = '#e0bd94';
 
-  // legs / pants
-  ctx.fillStyle = '#20242c';
-  ctx.fillRect(px + bw * 0.12, py + bh * 0.62, bw * 0.76, bh * 0.38);
-  // torso
-  ctx.fillStyle = '#5b6470';
+  // legs: dark cargo pants + knee pads + boots
+  ctx.fillStyle = '#23262e';
+  ctx.fillRect(px + bw * 0.10, py + bh * 0.60, bw * 0.34, bh * 0.40);
+  ctx.fillRect(px + bw * 0.56, py + bh * 0.60, bw * 0.34, bh * 0.40);
+  ctx.fillStyle = '#33373f';
+  ctx.fillRect(px + bw * 0.10, py + bh * 0.74, bw * 0.34, bh * 0.07);
+  ctx.fillRect(px + bw * 0.56, py + bh * 0.74, bw * 0.34, bh * 0.07);
+  ctx.fillStyle = '#101216';
+  ctx.fillRect(px + bw * 0.06, py + bh * 0.94, bw * 0.40, bh * 0.06);
+  ctx.fillRect(px + bw * 0.54, py + bh * 0.94, bw * 0.40, bh * 0.06);
+
+  // torso: tan chest, shaded pecs, black tank top, belt
+  ctx.fillStyle = skin;
   ctx.beginPath();
-  ctx.moveTo(px + bw * 0.10, py + bh * 0.66);
-  ctx.lineTo(px + bw * 0.02, py + bh * 0.26);
-  ctx.quadraticCurveTo(px - bw * 0.08, py + bh * 0.12, px + bw * 0.2, py + bh * 0.10);
-  ctx.lineTo(px + bw * 0.8, py + bh * 0.10);
-  ctx.quadraticCurveTo(px + bw * 1.08, py + bh * 0.12, px + bw * 0.98, py + bh * 0.26);
-  ctx.lineTo(px + bw * 0.90, py + bh * 0.66);
+  ctx.moveTo(px + bw * 0.06, py + bh * 0.62);
+  ctx.lineTo(px + bw * 0.02, py + bh * 0.24);
+  ctx.quadraticCurveTo(px + bw * 0.04, py + bh * 0.12, px + bw * 0.22, py + bh * 0.10);
+  ctx.lineTo(px + bw * 0.78, py + bh * 0.10);
+  ctx.quadraticCurveTo(px + bw * 0.96, py + bh * 0.12, px + bw * 0.98, py + bh * 0.24);
+  ctx.lineTo(px + bw * 0.94, py + bh * 0.62);
   ctx.closePath();
   ctx.fill();
-  // arms
-  ctx.fillStyle = '#6b7482';
+  ctx.fillStyle = skinShade;
+  ctx.fillRect(cx - bw * 0.03, py + bh * 0.14, bw * 0.06, bh * 0.20);
   ctx.beginPath();
-  ctx.ellipse(px - bw * 0.08, py + bh * 0.42, bw * 0.16, bh * 0.28, 0.25, 0, Math.PI * 2);
+  ctx.ellipse(px + bw * 0.30, py + bh * 0.28, bw * 0.14, bh * 0.03, 0, 0, Math.PI); ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(px + bw * 0.70, py + bh * 0.28, bw * 0.14, bh * 0.03, 0, 0, Math.PI); ctx.fill();
+  ctx.fillStyle = '#16181e';
+  ctx.beginPath();
+  ctx.moveTo(px + bw * 0.08, py + bh * 0.62);
+  ctx.lineTo(px + bw * 0.12, py + bh * 0.36);
+  ctx.lineTo(px + bw * 0.88, py + bh * 0.36);
+  ctx.lineTo(px + bw * 0.92, py + bh * 0.62);
+  ctx.closePath();
   ctx.fill();
-  ctx.beginPath();
-  ctx.ellipse(px + bw * 1.08, py + bh * 0.42, bw * 0.16, bh * 0.28, -0.25, 0, Math.PI * 2);
-  ctx.fill();
-  // fists
-  ctx.fillStyle = '#20242c';
-  ctx.beginPath(); ctx.arc(px - bw * 0.12, py + bh * 0.68, 11 * scale + 4, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(px + bw * 1.12, py + bh * 0.68, 11 * scale + 4, 0, Math.PI * 2); ctx.fill();
-  // chest harness
-  ctx.strokeStyle = '#171a20';
-  ctx.lineWidth = Math.max(3, 6 * scale);
-  ctx.beginPath();
-  ctx.moveTo(cx - bw * 0.28, py + bh * 0.14); ctx.lineTo(cx + bw * 0.12, py + bh * 0.5);
-  ctx.moveTo(cx + bw * 0.28, py + bh * 0.14); ctx.lineTo(cx - bw * 0.12, py + bh * 0.5);
-  ctx.stroke();
+  ctx.fillStyle = '#242832';
+  ctx.fillRect(px + bw * 0.12, py + bh * 0.36, bw * 0.76, bh * 0.03);
+  ctx.fillStyle = '#16181e';
+  ctx.fillRect(px + bw * 0.19, py + bh * 0.10, bw * 0.09, bh * 0.28);
+  ctx.fillRect(px + bw * 0.72, py + bh * 0.10, bw * 0.09, bh * 0.28);
+  ctx.fillStyle = '#3a2d20';
+  ctx.fillRect(px + bw * 0.08, py + bh * 0.58, bw * 0.84, bh * 0.05);
+  ctx.fillStyle = '#c9a83c';
+  ctx.fillRect(cx - bw * 0.06, py + bh * 0.572, bw * 0.12, bh * 0.062);
 
-  // head with the luchador mask
-  const headW = bw * 0.46, headH = bh * 0.30;
-  const hx = cx - headW / 2, hy = py - headH * 0.28;
-  ctx.fillStyle = '#e8e4dc';
-  ctx.beginPath();
-  ctx.roundRect(hx, hy, headW, headH, 6);
-  ctx.fill();
-  // black stripes
-  ctx.fillStyle = '#15171c';
-  ctx.fillRect(hx, hy + headH * 0.34, headW, headH * 0.2);
-  ctx.fillRect(cx - headW * 0.09, hy, headW * 0.18, headH);
-  // red eyes
-  ctx.fillStyle = '#ff4444';
-  ctx.fillRect(hx + headW * 0.16, hy + headH * 0.38, headW * 0.17, headH * 0.12);
-  ctx.fillRect(hx + headW * 0.67, hy + headH * 0.38, headW * 0.17, headH * 0.12);
-  // mouth grille
-  ctx.fillStyle = '#454b57';
-  ctx.fillRect(cx - headW * 0.26, hy + headH * 0.68, headW * 0.52, headH * 0.24);
-  ctx.strokeStyle = '#15171c';
-  ctx.lineWidth = 1.5;
-  for (let i = 1; i < 4; i++) {
-    const gx = cx - headW * 0.26 + headW * 0.52 * (i / 4);
-    ctx.beginPath(); ctx.moveTo(gx, hy + headH * 0.68); ctx.lineTo(gx, hy + headH * 0.92); ctx.stroke();
+  // arms: deltoid + biceps shading + wrapped fists
+  for (const side of [-1, 1]) {
+    const ax = cx + side * bw * 0.56;
+    ctx.fillStyle = skin;
+    ctx.beginPath();
+    ctx.ellipse(ax, py + bh * 0.22, bw * 0.16, bh * 0.10, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(ax + side * bw * 0.02, py + bh * 0.40, bw * 0.12, bh * 0.15, side * 0.15, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = skinHi;
+    ctx.beginPath();
+    ctx.ellipse(ax - side * bw * 0.04, py + bh * 0.19, bw * 0.06, bh * 0.03, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = skinShade;
+    ctx.beginPath();
+    ctx.ellipse(ax + side * bw * 0.03, py + bh * 0.50, bw * 0.09, bh * 0.05, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = skin;
+    ctx.beginPath();
+    ctx.ellipse(ax + side * bw * 0.04, py + bh * 0.58, bw * 0.09, bh * 0.08, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#2e323c';
+    ctx.beginPath();
+    ctx.arc(ax + side * bw * 0.05, py + bh * 0.68, Math.max(6, bw * 0.10), 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#454b58';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(ax + side * bw * 0.05, py + bh * 0.68, Math.max(4, bw * 0.06), 0.4, 2.6); ctx.stroke();
   }
-  // venom tube + wrist button (green)
-  ctx.strokeStyle = '#39c26a';
-  ctx.lineWidth = Math.max(2.5, 4 * scale);
-  ctx.beginPath();
-  ctx.moveTo(cx + headW * 0.5, hy + headH * 0.55);
-  ctx.quadraticCurveTo(cx + bw * 0.55, hy + headH * 0.6, px + bw * 0.95, py + bh * 0.35);
-  ctx.stroke();
-  ctx.fillStyle = '#2b3038';
-  ctx.fillRect(px + bw * 1.02, py + bh * 0.56, 18 * scale + 6, 9 * scale + 4);
-  ctx.fillStyle = '#39c26a';
-  ctx.beginPath();
-  ctx.arc(px + bw * 1.02 + (18 * scale + 6) / 2, py + bh * 0.56 + (9 * scale + 4) / 2, 3.5 * scale + 1.5, 0, Math.PI * 2);
-  ctx.fill();
 
-  // HP pips over his head (5 head hits to win)
+  // venom tank on the shoulder + double tube into the head
+  ctx.fillStyle = '#1f4d33';
+  ctx.fillRect(px + bw * 0.80, py + bh * 0.00, bw * 0.15, bh * 0.15);
+  ctx.fillStyle = '#39c26a';
+  ctx.fillRect(px + bw * 0.82, py + bh * 0.02, bw * 0.11, bh * 0.05);
+  ctx.strokeStyle = '#39c26a';
+  ctx.lineWidth = Math.max(3, bh * 0.03);
+  ctx.beginPath();
+  ctx.moveTo(px + bw * 0.87, py + bh * 0.04);
+  ctx.quadraticCurveTo(cx + bw * 0.42, py - bh * 0.10, cx + bw * 0.13, py - bh * 0.05);
+  ctx.stroke();
+  ctx.strokeStyle = '#2b9150';
+  ctx.lineWidth = Math.max(2, bh * 0.018);
+  ctx.beginPath();
+  ctx.moveTo(px + bw * 0.85, py + bh * 0.08);
+  ctx.quadraticCurveTo(cx + bw * 0.40, py - bh * 0.03, cx + bw * 0.15, py - bh * 0.005);
+  ctx.stroke();
+
+  // head: luchador mask, black band + center ridge, stitches, grille
+  const hw = bw * 0.46, hh = bh * 0.30;
+  const hx = cx - hw / 2, hy = py - hh * 0.42;
+  ctx.fillStyle = '#ded9cf';
+  ctx.beginPath();
+  ctx.roundRect(hx, hy, hw, hh, hw * 0.22);
+  ctx.fill();
+  ctx.fillStyle = '#c6c0b2';
+  ctx.beginPath();
+  ctx.roundRect(hx + hw * 0.72, hy, hw * 0.28, hh, hw * 0.2);
+  ctx.fill();
+  ctx.fillStyle = '#101216';
+  ctx.fillRect(hx, hy + hh * 0.30, hw, hh * 0.25);
+  ctx.fillRect(cx - hw * 0.07, hy, hw * 0.14, hh);
+  ctx.strokeStyle = '#8d8778';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 3; i++) {
+    const sy = hy + hh * (0.10 + i * 0.07);
+    ctx.beginPath(); ctx.moveTo(cx - hw * 0.07, sy); ctx.lineTo(cx - hw * 0.16, sy); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx + hw * 0.07, sy); ctx.lineTo(cx + hw * 0.16, sy); ctx.stroke();
+  }
+  ctx.save();
+  ctx.fillStyle = '#ff3b30';
+  ctx.shadowColor = '#ff3b30';
+  ctx.shadowBlur = 7;
+  ctx.fillRect(hx + hw * 0.16, hy + hh * 0.36, hw * 0.16, hh * 0.11);
+  ctx.fillRect(hx + hw * 0.68, hy + hh * 0.36, hw * 0.16, hh * 0.11);
+  ctx.restore();
+  ctx.fillStyle = '#3c414d';
+  ctx.beginPath();
+  ctx.roundRect(cx - hw * 0.30, hy + hh * 0.62, hw * 0.60, hh * 0.32, 4);
+  ctx.fill();
+  ctx.strokeStyle = '#14161c';
+  ctx.lineWidth = 2;
+  for (let i = 1; i < 5; i++) {
+    const gx = cx - hw * 0.30 + hw * 0.60 * (i / 5);
+    ctx.beginPath(); ctx.moveTo(gx, hy + hh * 0.64); ctx.lineTo(gx, hy + hh * 0.92); ctx.stroke();
+  }
+  ctx.fillStyle = '#6a7280';
+  ctx.beginPath(); ctx.arc(cx - hw * 0.26, hy + hh * 0.66, 2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx + hw * 0.26, hy + hh * 0.66, 2, 0, Math.PI * 2); ctx.fill();
+
+  // HP pips over his head (5 head dives to win)
   if (bn.state !== 'idle') {
     for (let i = 0; i < bn.maxHp; i++) {
       ctx.fillStyle = i < bn.hp ? '#ff5e5e' : 'rgba(255,255,255,0.25)';
@@ -2146,9 +2304,223 @@ function drawShockwaves() {
 }
 
 // ---------------------------------------------------------------
-// Intro cutscene: Dos Caras drags a tied-up Robin away into the night
+// Intro cutscene (animated): Dos Caras throws a tied-up Robin into his
+// van and speeds off into the night while Batman gives chase.
 // ---------------------------------------------------------------
-function drawIntroScene(t) {
+
+// Robin, classic costume: red tunic with the R badge, yellow cape,
+// green sleeves/gloves/trunks/boots, domino mask, spiky hair.
+function drawRobinSprite(x, y, s, tied, wiggle = 0) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(wiggle);
+  ctx.scale(s, s);
+  ctx.fillStyle = '#f1c40f';
+  ctx.beginPath();
+  ctx.moveTo(4, 12); ctx.lineTo(-8, 34); ctx.lineTo(2, 44); ctx.lineTo(8, 16);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#d4a90c';
+  ctx.beginPath();
+  ctx.moveTo(20, 12); ctx.lineTo(30, 32); ctx.lineTo(22, 42); ctx.lineTo(17, 16);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#1e8449';
+  ctx.fillRect(5, 42, 6, 12);
+  ctx.fillRect(13, 42, 6, 12);
+  ctx.fillStyle = '#146034';
+  ctx.fillRect(4, 50, 8, 5);
+  ctx.fillRect(12, 50, 8, 5);
+  ctx.fillStyle = '#1e8449';
+  ctx.fillRect(4, 37, 16, 6);
+  ctx.fillStyle = '#cb2d20';
+  ctx.fillRect(3, 16, 18, 22);
+  ctx.fillStyle = '#a32118';
+  ctx.fillRect(16, 16, 5, 22);
+  ctx.strokeStyle = '#f1c40f';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(12, 18); ctx.lineTo(12, 30); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(9, 20); ctx.lineTo(15, 22); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(9, 24); ctx.lineTo(15, 26); ctx.stroke();
+  ctx.fillStyle = '#f6d743';
+  ctx.beginPath(); ctx.arc(7.5, 20.5, 3.4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111';
+  ctx.font = 'bold 5px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('R', 7.5, 22.5);
+  ctx.fillStyle = '#1e8449';
+  ctx.fillRect(-1, 16, 6, 8);
+  ctx.fillRect(19, 16, 6, 8);
+  ctx.fillStyle = '#e8b88a';
+  ctx.fillRect(0, 24, 4.5, 8);
+  ctx.fillRect(19.5, 24, 4.5, 8);
+  ctx.fillStyle = '#146034';
+  ctx.fillRect(-0.5, 31, 5.5, 5);
+  ctx.fillRect(19, 31, 5.5, 5);
+  ctx.fillStyle = '#f1c40f';
+  ctx.fillRect(3, 36, 18, 3);
+  ctx.fillStyle = '#e8b88a';
+  ctx.fillRect(4, 0, 16, 17);
+  ctx.fillStyle = '#16181e';
+  ctx.beginPath();
+  ctx.moveTo(2, 4); ctx.lineTo(5, -3); ctx.lineTo(9, 1); ctx.lineTo(13, -4);
+  ctx.lineTo(16, 1); ctx.lineTo(20, -2); ctx.lineTo(22, 4);
+  ctx.lineTo(22, 6); ctx.lineTo(2, 6);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#0c0d10';
+  ctx.beginPath();
+  ctx.moveTo(3, 7); ctx.lineTo(21, 7); ctx.lineTo(20, 12); ctx.lineTo(13.5, 11);
+  ctx.lineTo(12, 9.5); ctx.lineTo(10.5, 11); ctx.lineTo(4, 12);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(6, 8.5, 3.6, 2.2);
+  ctx.fillRect(14.5, 8.5, 3.6, 2.2);
+  if (tied) {
+    ctx.strokeStyle = '#d9d3c5';
+    ctx.lineWidth = 2.2;
+    for (const yy of [19, 24, 29, 34]) {
+      ctx.beginPath(); ctx.moveTo(2, yy); ctx.lineTo(22, yy + 1.5); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.moveTo(2, 19); ctx.lineTo(4, 34); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(22, 20); ctx.lineTo(20, 35); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Two-Face: split navy/purple suit, half-burned face, coin in hand.
+function drawTwoFaceSprite(x, y, s, bob = 0) {
+  ctx.save();
+  ctx.translate(x, y + bob);
+  ctx.scale(s, s);
+  ctx.fillStyle = '#1d2333';
+  ctx.fillRect(4, 56, 10, 18);
+  ctx.fillStyle = '#3d2a5e';
+  ctx.fillRect(16, 56, 10, 18);
+  ctx.fillStyle = '#0c0e16';
+  ctx.fillRect(2, 72, 12, 5);
+  ctx.fillRect(16, 72, 12, 5);
+  ctx.fillStyle = '#242f4d';
+  ctx.fillRect(2, 26, 13, 32);
+  ctx.fillStyle = '#5a2d8c';
+  ctx.fillRect(15, 26, 13, 32);
+  ctx.fillStyle = '#161d33';
+  ctx.beginPath(); ctx.moveTo(6, 26); ctx.lineTo(13, 26); ctx.lineTo(10, 38); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#3d1e63';
+  ctx.beginPath(); ctx.moveTo(24, 26); ctx.lineTo(17, 26); ctx.lineTo(20, 38); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#e8e6df';
+  ctx.beginPath(); ctx.moveTo(13, 26); ctx.lineTo(17, 26); ctx.lineTo(16, 40); ctx.lineTo(14, 40); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#8c1f2c';
+  ctx.fillRect(13.6, 27, 2.8, 10);
+  ctx.fillStyle = '#242f4d';
+  ctx.fillRect(-3, 27, 6, 22);
+  ctx.fillStyle = '#5a2d8c';
+  ctx.fillRect(27, 27, 6, 22);
+  ctx.fillStyle = '#e8b88a';
+  ctx.fillRect(-2.5, 49, 5, 6);
+  ctx.fillStyle = '#b5f26d';
+  ctx.fillRect(27.5, 49, 5, 6);
+  ctx.fillStyle = '#e8b88a';
+  ctx.fillRect(4, 2, 11, 22);
+  ctx.fillStyle = '#8e3140';
+  ctx.fillRect(15, 2, 11, 22);
+  ctx.fillStyle = '#6d2433';
+  ctx.fillRect(15, 4, 4, 5);
+  ctx.fillRect(20, 10, 5, 4);
+  ctx.fillRect(16, 16, 4, 4);
+  ctx.fillStyle = '#a84a56';
+  ctx.fillRect(22, 3, 4, 5);
+  ctx.fillRect(16, 11, 3, 3);
+  ctx.fillStyle = '#2c2415';
+  ctx.fillRect(3, -2, 12, 6);
+  ctx.fillStyle = '#141824';
+  ctx.beginPath();
+  ctx.moveTo(15, -2); ctx.lineTo(19, -4); ctx.lineTo(21, -1); ctx.lineTo(24, -4); ctx.lineTo(27, 0);
+  ctx.lineTo(27, 4); ctx.lineTo(15, 4);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(7, 10, 4, 2.6);
+  ctx.fillStyle = '#20232f';
+  ctx.fillRect(8.4, 10.4, 1.6, 1.8);
+  ctx.fillStyle = '#ffe9a8';
+  ctx.beginPath(); ctx.arc(20.5, 11, 2.8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#20232f';
+  ctx.beginPath(); ctx.arc(20.9, 11, 1.2, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#5e3d2c';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(7, 19); ctx.lineTo(13, 19); ctx.stroke();
+  ctx.fillStyle = '#e8e6df';
+  ctx.fillRect(15.5, 17.5, 8, 3);
+  ctx.strokeStyle = '#6d2433';
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath(); ctx.moveTo(16.5 + i * 2, 17.5); ctx.lineTo(16.5 + i * 2, 20.5); ctx.stroke();
+  }
+  ctx.fillStyle = '#d8d8d0';
+  ctx.beginPath(); ctx.arc(0, 47, 3.4, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#8f8f86';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(-2.4, 45); ctx.lineTo(2.4, 49); ctx.stroke();
+  ctx.restore();
+}
+
+// The gang's van, rear at the left: split-circle tag, animated wheels.
+function drawVanSprite(x, groundYpx, doorT, moving, t) {
+  ctx.save();
+  ctx.translate(x, groundYpx);
+  ctx.fillStyle = '#23283c';
+  ctx.fillRect(0, -62, 120, 62);
+  ctx.fillStyle = '#181c2c';
+  ctx.fillRect(120, -50, 34, 50);
+  ctx.fillStyle = '#3d4b66';
+  ctx.fillRect(126, -46, 20, 18);
+  ctx.fillStyle = '#e8e6df';
+  ctx.beginPath(); ctx.arc(60, -32, 14, Math.PI / 2, Math.PI * 1.5); ctx.fill();
+  ctx.fillStyle = '#5a2d8c';
+  ctx.beginPath(); ctx.arc(60, -32, 14, -Math.PI / 2, Math.PI / 2); ctx.fill();
+  for (const wx of [26, 128]) {
+    ctx.fillStyle = '#0c0f1a';
+    ctx.beginPath(); ctx.arc(wx, 0, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#454d5c';
+    ctx.beginPath(); ctx.arc(wx, 0, 5, 0, Math.PI * 2); ctx.fill();
+    if (moving) {
+      const spin = t / 60;
+      ctx.strokeStyle = 'rgba(160,170,190,0.7)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(wx, 0, 9, spin, spin + 1.4); ctx.stroke();
+      ctx.beginPath(); ctx.arc(wx, 0, 9, spin + Math.PI, spin + Math.PI + 1.4); ctx.stroke();
+    }
+  }
+  // rear doors: doorT 0 = wide open, 1 = shut
+  ctx.fillStyle = '#05070d';
+  ctx.fillRect(0, -58, 30, 56); // cargo hold
+  const swing = (1 - doorT) * 16;
+  ctx.fillStyle = '#101423';
+  ctx.fillRect(-swing, -60, Math.max(4, 16 - swing), 58);
+  if (doorT >= 1) {
+    ctx.strokeStyle = '#0c0f1a';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(8, -58); ctx.lineTo(8, -4); ctx.stroke();
+  }
+  if (moving) {
+    ctx.strokeStyle = 'rgba(200,210,235,0.5)';
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-20 - i * 14, -46 + i * 16);
+      ctx.lineTo(-46 - i * 14, -46 + i * 16);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(180,180,190,0.25)';
+    const puff = (t / 300) % 1;
+    ctx.beginPath(); ctx.ellipse(-14 - puff * 12, -6 - puff * 4, 9 + puff * 5, 6 + puff * 3, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// timeline phases (ms since the cutscene started)
+const CUT_DRAG_END = 3200;   // Two-Face drags Robin to the van
+const CUT_DOOR_END = 5200;   // Robin thrown in, doors shut
+const CUT_DRIVE_END = 9200;  // the van speeds away, Batman leaps after it
+const CUT_TOTAL = 10000;
+
+function drawIntroScene(t, ct) {
   const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
   g.addColorStop(0, '#060812');
   g.addColorStop(0.7, '#10142c');
@@ -2156,7 +2528,6 @@ function drawIntroScene(t) {
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  // stars + moon
   for (let i = 0; i < 40; i++) {
     ctx.fillStyle = `rgba(220,230,255,${0.2 + 0.5 * hash01(i * 1.7)})`;
     ctx.fillRect(hash01(i * 7.31) * CANVAS_W, hash01(i * 3.77) * 150, 2, 2);
@@ -2168,48 +2539,17 @@ function drawIntroScene(t) {
 
   const groundYpx = 330;
 
-  // Batman watching from a rooftop, left
+  // rooftop, left — Batman's perch
   ctx.fillStyle = '#0c0f1e';
   ctx.fillRect(0, 160, 190, CANVAS_H - 160);
   ctx.fillStyle = '#161b30';
   ctx.fillRect(0, 160, 190, 8);
-  ctx.save();
-  ctx.translate(120, 118);
-  ctx.shadowColor = 'rgba(150,185,230,0.7)';
-  ctx.shadowBlur = 8;
-  ctx.fillStyle = '#131722';
-  ctx.beginPath(); // crouched silhouette with cape
-  ctx.moveTo(0, 42);
-  ctx.lineTo(4, 20); ctx.lineTo(0, 12); ctx.lineTo(6, 0); ctx.lineTo(10, 8);
-  ctx.lineTo(18, 8); ctx.lineTo(22, 0); ctx.lineTo(28, 12);
-  ctx.lineTo(26, 24); ctx.lineTo(40, 34); ctx.lineTo(34, 42);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(9, 14, 5, 2.5);
-  ctx.fillRect(17, 14, 5, 2.5);
-  ctx.restore();
 
-  // getaway van, right — rear doors open
-  ctx.fillStyle = '#23283c';
-  ctx.fillRect(600, groundYpx - 74, 160, 74);
-  ctx.fillStyle = '#181c2c';
-  ctx.fillRect(600, groundYpx - 74, 44, 74);
-  ctx.fillStyle = '#0c0f1a';
-  ctx.beginPath(); ctx.arc(640, groundYpx, 15, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(730, groundYpx, 15, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#101423';
-  ctx.fillRect(586, groundYpx - 70, 14, 70); // open rear door
-  ctx.fillStyle = '#05070d';
-  ctx.fillRect(600, groundYpx - 68, 26, 62); // dark cargo hold
-
-  // street
+  // street + lamp
   ctx.fillStyle = '#20232f';
   ctx.fillRect(190, groundYpx, CANVAS_W - 190, CANVAS_H - groundYpx);
   ctx.fillStyle = '#161923';
   ctx.fillRect(190, groundYpx, CANVAS_W - 190, 6);
-
-  // streetlamp lighting the kidnapping
   ctx.strokeStyle = '#3a3f4b';
   ctx.lineWidth = 5;
   ctx.beginPath(); ctx.moveTo(390, groundYpx); ctx.lineTo(390, 150); ctx.stroke();
@@ -2222,69 +2562,74 @@ function drawIntroScene(t) {
   ctx.fillStyle = '#ffe096';
   ctx.beginPath(); ctx.arc(420, 164, 6, 0, Math.PI * 2); ctx.fill();
 
-  // --- Dos Caras dragging Robin toward the van ---
-  const dx = 470, dy = groundYpx - 78;
-  // split suit: dark half / purple half
-  ctx.fillStyle = '#2a2e38';
-  ctx.fillRect(dx, dy + 26, 17, 52);
-  ctx.fillStyle = '#5a2d8c';
-  ctx.fillRect(dx + 17, dy + 26, 17, 52);
-  // split face
-  ctx.fillStyle = '#e8b88a';
-  ctx.fillRect(dx + 3, dy, 14, 24);
-  ctx.fillStyle = '#a2303c'; // burned half
-  ctx.fillRect(dx + 17, dy, 14, 24);
-  ctx.fillStyle = '#141824'; // hair
-  ctx.fillRect(dx + 1, dy - 5, 32, 8);
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(dx + 7, dy + 8, 4, 3);
-  ctx.fillStyle = '#ffdd55'; // wild eye on the scarred side
-  ctx.fillRect(dx + 22, dy + 8, 5, 4);
-  ctx.fillStyle = '#701f28';
-  ctx.fillRect(dx + 17, dy + 16, 14, 2.5); // scarred grin
-  ctx.fillStyle = '#10131c';
-  ctx.fillRect(dx + 2, dy + 78, 12, 8);
-  ctx.fillRect(dx + 20, dy + 78, 12, 8);
-  // his arm gripping Robin
-  ctx.strokeStyle = '#5a2d8c';
-  ctx.lineWidth = 8;
-  ctx.beginPath(); ctx.moveTo(dx + 31, dy + 34); ctx.lineTo(dx + 62, dy + 46); ctx.stroke();
+  const clamp01 = v => Math.max(0, Math.min(1, v));
+  const dragT = clamp01(ct / CUT_DRAG_END);
+  const doorT = clamp01((ct - CUT_DRAG_END - 600) / 900);
+  const driveT = clamp01((ct - CUT_DOOR_END) / (CUT_DRIVE_END - CUT_DOOR_END));
 
-  // Robin: tied with rope, being dragged
-  const rx = 530, ry = groundYpx - 60;
-  ctx.save();
-  ctx.translate(rx, ry);
-  ctx.rotate(0.15);
-  ctx.fillStyle = '#c0392b'; // tunic
-  ctx.fillRect(0, 14, 24, 26);
-  ctx.fillStyle = '#f1c40f'; // small cape
-  ctx.beginPath();
-  ctx.moveTo(22, 16); ctx.lineTo(36, 34); ctx.lineTo(24, 40); ctx.closePath();
-  ctx.fill();
-  ctx.fillStyle = '#e8b88a'; // face
-  ctx.fillRect(4, -6, 16, 20);
-  ctx.fillStyle = '#141824'; // hair
-  ctx.fillRect(2, -10, 20, 7);
-  ctx.fillStyle = '#0c0d10'; // domino mask
-  ctx.fillRect(4, 0, 16, 5);
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(6, 1, 4, 3);
-  ctx.fillRect(14, 1, 4, 3);
-  ctx.fillStyle = '#1e8449'; // legs
-  ctx.fillRect(2, 40, 9, 14);
-  ctx.fillRect(13, 40, 9, 14);
-  // ropes around the torso
-  ctx.strokeStyle = '#cfd0c9';
-  ctx.lineWidth = 3;
-  for (const yy of [18, 25, 32]) {
-    ctx.beginPath(); ctx.moveTo(-1, yy); ctx.lineTo(25, yy); ctx.stroke();
+  // van waits, then accelerates off to the right
+  const vanX = 560 + Math.pow(driveT, 1.7) * 420;
+  drawVanSprite(vanX, groundYpx, doorT, driveT > 0.01, t);
+
+  if (ct < CUT_DRAG_END + 600) {
+    // phase 1: dragging tied Robin toward the van
+    const tfx = 320 + dragT * 160;
+    const bob = Math.abs(Math.sin(t / 160)) * (dragT < 1 ? 2.2 : 0);
+    drawTwoFaceSprite(tfx, groundYpx - 78, 1.0, -bob);
+    const wiggle = Math.sin(t / 130) * 0.10;
+    drawRobinSprite(tfx + 42, groundYpx - 58, 1.0, true, 0.14 + wiggle);
+    // grip arm
+    ctx.strokeStyle = '#5a2d8c';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.moveTo(tfx + 30, groundYpx - 44); ctx.lineTo(tfx + 48, groundYpx - 36);
+    ctx.stroke();
+    if (Math.floor(t / 400) % 2 === 0) {
+      ctx.fillStyle = '#dbe4ff';
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('¡BATMAN!', tfx + 56, groundYpx - 96);
+    }
+  } else if (ct < CUT_DOOR_END) {
+    // phase 2: Robin lands inside the hold, Two-Face slams the door and
+    // hustles around to the cab
+    const inT = clamp01((ct - CUT_DRAG_END - 200) / 500);
+    if (doorT < 0.85) {
+      drawRobinSprite(vanX + 8, groundYpx - 56 + inT * 4, 0.72 - inT * 0.06, true, 0.3 - inT * 0.3);
+    }
+    const tfx = 500 + clamp01((ct - CUT_DRAG_END - 500) / 900) * 130;
+    const bob = Math.abs(Math.sin(t / 120)) * 2.4;
+    drawTwoFaceSprite(tfx, groundYpx - 78, 1.0, -bob);
   }
+
+  // Batman: crouched watch -> leaps across the gap after the van
+  const leapT = clamp01((ct - (CUT_DOOR_END + 300)) / 1000);
+  const bx = 120 + leapT * 260;
+  const by = 118 - Math.sin(leapT * Math.PI) * 90 + leapT * 172;
+  ctx.save();
+  ctx.translate(bx, by);
+  ctx.shadowColor = 'rgba(150,185,230,0.7)';
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = '#131722';
+  ctx.beginPath();
+  if (leapT > 0 && leapT < 1) {
+    // spread cape glide
+    ctx.moveTo(-6, 34);
+    ctx.lineTo(-30, 4); ctx.lineTo(-10, 12); ctx.lineTo(-2, -2);
+    ctx.lineTo(6, -14); ctx.lineTo(10, -6); ctx.lineTo(16, -14); ctx.lineTo(20, -2);
+    ctx.lineTo(40, 8); ctx.lineTo(26, 22); ctx.lineTo(18, 38);
+  } else {
+    ctx.moveTo(0, 42);
+    ctx.lineTo(4, 20); ctx.lineTo(0, 12); ctx.lineTo(6, 0); ctx.lineTo(10, 8);
+    ctx.lineTo(18, 8); ctx.lineTo(22, 0); ctx.lineTo(28, 12);
+    ctx.lineTo(26, 24); ctx.lineTo(40, 34); ctx.lineTo(34, 42);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(9, leapT > 0 && leapT < 1 ? -6 : 14, 5, 2.5);
+  ctx.fillRect(17, leapT > 0 && leapT < 1 ? -6 : 14, 5, 2.5);
   ctx.restore();
-  // help cry
-  ctx.fillStyle = '#dbe4ff';
-  ctx.font = 'bold 13px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('¡BATMAN!', rx + 14, ry - 26);
 
   // story panel
   ctx.fillStyle = 'rgba(6,8,16,0.92)';
@@ -2294,6 +2639,7 @@ function drawIntroScene(t) {
   ctx.strokeRect(40, 386, CANVAS_W - 80, 84);
   ctx.fillStyle = '#ffd166';
   ctx.font = 'bold 15px monospace';
+  ctx.textAlign = 'center';
   ctx.fillText('ACTO 1 — LA PISTA', CANVAS_W / 2, 408);
   ctx.fillStyle = '#dbe4ff';
   ctx.font = '12px monospace';
@@ -2303,6 +2649,12 @@ function drawIntroScene(t) {
     ctx.fillStyle = '#29d985';
     ctx.font = 'bold 12px monospace';
     ctx.fillText('TOCÁ LA PANTALLA O SALTÁ PARA EMPEZAR', CANVAS_W / 2, 462);
+  }
+
+  // fade out at the end
+  if (ct > CUT_DRIVE_END) {
+    ctx.fillStyle = `rgba(0,0,0,${clamp01((ct - CUT_DRIVE_END) / (CUT_TOTAL - CUT_DRIVE_END))})`;
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   }
 }
 
@@ -2341,10 +2693,10 @@ function render(t) {
   drawBackground(t);
   drawSwingPoints(t);
   drawTiles();
+  drawGargoyles();
   drawHouses(t);
   drawRooftopProps();
   drawTrash(t);
-  drawExit(t);
   drawCoins(t);
   drawBats(t);
   drawBatarangs();
@@ -2365,6 +2717,11 @@ function render(t) {
     ctx.font = 'bold 34px monospace';
     ctx.textAlign = 'center';
     ctx.fillText(`NIVEL ${level.name} COMPLETADO`, CANVAS_W / 2, CANVAS_H / 2);
+    if (allCoinsBonus) {
+      ctx.fillStyle = '#29d985';
+      ctx.font = 'bold 20px monospace';
+      ctx.fillText('¡TODAS LAS MONEDAS! +1 VIDA', CANVAS_W / 2, CANVAS_H / 2 + 40);
+    }
   }
 }
 
@@ -2382,7 +2739,9 @@ function loop(now) {
     update(dt);
     render(now);
   } else if (state === 'cutscene') {
-    drawIntroScene(now);
+    const ct = now - cutsceneStart;
+    if (ct > CUT_TOTAL) startGame();
+    else drawIntroScene(now, ct);
   }
   requestAnimationFrame(loop);
 }
