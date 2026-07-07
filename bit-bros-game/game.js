@@ -702,6 +702,34 @@ function rectTiles(x, y, w, h) {
   return tiles;
 }
 
+function rectHitsSolid(x, y, w, h) {
+  const tx0 = Math.floor(x / TILE), tx1 = Math.floor((x + w - 1) / TILE);
+  const ty0 = Math.floor(y / TILE), ty1 = Math.floor((y + h - 1) / TILE);
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
+      if (isSolidTile(tx, ty)) return true;
+    }
+  }
+  return false;
+}
+
+// Keep a patrolling enemy from phasing through a building: if its body has
+// walked into a solid facade, push it back out to the tile edge and reverse.
+// Correctly-placed patrols never touch a wall, so this only ever fires on a
+// range that would otherwise clip a building.
+function patrolWallBounce(e) {
+  if (!rectHitsSolid(e.x, e.y, e.w, e.h)) return;
+  if (e.vx > 0) {
+    const tx = Math.floor((e.x + e.w - 1) / TILE);
+    e.x = tx * TILE - e.w;
+    e.vx = -Math.abs(e.vx);
+  } else {
+    const tx = Math.floor(e.x / TILE);
+    e.x = (tx + 1) * TILE;
+    e.vx = Math.abs(e.vx);
+  }
+}
+
 function moveAndCollide(p, dt) {
   // Horizontal
   p.x += p.vx * dt;
@@ -1051,6 +1079,7 @@ function updatePlaying(dt) {
     g.x += g.vx * dt;
     if (g.x < g.minX) { g.x = g.minX; g.vx = Math.abs(g.vx); }
     if (g.x + g.w > g.maxX) { g.x = g.maxX - g.w; g.vx = -Math.abs(g.vx); }
+    patrolWallBounce(g);
 
     if (aabbOverlap(player, g)) {
       const stomped = player.vy > 0 && (player.y + player.h - g.y) < STOMP_TOLERANCE;
@@ -1073,6 +1102,7 @@ function updatePlaying(dt) {
     if (b.x < b.minX) { b.x = b.minX; b.vx = Math.abs(b.vx); }
     if (b.x + b.w > b.maxX) { b.x = b.maxX - b.w; b.vx = -Math.abs(b.vx); }
     b.y = b.baseY + Math.sin(now / 300 + b.x * 0.04) * 10;
+    patrolWallBounce(b);
 
     if (aabbOverlap(player, b)) {
       const stomped = player.vy > 0 && (player.y + player.h - b.y) < STOMP_TOLERANCE;
@@ -1094,6 +1124,7 @@ function updatePlaying(dt) {
     v.x += v.vx * dt;
     if (v.x < v.minX) { v.x = v.minX; v.vx = Math.abs(v.vx); }
     if (v.x + v.w > v.maxX) { v.x = v.maxX - v.w; v.vx = -Math.abs(v.vx); }
+    patrolWallBounce(v);
 
     if (aabbOverlap(player, v)) {
       const stomped = player.vy > 0 && (player.y + player.h - v.y) < STOMP_TOLERANCE;
