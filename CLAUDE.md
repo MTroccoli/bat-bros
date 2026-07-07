@@ -15,6 +15,20 @@ A Batman platformer built in pure Canvas 2D with custom physics, no external gam
 
 ---
 
+## Development Workflow (Important)
+
+**All development work must be committed directly to the `main` branch.** Do not create feature branches or use designated development branches. This ensures changes are immediately visible in the production codebase and eliminates the need for pull request reviews.
+
+When making changes:
+1. Modify files locally
+2. Test thoroughly (run `npm test` if tests exist, or test manually in browser)
+3. Commit directly to `main`: `git add <files> && git commit -m "message"`
+4. Push to origin: `git push origin main`
+
+This workflow keeps the game in a constantly deployable state and maintains a clean linear history.
+
+---
+
 ## File Structure
 
 ### Core Game Files
