@@ -1487,34 +1487,8 @@ function drawTiles() {
       // gabled houses paint their own roof + facade in drawHouses()
       const hs = houseAt(tx);
       if (hs && ty < hs.baseRow) continue;
-      const wall = ty < level.groundY ? wallAt(tx) : null;
-
-      if (wall) {
-        if (ty === wall.topRow) {
-          // rooftop cap: gravel surface + a parapet ledge lip along the edge
-          ctx.fillStyle = '#6b7280';
-          ctx.fillRect(px, py, TILE, 9);
-          ctx.fillStyle = '#4b5160';
-          ctx.fillRect(px, py + 9, TILE, TILE - 9);
-          ctx.fillStyle = '#8b90a0';
-          ctx.fillRect(px, py, TILE, 3);
-        } else {
-          // building facade below the roofline: brick-like banding
-          ctx.fillStyle = '#463c34';
-          ctx.fillRect(px, py, TILE, TILE);
-          ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(px, py + 11); ctx.lineTo(px + TILE, py + 11);
-          ctx.moveTo(px, py + 22); ctx.lineTo(px + TILE, py + 22);
-          const jointX = px + (ty % 2 === 0 ? 16 : 0);
-          ctx.moveTo(jointX, py); ctx.lineTo(jointX, py + TILE);
-          ctx.stroke();
-        }
-        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-        ctx.strokeRect(px + 0.5, py + 0.5, TILE - 1, TILE - 1);
-        continue;
-      }
+      // grapple towers paint their own brick facade + roof in drawWalls()
+      if (ty < level.groundY && wallAt(tx)) continue;
 
       const exposedTop = ty === 0 || !level.solid[ty - 1][tx];
       if (exposedTop) {
@@ -1534,25 +1508,67 @@ function drawTiles() {
   }
 }
 
-function drawRooftopProps() {
+// Grapple towers, drawn as full brick apartment buildings: warm brick
+// facade, corner pilasters, a grid of lit/dark windows, and a flat gravel
+// roof with a water tank + antenna. The collision shape is unchanged (a
+// solid block topRow..ground); this is purely the look. Batman walks along
+// the roof at topRow, in front of the rooftop props.
+function drawWalls(t) {
+  const groundPx = level.groundY * TILE - camera.y;
   for (const w of level.walls) {
-    const cx = (w.x + w.w / 2) * TILE - camera.x;
-    const topY = w.topRow * TILE - camera.y;
-    if (cx < -30 || cx > CANVAS_W + 30) continue;
-    // small AC unit / vent box sitting on the rooftop
-    ctx.fillStyle = '#3a3f4a';
-    ctx.fillRect(cx - 10, topY - 12, 20, 12);
-    ctx.fillStyle = '#22262e';
-    ctx.fillRect(cx - 10, topY - 12, 20, 3);
-    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    const x0 = w.x * TILE - camera.x;
+    const wpx = w.w * TILE;
+    if (x0 + wpx < -40 || x0 > CANVAS_W + 40) continue;
+    const roofY = w.topRow * TILE - camera.y;
+    const H = groundPx - roofY;
+
+    // brick facade
+    ctx.fillStyle = '#5a4238';
+    ctx.fillRect(x0, roofY, wpx, H);
+    // mortar banding
+    ctx.strokeStyle = 'rgba(0,0,0,0.20)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(cx - 10.5, topY - 12.5, 20, 12);
-    // a thin antenna pipe
-    ctx.strokeStyle = '#5a606c';
-    ctx.beginPath();
-    ctx.moveTo(cx + 14, topY - 12);
-    ctx.lineTo(cx + 14, topY - 30);
-    ctx.stroke();
+    for (let y = roofY + 8; y < groundPx; y += 8) {
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + wpx, y); ctx.stroke();
+    }
+    // corner pilasters give the silhouette defined edges
+    ctx.fillStyle = '#4a352c';
+    ctx.fillRect(x0, roofY, 5, H);
+    ctx.fillRect(x0 + wpx - 5, roofY, 5, H);
+
+    // window grid: one window per tile column, a couple of rows per storey.
+    // Lit/dark chosen deterministically per building so it never flickers.
+    const cols = w.w;
+    for (let c = 0; c < cols; c++) {
+      const wx = x0 + c * TILE + 8;
+      for (let wy = roofY + TILE * 0.5; wy + 18 < groundPx; wy += TILE) {
+        const row = Math.round((wy - roofY) / TILE);
+        const lit = hash01(w.x * 3.1 + row * 7 + c * 13) > 0.42;
+        if (lit) { ctx.fillStyle = 'rgba(255,207,107,0.14)'; ctx.fillRect(wx - 3, wy - 3, TILE - 10, 24); }
+        ctx.fillStyle = lit ? '#ffcf6b' : '#1c2438';
+        ctx.fillRect(wx, wy, TILE - 16, 18);
+        ctx.strokeStyle = '#2a1f18'; ctx.lineWidth = 2;
+        ctx.strokeRect(wx, wy, TILE - 16, 18);
+        ctx.fillStyle = '#3a2b22'; ctx.fillRect(wx - 2, wy + 18, TILE - 12, 3);
+      }
+    }
+
+    // flat gravel roof surface (what Batman actually stands on) + parapet lip
+    ctx.fillStyle = '#6b7280'; ctx.fillRect(x0, roofY, wpx, 9);
+    ctx.fillStyle = '#8b90a0'; ctx.fillRect(x0, roofY, wpx, 3);
+    ctx.fillStyle = '#4b5160'; ctx.fillRect(x0, roofY + 9, wpx, 3);
+
+    // rooftop props above the roofline: a water tank, plus a thin antenna
+    const cx = x0 + wpx / 2;
+    const tkx = cx - 12;
+    ctx.fillStyle = '#4a4036'; ctx.fillRect(tkx, roofY - 22, 24, 20);
+    ctx.fillStyle = '#2e281f'; ctx.fillRect(tkx, roofY - 22, 24, 4);
+    ctx.strokeStyle = '#22262e'; ctx.lineWidth = 2;
+    ctx.strokeRect(tkx + 4, roofY - 2, 4, 4); ctx.strokeRect(tkx + 16, roofY - 2, 4, 4);
+    ctx.strokeStyle = '#5a606c'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x0 + wpx - 12, roofY); ctx.lineTo(x0 + wpx - 12, roofY - 24); ctx.stroke();
+    ctx.fillStyle = '#ff5e5e';
+    ctx.beginPath(); ctx.arc(x0 + wpx - 12, roofY - 24, 2.5, 0, Math.PI * 2); ctx.fill();
   }
 }
 
@@ -2847,9 +2863,9 @@ function render(t) {
   drawBackground(t);
   drawSwingPoints(t);
   drawTiles();
+  drawWalls(t);
   drawGargoyles();
   drawHouses(t);
-  drawRooftopProps();
   drawTrash(t);
   drawCoins(t);
   drawBats(t);
