@@ -227,9 +227,9 @@ const LEVEL_SPECS = [
     thugs: [
       { x: 6, y: 28, range: [3, 10] },
       { x: 16, y: 28, range: [14, 22] },
-      { x: 32, y: 13, range: [32, 33] },
-      { x: 36, y: 10, range: [36, 37] },
-      { x: 45, y: 19, range: [45, 48] },
+      { x: 32, y: 13, range: [31, 34] },
+      { x: 36, y: 10, range: [34, 40] },
+      { x: 45, y: 19, range: [43, 48] },
       { x: 56, y: 28, range: [54, 59] },
       { x: 64, y: 28, range: [62, 68] },
       { x: 80, y: 28, range: [78, 84] },
@@ -712,6 +712,19 @@ function moveAndCollide(p, dt) {
     else if (p.vy < 0) { p.y = tileBottom; }
     p.vy = 0;
   }
+
+  // If on a triangular roof, adjust position to follow the slope
+  if (p.onGround) {
+    const pTileX = Math.floor(p.x / TILE) + Math.floor(p.w / TILE / 2);
+    const hs = houseAt(pTileX);
+    if (hs) {
+      const roofH = getRoofHeightAtX(hs, pTileX);
+      if (roofH !== null) {
+        const targetY = roofH * TILE - p.h;
+        if (Math.abs(targetY - p.y) < 5) p.y = targetY;
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------
@@ -996,6 +1009,16 @@ function updatePlaying(dt) {
     g.x += g.vx * dt;
     if (g.x < g.minX) { g.x = g.minX; g.vx = Math.abs(g.vx); }
     if (g.x + g.w > g.maxX) { g.x = g.maxX - g.w; g.vx = -Math.abs(g.vx); }
+
+    // If on a triangular roof, move diagonally following the slope
+    const gTileX = Math.floor(g.x / TILE);
+    const hs = houseAt(gTileX);
+    if (hs) {
+      const roofH = getRoofHeightAtX(hs, gTileX);
+      if (roofH !== null) {
+        g.y = roofH * TILE - g.h;
+      }
+    }
 
     if (aabbOverlap(player, g)) {
       const stomped = player.vy > 0 && (player.y + player.h - g.y) < STOMP_TOLERANCE;
@@ -1472,6 +1495,20 @@ function drawRooftopProps() {
 
 // Gabled ("2 aguas") houses: brick facade, stepped shingled roof slopes
 // meeting at a flat ridge, attic window, chimney with drifting smoke.
+// Helper: get roof height at a given x position (used for diagonal enemy movement)
+function getRoofHeightAtX(hs, x) {
+  if (x < hs.x || x >= hs.x + hs.w) return null;
+  const xRel = x - hs.x;
+  const mid = hs.w / 2;
+  let height;
+  if (xRel < mid) {
+    height = hs.topRow + (xRel / mid) * (hs.eaveRow - hs.topRow);
+  } else {
+    height = hs.topRow + ((hs.w - 1 - xRel) / mid) * (hs.eaveRow - hs.topRow);
+  }
+  return height;
+}
+
 function drawHouses(t) {
   for (const hs of level.houses) {
     const x0 = hs.x * TILE - camera.x;
@@ -1479,6 +1516,7 @@ function drawHouses(t) {
     if (x0 + wpx < -40 || x0 > CANVAS_W + 40) continue;
     const eaveY = (hs.eaveRow + 1) * TILE - camera.y;
     const baseY = hs.baseRow * TILE - camera.y;
+    const ridgeY = hs.topRow * TILE - camera.y;
 
     // brick facade
     ctx.fillStyle = '#4a3a30';
@@ -1499,59 +1537,40 @@ function drawHouses(t) {
       }
     }
 
-    // stepped roof columns with shingle rows; a diagonal bevel at each step
-    // corner turns the tile staircase into a readable two-slope roofline
-    for (let i = 0; i < hs.w; i++) {
-      const colTop = hs.topRow + Math.max(0, (hs.w / 2 - 1) - Math.min(i, hs.w - 1 - i));
-      const cx0 = (hs.x + i) * TILE - camera.x;
-      const cy0 = colTop * TILE - camera.y;
-      const chh = eaveY - cy0;
-      if (chh <= 0) continue;
-      ctx.fillStyle = '#39415c';
-      ctx.fillRect(cx0, cy0, TILE, chh);
-      ctx.strokeStyle = 'rgba(20,25,44,0.55)';
-      ctx.lineWidth = 1.5;
-      for (let sy = cy0 + 8; sy < eaveY; sy += 8) {
-        ctx.beginPath(); ctx.moveTo(cx0 + 1, sy); ctx.lineTo(cx0 + TILE - 1, sy); ctx.stroke();
-      }
-      // slope highlight along the top of each step
-      ctx.fillStyle = '#99a3c0';
-      ctx.fillRect(cx0, cy0, TILE, 2.5);
-      // corner bevels pointing up toward the ridge
-      const onLeftSlope = i < hs.w / 2 - 1;
-      const onRightSlope = i > hs.w / 2;
-      ctx.fillStyle = '#39415c';
-      if (onLeftSlope) {
-        ctx.beginPath();
-        ctx.moveTo(cx0 + TILE - 13, cy0);
-        ctx.lineTo(cx0 + TILE, cy0);
-        ctx.lineTo(cx0 + TILE, cy0 - 13);
-        ctx.closePath(); ctx.fill();
-      } else if (onRightSlope) {
-        ctx.beginPath();
-        ctx.moveTo(cx0, cy0 - 13);
-        ctx.lineTo(cx0, cy0);
-        ctx.lineTo(cx0 + 13, cy0);
-        ctx.closePath(); ctx.fill();
-      }
-    }
-    // eave fascia
-    ctx.fillStyle = '#22263a';
-    ctx.fillRect(x0 - 6, eaveY - 4, wpx + 12, 5);
-
-    // attic window in the gable, just under the ridge
-    const cxm = x0 + wpx / 2;
-    const atticY = (hs.topRow + 1) * TILE - camera.y + 6;
-    ctx.fillStyle = '#ffcf6b';
-    ctx.beginPath(); ctx.arc(cxm, atticY, 5.5, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#181b28';
+    // pure triangular roof
+    const leftX = x0;
+    const rightX = x0 + wpx;
+    const midX = x0 + wpx / 2;
+    ctx.fillStyle = '#664433';
+    ctx.beginPath();
+    ctx.moveTo(leftX, eaveY);
+    ctx.lineTo(rightX, eaveY);
+    ctx.lineTo(midX, ridgeY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#3a2a22';
     ctx.lineWidth = 2;
     ctx.stroke();
 
+    // roof slope highlights
+    ctx.strokeStyle = 'rgba(180,150,120,0.3)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < hs.w * 2; i++) {
+      const xPos = leftX + (rightX - leftX) * (i / (hs.w * 2));
+      const yPos = eaveY + (ridgeY - eaveY) * Math.abs((i / (hs.w * 2)) - 0.5) * 2;
+      ctx.beginPath();
+      if (i < hs.w) {
+        const nextX = leftX + (rightX - leftX) * ((i + 0.5) / (hs.w * 2));
+        const nextY = eaveY + (ridgeY - eaveY) * Math.abs(((i + 0.5) / (hs.w * 2)) - 0.5) * 2;
+        ctx.moveTo(xPos, yPos);
+        ctx.lineTo(nextX, nextY);
+      }
+      ctx.stroke();
+    }
+
     // chimney on the right slope with smoke
-    const chCol = hs.w - 2;
-    const chTop = (hs.topRow + 1) * TILE - camera.y;
-    const chx = (hs.x + chCol) * TILE - camera.x + 10;
+    const chx = rightX - 20;
+    const chTop = ridgeY + 15;
     ctx.fillStyle = '#3a3128';
     ctx.fillRect(chx, chTop - 20, 13, 20);
     ctx.fillStyle = '#241f1a';
