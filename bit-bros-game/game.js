@@ -185,7 +185,7 @@ const LEVEL_SPECS = [
       { x: 24, y: 24, range: [22, 29] },
       { x: 30, y: 18, range: [30, 32] },
       { x: 40, y: 24, range: [36, 44] },
-      { x: 56, y: 20, range: [56, 57] },
+      { x: 56, y: 20, range: [54, 59] },
       { x: 62, y: 24, range: [61, 66] },
     ],
     birds: [
@@ -275,7 +275,7 @@ const LEVEL_SPECS = [
       { x: 18, y: 32, range: [17, 23] },
       { x: 28, y: 32, range: [27, 29] },
       { x: 35, y: 20, range: [34, 37] },
-      { x: 42, y: 11, range: [42, 43] },
+      { x: 42, y: 11, range: [40, 45] },
       { x: 50, y: 16, range: [48, 55] },
     ],
     birds: [
@@ -1568,9 +1568,14 @@ function drawHouses(t) {
       ctx.stroke();
     }
 
-    // chimney on the right slope with smoke
-    const chx = rightX - 20;
-    const chTop = ridgeY + 15;
+    // chimney sitting ON the right slope: interpolate along the ridge->eave
+    // line (same one the fill triangle uses) so its base always lands on
+    // the visible roof surface instead of floating at a fixed pixel offset
+    const chSlopeT = 0.6; // 0 = at the ridge, 1 = at the eave
+    const chBaseX = midX + chSlopeT * (rightX - midX);
+    const chBaseY = ridgeY + chSlopeT * (eaveY - ridgeY);
+    const chx = chBaseX - 6.5;
+    const chTop = chBaseY + 6; // embed a few px into the roof for a grounded look
     ctx.fillStyle = '#3a3128';
     ctx.fillRect(chx, chTop - 20, 13, 20);
     ctx.fillStyle = '#241f1a';
