@@ -492,7 +492,7 @@ const LEVEL_SPECS = [
       [24, 15], [28, 15],
       [31, 10], [33, 10],
       [38, 15], [42, 15], [48, 15],
-      [52, 11], [61, 15], [69, 10],
+      [54, 14], [61, 15], [67, 14],
       [73, 15], [77, 15], [81, 15], [87, 15], [91, 15],
     ],
     thugs: [
@@ -508,7 +508,7 @@ const LEVEL_SPECS = [
       { x: 45, y: 13, range: [40, 50] },
       { x: 78, y: 12, range: [72, 90] },
     ],
-    bats: [[33, 11]],
+    bats: [[40, 15]],
     spawn: { x: 2, y: 15 },
   },
 ];
@@ -645,7 +645,7 @@ const btnUp = document.getElementById('btn-up');
 const btnDown = document.getElementById('btn-down');
 
 // Show/hide the on-screen fire button and set its icon for the active gadget.
-// The rope reel buttons (up/down) only show for the batigarra. The gadget is
+// The up/down buttons are always visible for ladder climbing. The gadget is
 // independent of health (small/big), so it never vanishes on a hit.
 function updateWeaponButton() {
   if (!btnShoot) return;
