@@ -466,9 +466,9 @@ const LEVEL_SPECS = [
     // second gap is split into two narrower hops (52-58 and 65-71) bridged
     // by one WIDE rest platform (59-64). Each hop mirrors the crane-hook
     // formula proven on the first gap (anchor.x = segment_start + 2, row
-    // 13 = 4 tiles above ground, keeping floorY - anchor.y > 128px so
-    // tryAttachGrapple's hasCloseFloor "must be rising" gate never kicks
-    // in). The platform is wide enough that its far edge sits outside
+    // 11 = 6 tiles above ground, safely beyond GRAPPLE_RANGE from
+    // ground-level players to prevent unwanted auto-latch while walking).
+    // The platform is wide enough that its far edge sits outside
     // anchor1's 170px grapple range, so lining up the second hop can't
     // spuriously re-latch the first hook.
     pits: [[16, 21], [52, 58], [65, 71]],
@@ -485,7 +485,7 @@ const LEVEL_SPECS = [
     houses: [],
     swingPoints: [
       [17, 11],           // crane hook over the first water gap — raised for a bigger swoop
-      [54, 13], [67, 13], // two-hop chain over the second, wider gap
+      [54, 11], [67, 11], // two-hop chain over the second, wider gap (row 11 keeps them out of ground-level GRAPPLE_RANGE)
     ],
     coins: [
       [4, 15], [9, 15], [13, 15],
@@ -3224,6 +3224,11 @@ function drawPlayer() {
   const suitH = h - bodyTop;
   const accent = player.gadget ? '#ffe066' : '#ffd166';
 
+  if (player.climbing) {
+    drawPlayerClimbing(px, w, h, cowlH, faceH, bodyTop, suitH, shoesH);
+    return;
+  }
+
   // walk-cycle: driven by distance travelled (not time), so the legs and a
   // little body bob animate only while actually moving on the ground —
   // holding still or flying through the air doesn't "walk in place".
@@ -3310,6 +3315,67 @@ function drawPlayer() {
   ctx.fillStyle = '#0c0d10';
   ctx.fillRect(1 + strideA, h - shoesH - liftA, 8, shoesH);
   ctx.fillRect(w - 9 + strideB, h - shoesH - liftB, 8, shoesH);
+
+  ctx.restore();
+}
+
+function drawPlayerClimbing(px, w, h, cowlH, faceH, bodyTop, suitH, shoesH) {
+  const climbPhase = (player.walkDist || 0) / 8;
+  const armA = Math.sin(climbPhase) * 6;
+  const armB = Math.sin(climbPhase + Math.PI) * 6;
+  const legA = Math.sin(climbPhase) * 3;
+  const legB = Math.sin(climbPhase + Math.PI) * 3;
+
+  ctx.save();
+  ctx.translate(px + w / 2, player.y - camera.y);
+  ctx.translate(-w / 2, 0);
+
+  ctx.shadowColor = 'rgba(150,185,230,0.85)';
+  ctx.shadowBlur = 7;
+
+  // suit (seen from behind — cape covers it)
+  ctx.fillStyle = '#3a3f4d';
+  ctx.fillRect(0, bodyTop, w, suitH);
+
+  // cape draped over the back, fully covering the torso
+  ctx.fillStyle = '#1c1f28';
+  ctx.beginPath();
+  ctx.moveTo(1, cowlH - 1);
+  ctx.lineTo(-2, h * 0.65);
+  ctx.lineTo(w * 0.15, h - 2);
+  ctx.lineTo(w * 0.85, h - 2);
+  ctx.lineTo(w + 2, h * 0.65);
+  ctx.lineTo(w - 1, cowlH - 1);
+  ctx.closePath();
+  ctx.fill();
+
+  // cowl back (no face, just dark cowl shape with ears)
+  ctx.fillStyle = '#2e3446';
+  ctx.beginPath();
+  ctx.moveTo(2, cowlH);
+  ctx.lineTo(0, -6);
+  ctx.lineTo(w * 0.3, cowlH * 0.4);
+  ctx.lineTo(w * 0.7, cowlH * 0.4);
+  ctx.lineTo(w, -6);
+  ctx.lineTo(w - 2, cowlH);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillRect(0, cowlH * 0.5, w, cowlH * 0.6);
+  ctx.fillRect(2, cowlH, w - 4, faceH);
+
+  // utility belt
+  ctx.fillStyle = '#171920';
+  ctx.fillRect(2, bodyTop + suitH * 0.45, w - 4, 4);
+
+  // arms reaching up alternately
+  ctx.fillStyle = '#171920';
+  ctx.fillRect(-4, bodyTop - 2 + armA, 5, 10);
+  ctx.fillRect(w - 1, bodyTop - 2 + armB, 5, 10);
+
+  // boots (slight vertical offset for climbing motion)
+  ctx.fillStyle = '#0c0d10';
+  ctx.fillRect(2, h - shoesH + legA, 7, shoesH);
+  ctx.fillRect(w - 9, h - shoesH + legB, 7, shoesH);
 
   ctx.restore();
 }
