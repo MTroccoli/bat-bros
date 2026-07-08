@@ -335,7 +335,11 @@ const LEVEL_SPECS = [
       { x: 34, w: 4, topRow: 20 },   // tower 2: grapple from tower 1's roof
       { x: 38, w: 10, topRow: 14 },  // tower 3: the high plaza
       { x: 48, w: 8, topRow: 16 },   // step down, contiguous walk-off
-      { x: 56, w: 8, topRow: 10 },   // tower 4: the summit — the exit
+      { x: 56, w: 8, topRow: 10 },   // tower 4: the summit
+      // descending staircase down to the exit — 3-tile steps so it's climbable
+      // BOTH ways (no more sheer drop that stranded you if you missed enemies)
+      { x: 64, w: 3, topRow: 13 },
+      { x: 67, w: 3, topRow: 16 },   // final rooftop with the exit at the edge
     ],
     houses: [{ x: 40, w: 6, topRow: 11, baseRow: 14, style: 'brownstone' }],
     swingPoints: [[31, 24], [35, 18], [39, 12], [57, 8]],
@@ -553,13 +557,13 @@ const btnShoot = document.getElementById('btn-shoot');
 const btnUp = document.getElementById('btn-up');
 const btnDown = document.getElementById('btn-down');
 
-// Show/hide the on-screen fire button and set its icon for the active weapon.
-// The rope reel buttons (up/down) only show for the batigarra.
+// Show/hide the on-screen fire button and set its icon for the active gadget.
+// The rope reel buttons (up/down) only show for the batigarra. The gadget is
+// independent of health (small/big), so it never vanishes on a hit.
 function updateWeaponButton() {
   if (!btnShoot) return;
-  const armed = currentPowerState === 'batarang' || currentPowerState === 'batigarra';
-  const garra = currentPowerState === 'batigarra';
-  btnShoot.style.display = armed ? 'flex' : '';
+  const garra = currentGadget === 'batigarra';
+  btnShoot.style.display = currentGadget ? 'flex' : '';
   btnShoot.textContent = garra ? '🪝' : '🪃';
   if (btnUp) btnUp.style.display = garra ? 'flex' : '';
   if (btnDown) btnDown.style.display = garra ? 'flex' : '';
@@ -586,7 +590,8 @@ let stateTimer = 0;
 let heroMessageUntil = 0;
 let allCoinsBonus = false;
 let frameTime = 0;
-let currentPowerState = 'small'; // small | big | batarang — carries over between levels, resets on death
+let currentPowerState = 'small'; // HEALTH only: small | big — carries over between levels, resets on death
+let currentGadget = null;        // null | 'batarang' | 'batigarra' — a permanent tool, kept through hits/levels
 let batarangs = [];
 let grappleCooldownUntil = 0;
 let shakeStart = 0;
@@ -596,18 +601,20 @@ let shakeMag = 0;
 let impactFlashes = []; // Bane's landing shockwave: quick bright rings + ground debris
 let dustParticles = [];
 
-function newPlayer(spawn, powerState = 'small') {
+function newPlayer(spawn, powerState = 'small', gadget = null) {
   const size = SIZES[powerState];
   return {
     x: spawn.x, y: spawn.y, w: size.w, h: size.h,
     vx: 0, vy: 0, onGround: false, facing: 1, dead: false,
-    powerState,
+    powerState,   // HEALTH: 'small' | 'big'
+    gadget,       // null | 'batarang' | 'batigarra' (persistent tool)
     swinging: false, swingAnchor: null, swingRadius: 0, swingAngle: 0, swingAngularVel: 0,
     swingMinR: null,
     walkDist: 0,
   };
 }
 
+// Health only (small <-> big). Never touches the gadget.
 function setPowerState(newState) {
   if (player.powerState === newState) return;
   const oldH = player.h;
@@ -617,6 +624,13 @@ function setPowerState(newState) {
   player.y += oldH - size.h; // keep feet planted when growing/shrinking
   player.powerState = newState;
   currentPowerState = newState;
+}
+
+// Equip a permanent gadget (from the Batcave choice). Kept through hits and
+// through replaying earlier levels; shown by the on-screen controls.
+function setGadget(g) {
+  player.gadget = g;
+  currentGadget = g;
   updateWeaponButton();
 }
 
@@ -630,7 +644,7 @@ function spawnBatarang() {
     rot: 0,
     bornAt: performance.now(),
     alive: true,
-    type: player.powerState, // 'batarang' | 'batigarra' — picks the sprite
+    type: player.gadget, // 'batarang' | 'batigarra' — picks the sprite; only batarang damages
   });
 }
 
@@ -659,6 +673,11 @@ function updateBatarangs(dt) {
     }
 
     if (b.y > level.pixelHeight + 60) { b.alive = false; continue; }
+
+    // The batigarra is a grappling tool, not a weapon: its hook flies out and
+    // returns but deals NO damage. Only the batarang takes down enemies, so
+    // the choice is a real trade-off (mobility vs. ranged offense).
+    if (b.type === 'batigarra') continue;
 
     for (const g of level.thugs) {
       if (!g.alive) continue;
@@ -754,7 +773,7 @@ function updateSwing(dt, now) {
   // feet just above a rooftop that sits 2 tiles below its lamppost, so a
   // release near the top of the reel lands ON the roof instead of under it.
   // Trapezes (swingMinR set) keep their fixed rope length instead.
-  const isGarra = player.powerState === 'batigarra' && !player.swingMinR;
+  const isGarra = player.gadget === 'batigarra' && !player.swingMinR;
   if (isGarra) {
     // The batigarra gives Batman full rope control instead of the automatic
     // reel: UP (or the grapple trigger) contracts the rope, DOWN extends it.
@@ -830,7 +849,8 @@ function snapCameraToPlayer() {
 function loadLevel(idx) {
   levelIndex = idx;
   level = buildLevel(LEVEL_SPECS[idx]);
-  player = newPlayer(level.spawn, currentPowerState);
+  player = newPlayer(level.spawn, currentPowerState, currentGadget);
+  updateWeaponButton(); // keep the gadget's controls visible across levels
   snapCameraToPlayer();
   timeLeft = LEVEL_TIME;
   timeAccum = 0;
@@ -847,6 +867,7 @@ function loadLevel(idx) {
 function startGame() {
   score = 0; coinsCollected = 0; lives = 3;
   currentPowerState = 'small';
+  currentGadget = null;   // a fresh run starts unarmed (earn a gadget in the Batcave)
   updateWeaponButton();
   continueOffer = false;
   hud.score.textContent = 0;
@@ -1155,7 +1176,7 @@ function killPlayer() {
     return;
   }
   currentPowerState = 'small';
-  player = newPlayer(level.spawn, 'small');
+  player = newPlayer(level.spawn, 'small', currentGadget); // keep the gadget on respawn
   snapCameraToPlayer();
   timeLeft = LEVEL_TIME;
   invulnUntil = Date.now() + INVULN_TIME;
@@ -1186,8 +1207,10 @@ function damageVillain() {
 
 function hurtPlayer() {
   if (Date.now() < invulnUntil) return;
-  if (player.powerState !== 'small') {
-    setPowerState(player.powerState === 'batarang' || player.powerState === 'batigarra' ? 'big' : 'small');
+  // a hit only knocks down HEALTH (big -> small -> dead). The gadget is a
+  // permanent tool, so it's never lost to a hit.
+  if (player.powerState === 'big') {
+    setPowerState('small');
     invulnUntil = Date.now() + INVULN_TIME;
     return;
   }
@@ -1485,8 +1508,8 @@ function updatePlaying(dt) {
 
   // batarang / batigarra throw (the batigarra's trigger doubles as the rope
   // reel while swinging, so it never fires mid-swing)
-  const canShoot = player.powerState === 'batarang' ||
-    (player.powerState === 'batigarra' && !player.swinging);
+  const canShoot = player.gadget === 'batarang' ||
+    (player.gadget === 'batigarra' && !player.swinging);
   if (now < shootBufferUntil && canShoot && now - lastShotAt > SHOOT_COOLDOWN_MS) {
     spawnBatarang();
     lastShotAt = now;
@@ -1646,7 +1669,7 @@ function update(dt) {
         state = 'playing';
       } else {
         state = 'win';
-        const arma = currentPowerState === 'batigarra' ? 'batigarra' : 'batarang';
+        const arma = currentGadget === 'batigarra' ? 'batigarra' : 'batarang';
         showOverlay('RUMBO AL ACTO 2',
           `Con la ${arma} en el cinturón, Batman deja la Baticueva rumbo a los muelles de Gotham. Two-Face tiene a Robin... la historia continúa en el ACTO 2. Puntaje: ${score} con ${coinsCollected} monedas.`,
           'JUGAR DE NUEVO');
@@ -2197,8 +2220,8 @@ function drawChoiceScreen(now) {
   ctx.fillText('La Batcomputadora fabricó dos herramientas — elegí', CANVAS_W / 2, 84);
 
   const cards = [
-    { x: 96, title: '1. BATARANG', c: '#ffe066', lines: ['Arma arrojadiza clásica', 'Derriba enemigos a distancia'] },
-    { x: 424, title: '2. BATIGARRA', c: '#7fd4ff', lines: ['Se dispara como arma', 'Control total del balanceo:', 'impulso · acortar/alargar cuerda'] },
+    { x: 96, title: '1. BATARANG', c: '#ffe066', lines: ['Arma arrojadiza', 'Derriba enemigos a distancia', 'NO controla el balanceo'] },
+    { x: 424, title: '2. BATIGARRA', c: '#7fd4ff', lines: ['Herramienta de movilidad', 'Control total del balanceo', 'NO mata enemigos'] },
   ];
   cards.forEach((card, i) => {
     const sel = cv.choiceSel === i;
@@ -2246,7 +2269,8 @@ function drawChoiceScreen(now) {
 function chooseCaveWeapon() {
   const cv = level.cave;
   cv.weaponChosen = cv.choiceSel === 1 ? 'batigarra' : 'batarang';
-  setPowerState(cv.weaponChosen);
+  setGadget(cv.weaponChosen);       // permanent tool, independent of health
+  if (player.powerState === 'small') setPowerState('big'); // suit up
   state = 'playing';
 }
 
@@ -2914,7 +2938,7 @@ function drawPlayer() {
   const cowlH = 10, faceH = 8, shoesH = 6;
   const bodyTop = cowlH + faceH - 1;
   const suitH = h - bodyTop;
-  const accent = (player.powerState === 'batarang' || player.powerState === 'batigarra') ? '#ffe066' : '#ffd166';
+  const accent = player.gadget ? '#ffe066' : '#ffd166';
 
   // walk-cycle: driven by distance travelled (not time), so the legs and a
   // little body bob animate only while actually moving on the ground —

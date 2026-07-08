@@ -103,10 +103,13 @@ mano en el navegador. Recomiendo (a) antes de diseñar `2-1`.
   - Al tocar la Batcomputadora: pantalla de **expediente de Two-Face** →
     **elección de arma** (Batarang vs. Batigarra) → se equipa y se abre la
     puerta de salida a la derecha.
-  - **Batigarra** implementada como `powerState`: se dispara como arma
-    (gancho dorado) y, durante el swing, da control total de la cuerda
-    (`disparar` = acortar, `abajo` = alargar, `izq/der` = impulso) sin
-    auto-liberación. Se usará a fondo en los niveles del Acto 2.
+  - **Batigarra** implementada como **gadget permanente** (desacoplado de la
+    salud small/big, así no se pierde con un golpe ni al volver a niveles
+    anteriores): da control total de la cuerda durante el swing
+    (arriba/`disparar` = acortar, abajo = alargar, izq/der = impulso hacia el
+    lado del movimiento / freno al contrario) sin auto-liberación. **No mata
+    enemigos** — es puramente movilidad, para que la elección vs. el batarang
+    (que sí mata a distancia) sea un trade-off real.
 - **Fase 1 — `2-1` (muelles)**: primer nivel jugable, introduce el `gunman`.
 - **Fase 2 — `2-2` y `2-3`**: palacio de justicia + casino.
 - **Fase 3 — Jefe Two-Face + arena `2-4`** con la mecánica de la moneda y Robin.
