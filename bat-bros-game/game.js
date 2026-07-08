@@ -61,13 +61,16 @@ const GARRA_REEL_SPEED = 1.6;     // px/frame reeling the rope in / letting it o
 const GARRA_MIN_RADIUS = 44;
 const GARRA_PUMP = 0.0009;        // gentle angular impulse: press toward your travel to speed up, opposite to brake
 
+// --- Act 2: docks (wooden ladders) ---
+const LADDER_SPEED = 2.6; // px/frame climbing up/down a ladder
+
 // ---------------------------------------------------------------
 // Level builder: programmatic spec -> tile grid + entity lists
 // ---------------------------------------------------------------
 function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
-          thugs = [], birds = [], bats = [], swingPoints = [], houses = [],
-          spawn, name, indoor = false, bane = null, cave = null } = spec;
+          thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
+          spawn, name, indoor = false, dock = false, bane = null, cave = null } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
 
@@ -103,8 +106,12 @@ function buildLevel(spec) {
 
   return {
     name,
-    width, height, groundY, indoor,
+    width, height, groundY, indoor, dock,
     solid,
+    pits,
+    // vertical climbable strips (docks' wooden ladders): non-solid overlay,
+    // handled entirely by the player's climbing state, never the solid grid
+    ladders: ladders.map(l => ({ x: l.x * TILE, top: l.topRow * TILE, bottom: l.baseRow * TILE })),
     walls: walls.map(w => ({ x: w.x, w: w.w, topRow: w.topRow })),
     houses: houses.map(hs => ({
       x: hs.x, w: hs.w, topRow: hs.topRow, baseRow: hs.baseRow,
@@ -128,6 +135,9 @@ function buildLevel(spec) {
       w: 24, h: 26,
       minX: g.range[0] * TILE, maxX: g.range[1] * TILE,
       vx: 1.2, alive: true,
+      // spiked steel helmet (Act 2): blocks the stomp until knocked off by
+      // any weapon hit (batarang OR batigarra — neither kills a helmeted thug)
+      helmet: !!g.helmet,
     })),
     birds: birds.map(b => ({
       x: b.x * TILE, y: b.y * TILE, baseY: b.y * TILE,
@@ -429,6 +439,76 @@ const LEVEL_SPECS = [
     bats: [],
     spawn: { x: 2, y: 11 },
   },
+  {
+    // Act 2 opener: the docks where Two-Face's trail begins. The street
+    // corridor is gone — the harbour itself carves the layout: shipping
+    // containers stand in for rooftops, the sea is the abyss, and a wooden
+    // ladder (new mechanic) is the way up a container tower instead of a
+    // grapple climb. A sequential grapple chain over the second, wider
+    // stretch of water tests the swing itself, with small floating rest
+    // stops to regroup between hops. Debuts the spiked-helmet thug: the
+    // same hooded enemy as Act 1, but the helmet blocks the stomp until a
+    // weapon hit (batarang OR batigarra — neither kills through it) knocks
+    // it off.
+    // Reachability formula (verified with a frame-stepping bot trying many
+    // jump timings): a standing jump's apex lands ~4 tiles above the
+    // takeoff surface and ~3 tiles forward, so every anchor here sits 4
+    // rows above whatever surface Batman jumps from AND stays > 4 tiles
+    // above the pit's floor (i.e. beyond hasCloseFloor's reach in
+    // tryAttachGrapple) — that skips the "must be rising" gate entirely,
+    // so the hop connects across nearly the whole approach, not just the
+    // instant right before the apex.
+    name: '2-1',
+    dock: true,
+    width: 96, height: 20, groundY: 17,
+    // second gap is split into two narrower hops (52-58 and 65-71) bridged
+    // by one WIDE rest platform (59-64). Each hop mirrors the crane-hook
+    // formula proven on the first gap (anchor.x = segment_start + 2, row
+    // 13 = 4 tiles above ground, keeping floorY - anchor.y > 128px so
+    // tryAttachGrapple's hasCloseFloor "must be rising" gate never kicks
+    // in). The platform is wide enough that its far edge sits outside
+    // anchor1's 170px grapple range, so lining up the second hop can't
+    // spuriously re-latch the first hook.
+    pits: [[16, 21], [52, 58], [65, 71]],
+    platforms: [
+      { x: 59, y: 17, w: 6 },
+    ],
+    walls: [
+      { x: 30, w: 5, topRow: 11 },  // container tower — climbed via the ladder, not a grapple
+    ],
+    ladders: [
+      { x: 35, topRow: 11, baseRow: 17 },
+    ],
+    houses: [],
+    swingPoints: [
+      [18, 13],           // crane hook over the first water gap
+      [54, 13], [67, 13], // two-hop chain over the second, wider gap
+    ],
+    coins: [
+      [4, 15], [9, 15], [13, 15],
+      [16, 11], [18, 9], [20, 11],
+      [24, 15], [28, 15],
+      [31, 10], [33, 10],
+      [38, 15], [42, 15], [48, 15],
+      [52, 11], [61, 15], [69, 10],
+      [73, 15], [77, 15], [81, 15], [87, 15], [91, 15],
+    ],
+    thugs: [
+      { x: 8, y: 17, range: [6, 13], helmet: true },
+      { x: 24, y: 17, range: [22, 29] },
+      { x: 32, y: 11, range: [31, 34], helmet: true },
+      { x: 42, y: 17, range: [38, 48] },
+      { x: 49, y: 17, range: [46, 51], helmet: true },
+      { x: 76, y: 17, range: [73, 81] },
+      { x: 86, y: 17, range: [83, 93], helmet: true },
+    ],
+    birds: [
+      { x: 45, y: 13, range: [40, 50] },
+      { x: 78, y: 12, range: [72, 90] },
+    ],
+    bats: [[33, 11]],
+    spawn: { x: 2, y: 15 },
+  },
 ];
 // the boss arena is the level that carries a `bane` spec, not just "the last one"
 const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);
@@ -479,6 +559,10 @@ window.addEventListener('keydown', e => {
   if (['ArrowLeft', 'KeyA'].includes(e.code)) keys.left = true;
   if (['ArrowRight', 'KeyD'].includes(e.code)) keys.right = true;
   if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) { keys.jump = true; requestJump(); }
+  // ArrowUp/W double as "climb up" next to a ladder; harmless elsewhere since
+  // a queued jump is cleared the instant a ladder grab consumes it (see
+  // tryGrabLadder), so it never causes a stray hop.
+  if (['ArrowUp', 'KeyW'].includes(e.code)) keys.up = true;
   if (['KeyX', 'ShiftLeft', 'ShiftRight'].includes(e.code)) { keys.shoot = true; requestShoot(); }
   if (['ArrowDown', 'KeyS'].includes(e.code)) keys.down = true;
   if (e.code === 'KeyR') restartGame();
@@ -488,6 +572,7 @@ window.addEventListener('keyup', e => {
   if (['ArrowLeft', 'KeyA'].includes(e.code)) keys.left = false;
   if (['ArrowRight', 'KeyD'].includes(e.code)) keys.right = false;
   if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) keys.jump = false;
+  if (['ArrowUp', 'KeyW'].includes(e.code)) keys.up = false;
   if (['KeyX', 'ShiftLeft', 'ShiftRight'].includes(e.code)) keys.shoot = false;
   if (['ArrowDown', 'KeyS'].includes(e.code)) keys.down = false;
 });
@@ -610,6 +695,7 @@ function newPlayer(spawn, powerState = 'small', gadget = null) {
     gadget,       // null | 'batarang' | 'batigarra' (persistent tool)
     swinging: false, swingAnchor: null, swingRadius: 0, swingAngle: 0, swingAngularVel: 0,
     swingMinR: null,
+    climbing: false, // on a dock ladder
     walkDist: 0,
   };
 }
@@ -674,36 +760,85 @@ function updateBatarangs(dt) {
 
     if (b.y > level.pixelHeight + 60) { b.alive = false; continue; }
 
-    // The batigarra is a grappling tool, not a weapon: its hook flies out and
-    // returns but deals NO damage. Only the batarang takes down enemies, so
-    // the choice is a real trade-off (mobility vs. ranged offense).
-    if (b.type === 'batigarra') continue;
-
+    // The batigarra is a grappling tool, not a weapon: it can knock a spiked
+    // helmet off a helmeted thug (making him stompable) but never deals
+    // lethal damage. Only the batarang takes enemies down outright, so the
+    // weapon choice stays a real trade-off (mobility vs. ranged offense).
     for (const g of level.thugs) {
       if (!g.alive) continue;
       if (b.x + 8 > g.x && b.x - 8 < g.x + g.w && b.y + 8 > g.y && b.y - 8 < g.y + g.h) {
-        g.alive = false;
-        score += 100;
-        hud.score.textContent = score;
+        if (g.helmet) {
+          g.helmet = false;
+        } else if (b.type !== 'batigarra') {
+          g.alive = false;
+          score += 100;
+          hud.score.textContent = score;
+        }
         break;
       }
     }
-    for (const bd of level.birds) {
-      if (!bd.alive) continue;
-      if (b.x + 8 > bd.x && b.x - 8 < bd.x + bd.w && b.y + 8 > bd.y && b.y - 8 < bd.y + bd.h) {
-        bd.alive = false;
-        score += 100;
-        hud.score.textContent = score;
-        break;
+    if (b.type !== 'batigarra') {
+      for (const bd of level.birds) {
+        if (!bd.alive) continue;
+        if (b.x + 8 > bd.x && b.x - 8 < bd.x + bd.w && b.y + 8 > bd.y && b.y - 8 < bd.y + bd.h) {
+          bd.alive = false;
+          score += 100;
+          hud.score.textContent = score;
+          break;
+        }
       }
     }
     const v = level.villain;
-    if (v && v.alive && Date.now() >= v.hitUntil &&
+    if (b.type !== 'batigarra' && v && v.alive && Date.now() >= v.hitUntil &&
         b.x + 8 > v.x && b.x - 8 < v.x + v.w && b.y + 8 > v.y && b.y - 8 < v.y + v.h) {
       damageVillain();
     }
   }
   batarangs = batarangs.filter(b => b.alive);
+}
+
+// Dock ladders (Act 2): a vertical strip Batman can climb, entered by
+// pressing up/down while overlapping it. Never touches the solid grid —
+// off the ladder, that column is just open air (or solid ground/roof at
+// its two ends, from the level's normal platform/wall placement).
+function tryGrabLadder(now) {
+  if (!level.ladders.length || !(keys.up || keys.down)) return;
+  const cx = player.x + player.w / 2;
+  const top = player.y, bottom = player.y + player.h;
+  for (const l of level.ladders) {
+    if (cx >= l.x + 6 && cx < l.x + TILE - 6 && bottom > l.top + 4 && top < l.bottom - 4) {
+      player.climbing = true;
+      player.vx = 0; player.vy = 0;
+      player.x = l.x + TILE / 2 - player.w / 2; // center on the rail
+      jumpBufferUntil = 0; // the same up-press that grabbed it must not also eject you
+      return;
+    }
+  }
+}
+
+function updateClimb(dt, now) {
+  const cx = player.x + player.w / 2;
+  const l = level.ladders.find(ll => cx >= ll.x && cx < ll.x + TILE);
+  if (!l) { player.climbing = false; return; }
+
+  if (keys.up && !keys.down) player.y -= LADDER_SPEED * dt;
+  else if (keys.down && !keys.up) player.y += LADDER_SPEED * dt;
+  player.vx = 0; player.vy = 0;
+  player.onGround = false;
+  player.walkDist = (player.walkDist || 0) + LADDER_SPEED * dt; // reuse for the rung-climb animation
+
+  // jump off sideways, same buffered-press feel as a normal jump
+  if (now < jumpBufferUntil) {
+    jumpBufferUntil = 0;
+    player.climbing = false;
+    player.vy = JUMP_VELOCITY * 0.7;
+    player.vx = player.facing * MAX_SPEED * 0.8;
+    return;
+  }
+
+  const feet = player.y + player.h;
+  if (feet <= l.top) { player.y = l.top - player.h; player.climbing = false; player.onGround = true; }
+  else if (feet >= l.bottom) { player.y = l.bottom - player.h; player.climbing = false; player.onGround = true; }
 }
 
 function tryAttachGrapple(now) {
@@ -1465,6 +1600,8 @@ function updatePlaying(dt) {
 
   if (player.swinging) {
     updateSwing(dt, now);
+  } else if (player.climbing) {
+    updateClimb(dt, now);
   } else {
     // horizontal input
     const accel = player.onGround ? MOVE_ACCEL : AIR_ACCEL;
@@ -1504,6 +1641,7 @@ function updatePlaying(dt) {
     moveAndCollide(player, dt);
 
     if (!player.onGround) tryAttachGrapple(now);
+    tryGrabLadder(now);
   }
 
   // batarang / batigarra throw (the batigarra's trigger doubles as the rope
@@ -1559,7 +1697,9 @@ function updatePlaying(dt) {
     patrolWallBounce(g);
 
     if (aabbOverlap(player, g)) {
-      const stomped = player.vy > 0 && (player.y + player.h - g.y) < STOMP_TOLERANCE;
+      // a spiked helmet blocks the stomp entirely — knock it off first
+      // (batarang or batigarra) before diving on his head is safe
+      const stomped = !g.helmet && player.vy > 0 && (player.y + player.h - g.y) < STOMP_TOLERANCE;
       if (stomped) {
         g.alive = false;
         player.vy = STOMP_BOUNCE;
@@ -2533,6 +2673,81 @@ function drawTiles() {
 // roof with a water tank + antenna. The collision shape is unchanged (a
 // solid block topRow..ground); this is purely the look. Batman walks along
 // the roof at topRow, in front of the rooftop props.
+// Docks: the harbour water filling every pit, drawn behind the terrain.
+// Falling in still kills exactly like any other pit — this is purely the look.
+function drawDockWater(t) {
+  if (!level.dock) return;
+  const waterTop = level.groundY * TILE - camera.y;
+  if (waterTop > CANVAS_H) return;
+  for (const [a, b] of level.pits) {
+    const x0 = a * TILE - camera.x, x1 = (b + 1) * TILE - camera.x;
+    if (x1 < -20 || x0 > CANVAS_W + 20) continue;
+    ctx.fillStyle = '#0a2740';
+    ctx.fillRect(x0, waterTop, x1 - x0, CANVAS_H - waterTop);
+    ctx.strokeStyle = 'rgba(127,212,255,0.18)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 6; i++) {
+      const yy = waterTop + 8 + i * 12;
+      ctx.beginPath();
+      for (let x = x0; x <= x1; x += 16) {
+        const wy = yy + Math.sin((x + t / 40 + i * 30) / 40) * 2;
+        if (x === x0) ctx.moveTo(x, wy); else ctx.lineTo(x, wy);
+      }
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(180,220,255,0.22)';
+    ctx.fillRect(x0, waterTop, x1 - x0, 3);
+  }
+}
+
+// Wooden dock ladders: two rails + rungs, the climbable strip Batman grabs
+// with up/down (see tryGrabLadder/updateClimb).
+function drawLadders() {
+  if (!level.ladders.length) return;
+  for (const l of level.ladders) {
+    const x0 = l.x - camera.x;
+    if (x0 < -40 || x0 > CANVAS_W + 40) continue;
+    const y0 = l.top - camera.y, y1 = l.bottom - camera.y;
+    if (y1 < -20 || y0 > CANVAS_H + 20) continue;
+    const railL = x0 + 5, railR = x0 + TILE - 5;
+    ctx.strokeStyle = '#8a6a42'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(railL, y0); ctx.lineTo(railL, y1); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(railR, y0); ctx.lineTo(railR, y1); ctx.stroke();
+    ctx.strokeStyle = '#6b4f2e'; ctx.lineWidth = 3;
+    for (let y = y0 + 6; y < y1; y += 10) {
+      ctx.beginPath(); ctx.moveTo(railL, y); ctx.lineTo(railR, y); ctx.stroke();
+    }
+  }
+}
+
+// Docks: shipping-container towers instead of brick apartment buildings.
+// Same solid collision as any other wall — this is purely the look.
+function drawContainerTower(w, x0, wpx, roofY, groundPx) {
+  const bandH = TILE * 2;
+  const palette = ['#2f7dbb', '#c0453a', '#3a9d6e', '#c9a13a'];
+  let y = roofY, band = 0;
+  while (y < groundPx - 1) {
+    const h = Math.min(bandH, groundPx - y);
+    const col = palette[Math.floor(hash01(w.x * 3.1 + band * 11) * palette.length)];
+    ctx.fillStyle = col;
+    ctx.fillRect(x0, y, wpx, h);
+    // corrugation ridges
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    for (let cx = x0 + 6; cx < x0 + wpx - 2; cx += 8) ctx.fillRect(cx, y + 2, 3, h - 4);
+    // top highlight streak + corner castings
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(x0, y, wpx, 3);
+    ctx.fillStyle = '#1a1c22';
+    ctx.fillRect(x0, y, 6, 6); ctx.fillRect(x0 + wpx - 6, y, 6, 6);
+    ctx.fillRect(x0, y + h - 6, 6, 6); ctx.fillRect(x0 + wpx - 6, y + h - 6, 6, 6);
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 2;
+    ctx.strokeRect(x0 + 1, y + 1, wpx - 2, h - 2);
+    y += bandH; band++;
+  }
+  // walkable rim at the very top, so the standing surface always reads clearly
+  ctx.fillStyle = 'rgba(255,255,255,0.22)';
+  ctx.fillRect(x0, roofY, wpx, 3);
+}
+
 function drawWalls(t) {
   if (level.cave) return; // cave terraces are plain rock, painted in drawTiles()
   const groundPx = level.groundY * TILE - camera.y;
@@ -2542,6 +2757,8 @@ function drawWalls(t) {
     if (x0 + wpx < -40 || x0 > CANVAS_W + 40) continue;
     const roofY = w.topRow * TILE - camera.y;
     const H = groundPx - roofY;
+
+    if (level.dock) { drawContainerTower(w, x0, wpx, roofY, groundPx); continue; }
 
     // brick facade
     ctx.fillStyle = '#5a4238';
@@ -2891,6 +3108,26 @@ function drawThugs() {
     ctx.fillStyle = '#ffd166';
     ctx.fillRect(px + g.w * 0.32, gy + 9, 2.5, 2.5);
     ctx.fillRect(px + g.w * 0.62, gy + 9, 2.5, 2.5);
+
+    // Act 2: a spiked steel helmet over the hood — can't be stomped until a
+    // weapon hit knocks it off
+    if (g.helmet) {
+      const hcx = px + g.w / 2, dome = gy + 2;
+      ctx.fillStyle = '#8a929c';
+      ctx.beginPath(); ctx.arc(hcx, dome, g.w / 2 - 1, Math.PI, 0); ctx.fill();
+      ctx.fillRect(px + 2, dome - 1, g.w - 4, 4);
+      ctx.fillStyle = '#6b737f';
+      ctx.fillRect(px + 2, dome + 2, g.w - 4, 1.5);
+      ctx.fillStyle = '#c9cdd6';
+      const top = dome - (g.w / 2 - 1);
+      for (const sx of [-6, 0, 6]) {
+        ctx.beginPath();
+        ctx.moveTo(hcx + sx - 2.5, top + 1);
+        ctx.lineTo(hcx + sx, top - 9);
+        ctx.lineTo(hcx + sx + 2.5, top + 1);
+        ctx.closePath(); ctx.fill();
+      }
+    }
   }
 }
 
@@ -3914,10 +4151,12 @@ function render(t) {
   camera.y += shake.y;
 
   drawBackground(t);
+  drawDockWater(t);
   drawSwingPoints(t);
   drawTiles();
   if (level.cave) drawCaveProps(t);
   drawWalls(t);
+  drawLadders();
   drawGargoyles();
   drawHouses(t);
   drawTrash(t);
