@@ -307,64 +307,53 @@ const LEVEL_SPECS = [
     dock: true,
     width: 20, height: 32, groundY: 30,
     pits: [],
-    // Single vertical ladder up the center crosses horizontal catwalks
-    // (patrolled by thugs) with wider "rest zones" beside the ladder
-    // between each patrol lane. From a rest zone you can drop back onto
-    // the catwalk below to stomp the thug you just dodged.
+    // Single vertical ladder up the center. Catwalks every 3 rows (the
+    // minimum that fits big Batman) with thugs crossing the shaft; only
+    // two rest zones on the whole climb. From a rest zone you can drop
+    // onto the catwalk below to stomp its (helmetless) thug.
     platforms: [
-      // Patrol catwalk 1
-      { x: 2, y: 27, w: 16 },
-      // Rest zone 1 (gap in the center where the ladder passes through)
-      { x: 2, y: 24, w: 6 },
-      { x: 12, y: 24, w: 6 },
-      // Patrol catwalk 2
-      { x: 2, y: 21, w: 16 },
-      // Rest zone 2 (with bat checkpoint)
-      { x: 2, y: 18, w: 6 },
-      { x: 12, y: 18, w: 6 },
-      // Patrol catwalk 3
-      { x: 2, y: 15, w: 16 },
-      // Rest zone 3
-      { x: 2, y: 12, w: 6 },
-      { x: 12, y: 12, w: 6 },
-      // Patrol catwalk 4
-      { x: 2, y: 9, w: 16 },
-      // Boss arena top deck
-      { x: 1, y: 6, w: 18 },
+      { x: 2, y: 27, w: 16 },                      // catwalk 1
+      { x: 2, y: 24, w: 16 },                      // catwalk 2 (stompable from rest 1)
+      { x: 3, y: 21, w: 4 }, { x: 13, y: 21, w: 4 }, // rest zone 1
+      { x: 2, y: 18, w: 16 },                      // catwalk 3 (double patrol)
+      { x: 2, y: 15, w: 16 },                      // catwalk 4 (stompable from rest 2)
+      { x: 3, y: 12, w: 4 }, { x: 13, y: 12, w: 4 }, // rest zone 2 + checkpoint
+      { x: 2, y: 9, w: 16 },                       // catwalk 5 (final gauntlet)
+      { x: 1, y: 6, w: 18 },                       // engine-room arena
     ],
     walls: [],
     houses: [],
     ladders: [
-      // ONE ladder spans the whole tower (spec cuts it into segments so
-      // exit rows land on the rest zones' side platforms, not the middle gap)
-      { x: 9, topRow: 27, baseRow: 30 },   // ground -> catwalk 1
-      { x: 9, topRow: 24, baseRow: 27 },   // catwalk 1 -> rest zone 1
-      { x: 9, topRow: 21, baseRow: 24 },   // rest zone 1 -> catwalk 2
-      { x: 9, topRow: 18, baseRow: 21 },   // catwalk 2 -> rest zone 2
-      { x: 9, topRow: 15, baseRow: 18 },   // rest zone 2 -> catwalk 3
-      { x: 9, topRow: 12, baseRow: 15 },   // catwalk 3 -> rest zone 3
-      { x: 9, topRow: 9, baseRow: 12 },    // rest zone 3 -> catwalk 4
-      { x: 9, topRow: 6, baseRow: 9 },     // catwalk 4 -> arena
+      { x: 9, topRow: 6, baseRow: 30 },  // THE ladder — one shaft, bottom to top
     ],
     swingPoints: [],
     coins: [
-      // small reward on each rest zone
-      [4, 23], [15, 23],
-      [4, 17], [15, 17],
+      [5, 26], [14, 23],
+      [4, 20], [15, 20],
       [4, 11], [15, 11],
     ],
-    // ONE thug per catwalk, patrolling the full width crossing the ladder;
-    // no-helmet ones can be stomped from the rest zone above,
-    // helmet ones must be dodged or hit with a batarang
+    // thugs cross the ladder shaft on every catwalk; helmets can't be
+    // stomped (dodge them or batarang), helmetless ones under a rest zone
+    // are the "clean up after the hard passage" reward
     thugs: [
-      { x: 4, y: 27, range: [2, 18] },              // catwalk 1: stompable
-      { x: 12, y: 21, range: [2, 18], helmet: true }, // catwalk 2: helmet
-      { x: 4, y: 15, range: [2, 18] },              // catwalk 3: stompable
-      { x: 12, y: 9, range: [2, 18], helmet: true },  // catwalk 4: helmet
+      { x: 5, y: 30, range: [2, 18] },                    // ground
+      { x: 12, y: 27, range: [2, 18], helmet: true },     // catwalk 1
+      { x: 4, y: 24, range: [2, 18] },                    // catwalk 2
+      { x: 14, y: 24, range: [2, 18] },                   // catwalk 2 (opposite phase)
+      { x: 4, y: 18, range: [2, 18], helmet: true },      // catwalk 3
+      { x: 14, y: 18, range: [2, 18] },                   // catwalk 3
+      { x: 5, y: 15, range: [2, 18] },                    // catwalk 4
+      { x: 4, y: 9, range: [2, 18], helmet: true },       // catwalk 5
+      { x: 14, y: 9, range: [2, 18], helmet: true },      // catwalk 5
     ],
-    birds: [],
-    bats: [[6, 18]],   // checkpoint on rest zone 2
-    twoface: { x: 14, hp: TWOFACE_HP, floorRow: 6, arenaMinX: 2, arenaMaxX: 17, triggerX: 8 * 32 / 32 },
+    // birds sweep through the open bands between platforms, right across
+    // the ladder shaft — one more thing to time
+    birds: [
+      { x: 14, y: 20, range: [2, 17] },
+      { x: 5, y: 11, range: [2, 17] },
+    ],
+    bats: [[15, 12]],   // checkpoint on rest zone 2
+    twoface: { x: 14, hp: TWOFACE_HP, floorRow: 6, arenaMinX: 7, arenaMaxX: 18, triggerX: 6, robinX: 2 },
     spawn: { x: 2, y: 28 },
   },
 ];

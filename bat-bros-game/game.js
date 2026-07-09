@@ -970,10 +970,15 @@ function killPlayer() {
     const tf = level.twoface;
     tf.x = tf.homeX;
     tf.y = tf.floorRow * TILE - tf.h;
-    if (tf.state !== 'idle') { tf.state = 'fight'; tf.attackCooldown = performance.now() + 3000; }
+    // re-arm to idle: the fight (and Robin's health) resets for the next
+    // climb — otherwise the boss would maul Robin while Batman is respawning
+    // at the checkpoint far below with no way to defend him
+    tf.state = 'idle';
     tf.barrage = [];
-    // remove spawned thugs from the boss arena
-    level.thugs = level.thugs.filter(g => g.minX < tf.minX);
+    tf.thugsSpawned = false;
+    tf.barrageSpawned = false;
+    if (tf.robin) { tf.robin.hp = tf.robin.maxHp; tf.robin.hitUntil = 0; }
+    level.thugs = level.thugs.filter(g => !g.bossSpawn);
   }
 }
 
@@ -1209,6 +1214,15 @@ function updateBane(dt, now) {
   }
 }
 
+// Robin took one hit too many: instant mission failure, regardless of
+// how many lives Batman still has.
+function robinKilled() {
+  state = 'gameover';
+  gameOverCount++;
+  if (playerName) saveGameOvers(playerName, gameOverCount);
+  showChoiceMenu(`DOS CARAS ELIMINÓ A ROBIN — la misión falló. Puntaje: ${score}. Elegí cómo seguir, ${playerName || 'héroe'}.`);
+}
+
 function updateTwoFace(dt, now) {
   const tf = level.twoface;
   if (!tf.alive) {
@@ -1230,6 +1244,42 @@ function updateTwoFace(dt, now) {
     return;
   }
 
+  // Coins in flight and Robin's safety stay live through every boss state
+  // (including the next coin flip) — a barrage keeps raining while he flips.
+  const rb = tf.robin;
+  const hitRobin = () => {
+    if (now < rb.hitUntil) return;
+    rb.hp--;
+    rb.hitUntil = now + 1100;
+    triggerScreenShake(now, 4, 220);
+  };
+  for (const c of tf.barrage) {
+    if (!c.alive) continue;
+    c.x += c.vx * dt;
+    c.vy += 0.12 * dt; // coins arc up out of the flip, then rain down
+    c.y += c.vy * dt;
+    if (c.y > floorY - 4 || c.x < TILE || c.x > level.pixelWidth - TILE) { c.alive = false; continue; }
+    if (aabbOverlap(player, { x: c.x - 6, y: c.y - 6, w: 12, h: 12 })) {
+      c.alive = false;
+      hurtPlayer();
+      if (state !== 'playing') return;
+    }
+    if (rb && aabbOverlap(rb, { x: c.x - 6, y: c.y - 6, w: 12, h: 12 })) {
+      c.alive = false;
+      hitRobin();
+    }
+  }
+  tf.barrage = tf.barrage.filter(c => c.alive);
+
+  // boss-wave thugs maul Robin if they reach him — intercept them in time
+  if (rb) {
+    for (const g of level.thugs) {
+      if (!g.alive || !g.bossSpawn) continue;
+      if (aabbOverlap(rb, g)) hitRobin();
+    }
+    if (rb.hp <= 0) { robinKilled(); return; }
+  }
+
   if (tf.state === 'coin_flip') {
     tf.coinAngle += 0.3 * dt;
     if (now - tf.coinFlipAt >= TWOFACE_COIN_FLIP_MS) {
@@ -1247,8 +1297,9 @@ function updateTwoFace(dt, now) {
         const sx = tf.x - 30 - i * 40;
         level.thugs.push({
           x: sx, y: floorY - 26, w: 24, h: 26,
-          minX: tf.minX, maxX: tf.maxX,
-          vx: -1.5, alive: true, helmet: i === 0,
+          // their patrol reaches Robin's post: left unchecked they maul him
+          minX: tf.robin ? tf.robin.x - TILE : tf.minX, maxX: tf.maxX,
+          vx: -1.5, alive: true, helmet: i === 0, bossSpawn: true,
         });
       }
     }
@@ -1279,20 +1330,6 @@ function updateTwoFace(dt, now) {
       tf.barrageSpawned = false;
     }
   }
-
-  // barrage projectile movement + collision
-  for (const c of tf.barrage) {
-    if (!c.alive) continue;
-    c.x += c.vx * dt;
-    c.y += c.vy * dt;
-    if (c.y > level.pixelHeight || c.x < 0 || c.x > level.pixelWidth) { c.alive = false; continue; }
-    if (aabbOverlap(player, { x: c.x - 6, y: c.y - 6, w: 12, h: 12 })) {
-      c.alive = false;
-      hurtPlayer();
-      if (state !== 'playing') return;
-    }
-  }
-  tf.barrage = tf.barrage.filter(c => c.alive);
 
   if (tf.state === 'fight') {
     const speed = tf.hp <= 2 ? 2.0 : 1.2;
@@ -2496,9 +2533,101 @@ function drawCargueroBackground(t) {
     ctx.globalAlpha = 1;
   }
 
+  // --- engine room: the high-ceilinged machine hall the top-deck arena
+  // sits in. World-anchored, so it only scrolls into view near the top ---
+  if (camera.y < 10 * TILE) {
+    // ceiling pipes running the full width, with flange joints
+    for (const [wy, pr, col] of [[24, 5, '#3d4c60'], [46, 4, '#4a4436']]) {
+      const py = wy - camera.y;
+      ctx.fillStyle = col;
+      ctx.fillRect(0, py - pr, CANVAS_W, pr * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      ctx.fillRect(0, py - pr, CANVAS_W, 2);
+      const fOff = -(camera.x % 130);
+      ctx.fillStyle = '#222a36';
+      for (let x = fOff; x < CANVAS_W + 20; x += 130) {
+        ctx.fillRect(x, py - pr - 2, 8, pr * 2 + 4);
+      }
+    }
+
+    // hanging chains, swaying slightly
+    for (const cxw of [4.2 * TILE, 6.6 * TILE]) {
+      const sway = Math.sin(t / 640 + cxw) * 3;
+      const cx0 = cxw - camera.x;
+      ctx.strokeStyle = '#4a5468';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(cx0, 50 - camera.y);
+      ctx.quadraticCurveTo(cx0 + sway, 96 - camera.y, cx0 + sway, 128 - camera.y);
+      ctx.stroke();
+      ctx.fillStyle = '#5a6478';
+      ctx.beginPath(); ctx.arc(cx0 + sway, 132 - camera.y, 5, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // port-side boiler tank (behind Robin's post)
+    const tx2 = 1.0 * TILE - camera.x, ty2 = 3.0 * TILE - camera.y;
+    const tw2 = 2.8 * TILE, th2 = 3 * TILE;
+    ctx.fillStyle = '#2a3648';
+    ctx.beginPath();
+    ctx.ellipse(tx2 + tw2 / 2, ty2, tw2 / 2, 13, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.fillRect(tx2, ty2, tw2, th2);
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+    ctx.lineWidth = 2;
+    for (let i = 1; i < 3; i++) {
+      const by2 = ty2 + th2 * (i / 3);
+      ctx.beginPath(); ctx.moveTo(tx2, by2); ctx.lineTo(tx2 + tw2, by2); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(120,160,200,0.14)';
+    ctx.fillRect(tx2 + 8, ty2, 7, th2);
+
+    // main diesel block behind the starboard half, with working pistons
+    const bx = 11 * TILE - camera.x, by = 2.6 * TILE - camera.y;
+    const bw2 = 7.5 * TILE, bh2 = (6 - 2.6) * TILE;
+    ctx.fillStyle = '#232e3d';
+    ctx.fillRect(bx, by, bw2, bh2);
+    ctx.fillStyle = '#2c3a4d';
+    ctx.fillRect(bx, by, bw2, 8);
+    for (let i = 0; i < 4; i++) {
+      const cx2 = bx + 26 + i * (bw2 - 52) / 3;
+      const stroke = Math.sin(t / 260 + i * 1.6) * 6;
+      ctx.fillStyle = '#5a6a80';
+      ctx.fillRect(cx2 - 3, by - 28 + stroke, 6, 16);
+      ctx.fillStyle = '#39485e';
+      ctx.fillRect(cx2 - 10, by - 16, 20, 16);
+    }
+    // pressure gauges with wandering needles
+    for (let i = 0; i < 2; i++) {
+      const gx = bx + bw2 * (0.28 + i * 0.44), gy = by + bh2 * 0.5;
+      ctx.fillStyle = '#d8d2c2';
+      ctx.beginPath(); ctx.arc(gx, gy, 11, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#1a222e'; ctx.lineWidth = 2; ctx.stroke();
+      const ang = -Math.PI * 0.75 + (Math.sin(t / (520 + i * 210)) * 0.5 + 0.5) * Math.PI * 0.9;
+      ctx.beginPath();
+      ctx.moveTo(gx, gy);
+      ctx.lineTo(gx + Math.cos(ang) * 8, gy + Math.sin(ang) * 8);
+      ctx.strokeStyle = '#c03a2a'; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    // blinking indicator lights along the block's base
+    for (let i = 0; i < 5; i++) {
+      const on = Math.sin(t / 340 + i * 2.3) > 0;
+      ctx.fillStyle = on ? '#3adf6a' : '#1c4a2a';
+      ctx.beginPath(); ctx.arc(bx + 20 + i * 34, by + bh2 - 10, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    // steam venting off the cylinder heads
+    const puff = (t / 1100) % 1;
+    ctx.fillStyle = 'rgba(220,230,240,0.10)';
+    ctx.beginPath();
+    ctx.ellipse(bx + 40 + puff * 22, by - 40 - puff * 26, 9 + puff * 8, 5 + puff * 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(bx + bw2 - 50 - puff * 18, by - 46 - puff * 30, 11 + puff * 9, 6 + puff * 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // ceiling
   ctx.fillStyle = '#0a0f18';
-  ctx.fillRect(0, 0, CANVAS_W, Math.max(0, 2 * TILE - camera.y));
+  ctx.fillRect(0, 0, CANVAS_W, Math.max(0, 2 * TILE - camera.y - 48));
 }
 
 // ---------------------------------------------------------------
@@ -4565,9 +4694,68 @@ function drawBane(t) {
   ctx.restore();
 }
 
+// Robin, roped to a steel post beside the engine room's port boiler.
+// His hearts float overhead: they are the mission's real health bar.
+function drawRobin(rb, t) {
+  const px = rb.x - camera.x, py = rb.y - camera.y;
+  if (px < -60 || px > CANVAS_W + 60 || py > CANVAS_H + 60) return;
+
+  // the post
+  ctx.fillStyle = '#39424f';
+  ctx.fillRect(px + rb.w / 2 - 3, py - 12, 6, rb.h + 12);
+  ctx.fillStyle = '#2a323d';
+  ctx.fillRect(px + rb.w / 2 - 5, py - 16, 10, 5);
+
+  const flash = performance.now() < rb.hitUntil && Math.floor(performance.now() / 90) % 2 === 0;
+  if (!flash) {
+    const wob = Math.sin(t / 340) * 1.5; // struggling against the ropes
+    // cape sliver (yellow) behind the body
+    ctx.fillStyle = '#e8c53a';
+    ctx.fillRect(px - 3 + wob, py + 8, 5, rb.h - 16);
+    // legs (green)
+    ctx.fillStyle = '#2e7d3a';
+    ctx.fillRect(px + 3, py + rb.h - 12, 7, 12);
+    ctx.fillRect(px + rb.w - 10, py + rb.h - 12, 7, 12);
+    // torso (red tunic)
+    ctx.fillStyle = '#c0392b';
+    ctx.fillRect(px + 2, py + 8, rb.w - 4, rb.h - 20);
+    ctx.fillStyle = '#e8c53a';
+    ctx.font = 'bold 8px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText('R', px + 4, py + 17);
+    // head + black hair + domino mask with white eye slits
+    ctx.fillStyle = '#f0c8a0';
+    ctx.fillRect(px + 4, py - 2 + wob * 0.5, rb.w - 8, 11);
+    ctx.fillStyle = '#111';
+    ctx.fillRect(px + 3, py - 5 + wob * 0.5, rb.w - 6, 5);
+    ctx.fillRect(px + 5, py + 1 + wob * 0.5, rb.w - 10, 3);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(px + 6, py + 1 + wob * 0.5, 3, 2);
+    ctx.fillRect(px + rb.w - 9, py + 1 + wob * 0.5, 3, 2);
+    // ropes across the torso
+    ctx.strokeStyle = '#8a6a42';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const ry = py + 11 + i * 7;
+      ctx.beginPath(); ctx.moveTo(px - 1, ry); ctx.lineTo(px + rb.w + 1, ry); ctx.stroke();
+    }
+  }
+
+  // hearts: hits Robin can still take
+  ctx.font = '12px monospace';
+  ctx.textAlign = 'center';
+  for (let i = 0; i < rb.maxHp; i++) {
+    ctx.fillStyle = i < rb.hp ? '#ff5e5e' : 'rgba(255,255,255,0.25)';
+    ctx.fillText('♥', px + rb.w / 2 - (rb.maxHp - 1) * 7 + i * 14, py - 22);
+  }
+  ctx.textAlign = 'left';
+}
+
 function drawTwoFace(t) {
   const tf = level.twoface;
   if (!tf) return;
+
+  if (tf.robin) drawRobin(tf.robin, t);
 
   const px = tf.x - camera.x;
   const py = tf.y - camera.y;

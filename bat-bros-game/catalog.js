@@ -103,6 +103,7 @@ const TWOFACE_COIN_BARRAGE_COUNT = 8;
 const TWOFACE_COIN_SPEED = 4.5;
 const TWOFACE_THUG_WAVE = 3;
 const TWOFACE_ATTACK_COOLDOWN = 4500;
+const TWOFACE_ROBIN_HP = 3; // hits Robin can take before it's game over
 
 // ---------------------------------------------------------------
 // Deterministic hash: sin-based, returns 0..1
@@ -253,6 +254,15 @@ function buildLevel(spec) {
       maxX: (twoface.arenaMaxX ?? width - 3) * TILE,
       triggerX: (twoface.triggerX ?? 28) * TILE,
       barrage: [], spawnedThugs: [],
+      // Robin, tied to a post in the arena: the fight is lost if he
+      // takes TWOFACE_ROBIN_HP hits from coins or the boss's thug waves
+      robin: {
+        x: (twoface.robinX ?? 2) * TILE,
+        y: (twoface.floorRow ?? 11) * TILE - 34,
+        w: 22, h: 34,
+        hp: TWOFACE_ROBIN_HP, maxHp: TWOFACE_ROBIN_HP,
+        hitUntil: 0,
+      },
     } : null,
     // gargoyle perches are only meaningful in the Bane warehouse fight
     perches: (indoor && bane) ? platforms.map(p => ({ x: p.x, w: p.w, y: p.y })) : [],
