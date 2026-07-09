@@ -307,52 +307,59 @@ const LEVEL_SPECS = [
     dock: true,
     width: 20, height: 32, groundY: 30,
     pits: [],
-    // Single vertical ladder up the center. Catwalks every 3 rows (the
-    // minimum that fits big Batman) with thugs crossing the shaft; only
-    // two rest zones on the whole climb. From a rest zone you can drop
-    // onto the catwalk below to stomp its (helmetless) thug.
+    // Single vertical ladder up the center. Container stacks on the
+    // sides narrow catwalks 2, 3 and 5, shortening patrol distances so
+    // thugs cross the ladder shaft more frequently. Double and triple
+    // patrols on every catwalk; only two rest zones.
     platforms: [
       { x: 2, y: 27, w: 16 },                      // catwalk 1
-      { x: 2, y: 24, w: 16 },                      // catwalk 2 (stompable from rest 1)
+      { x: 4, y: 24, w: 12 },                      // catwalk 2 (narrow — containers)
       { x: 3, y: 21, w: 4 }, { x: 13, y: 21, w: 4 }, // rest zone 1
-      { x: 2, y: 18, w: 16 },                      // catwalk 3 (double patrol)
-      { x: 2, y: 15, w: 16 },                      // catwalk 4 (stompable from rest 2)
+      { x: 4, y: 18, w: 12 },                      // catwalk 3 (narrow — triple patrol)
+      { x: 2, y: 15, w: 16 },                      // catwalk 4
       { x: 3, y: 12, w: 4 }, { x: 13, y: 12, w: 4 }, // rest zone 2 + checkpoint
-      { x: 2, y: 9, w: 16 },                       // catwalk 5 (final gauntlet)
+      { x: 4, y: 9, w: 12 },                       // catwalk 5 (narrow — final gauntlet)
       { x: 1, y: 6, w: 18 },                       // engine-room arena
     ],
     walls: [],
-    houses: [],
+    houses: [
+      { x: 1, w: 3, topRow: 22, baseRow: 24, style: 'container' },
+      { x: 16, w: 3, topRow: 22, baseRow: 24, style: 'container' },
+      { x: 1, w: 3, topRow: 16, baseRow: 18, style: 'container' },
+      { x: 16, w: 3, topRow: 16, baseRow: 18, style: 'container' },
+      { x: 1, w: 3, topRow: 7, baseRow: 9, style: 'container' },
+      { x: 16, w: 3, topRow: 7, baseRow: 9, style: 'container' },
+    ],
     ladders: [
-      { x: 9, topRow: 6, baseRow: 30 },  // THE ladder — one shaft, bottom to top
+      { x: 9, topRow: 6, baseRow: 30 },
     ],
     swingPoints: [],
     coins: [
       [5, 26], [14, 23],
-      [4, 20], [15, 20],
-      [4, 11], [15, 11],
+      [5, 20], [14, 20],
+      [5, 11], [14, 11],
     ],
-    // thugs cross the ladder shaft on every catwalk; helmets can't be
-    // stomped (dodge them or batarang), helmetless ones under a rest zone
-    // are the "clean up after the hard passage" reward
     thugs: [
       { x: 5, y: 30, range: [2, 18] },                    // ground
+      { x: 14, y: 30, range: [2, 18] },                   // ground (double)
       { x: 12, y: 27, range: [2, 18], helmet: true },     // catwalk 1
-      { x: 4, y: 24, range: [2, 18] },                    // catwalk 2
-      { x: 14, y: 24, range: [2, 18] },                   // catwalk 2 (opposite phase)
-      { x: 4, y: 18, range: [2, 18], helmet: true },      // catwalk 3
-      { x: 14, y: 18, range: [2, 18] },                   // catwalk 3
+      { x: 5, y: 27, range: [2, 18] },                    // catwalk 1 (double)
+      { x: 6, y: 24, range: [4, 16] },                    // catwalk 2 (narrow)
+      { x: 12, y: 24, range: [4, 16], helmet: true },     // catwalk 2
+      { x: 6, y: 18, range: [4, 16], helmet: true },      // catwalk 3 (narrow)
+      { x: 10, y: 18, range: [4, 16] },                   // catwalk 3
+      { x: 14, y: 18, range: [4, 16] },                   // catwalk 3 (triple)
       { x: 5, y: 15, range: [2, 18] },                    // catwalk 4
-      { x: 4, y: 9, range: [2, 18], helmet: true },       // catwalk 5
-      { x: 14, y: 9, range: [2, 18], helmet: true },      // catwalk 5
+      { x: 14, y: 15, range: [2, 18], helmet: true },     // catwalk 4 (double)
+      { x: 6, y: 9, range: [4, 16], helmet: true },       // catwalk 5 (narrow)
+      { x: 14, y: 9, range: [4, 16], helmet: true },      // catwalk 5
     ],
-    // birds sweep through the open bands between platforms, right across
-    // the ladder shaft — one more thing to time
     birds: [
-      { x: 14, y: 20, range: [2, 17] },
-      { x: 5, y: 11, range: [2, 17] },
+      { x: 14, y: 20, range: [4, 16] },
+      { x: 6, y: 14, range: [2, 17] },
+      { x: 5, y: 11, range: [4, 16] },
     ],
-    bats: [[15, 12]],   // checkpoint on rest zone 2
+    bats: [[14, 12]],
     twoface: { x: 14, hp: TWOFACE_HP, floorRow: 6, arenaMinX: 7, arenaMaxX: 18, triggerX: 6, robinX: 2 },
     spawn: { x: 2, y: 28 },
   },
