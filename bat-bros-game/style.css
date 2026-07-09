@@ -305,13 +305,20 @@ canvas {
     height: 100%;
     border: none;
   }
-  #game-wrap.chase-mode .float-controls { display: flex; }
   #game-wrap.chase-mode #controls-left,
-  #game-wrap.chase-mode #controls-right {
-    bottom: 20px;
-    top: auto;
-    transform: none;
+  #game-wrap.chase-mode #controls-right { display: none; }
+  #game-wrap.chase-mode #chase-controls {
+    display: flex;
+    position: absolute;
+    bottom: 30px;
+    left: 0;
+    right: 0;
+    padding: 0 16px;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 5;
   }
+  #chase-controls .touch-jump { width: 90px; height: 90px; }
 }
 
 /* Phones in landscape: the game fills the whole screen edge to edge, the

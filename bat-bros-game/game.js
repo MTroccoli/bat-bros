@@ -1455,6 +1455,20 @@ function enterChaseMode() {
   document.getElementById('hud').style.display = 'none';
   document.getElementById('game-wrap').classList.add('chase-mode');
   document.body.classList.add('chase-active');
+  // Rearrange touch controls: ◀ far left, JUMP center, ▶ far right
+  const area = document.getElementById('canvas-area');
+  const btnL = document.getElementById('btn-left');
+  const btnR = document.getElementById('btn-right');
+  const btnJ = document.getElementById('btn-jump');
+  if (btnL && btnR && btnJ) {
+    const wrap = document.createElement('div');
+    wrap.id = 'chase-controls';
+    wrap.className = 'float-controls';
+    wrap.appendChild(btnL);
+    wrap.appendChild(btnJ);
+    wrap.appendChild(btnR);
+    area.appendChild(wrap);
+  }
 }
 function exitChaseMode() {
   canvas.width = CANVAS_W;
@@ -1462,6 +1476,18 @@ function exitChaseMode() {
   document.getElementById('hud').style.display = '';
   document.getElementById('game-wrap').classList.remove('chase-mode');
   document.body.classList.remove('chase-active');
+  // Restore touch controls to original layout
+  const wrap = document.getElementById('chase-controls');
+  if (wrap) {
+    const btnL = document.getElementById('btn-left');
+    const btnR = document.getElementById('btn-right');
+    const btnJ = document.getElementById('btn-jump');
+    const dpadMid = document.querySelector('.dpad-mid');
+    const ctrlRight = document.getElementById('controls-right');
+    if (dpadMid) { dpadMid.appendChild(btnL); dpadMid.appendChild(btnR); }
+    if (ctrlRight) ctrlRight.appendChild(btnJ);
+    wrap.remove();
+  }
 }
 
 function updateChase(dt, now) {
@@ -1473,8 +1499,19 @@ function updateChase(dt, now) {
     return;
   }
 
-  ch.scrollY += CHASE_SCROLL_SPEED * dt;
-  ch.dist += CHASE_SCROLL_SPEED * dt;
+  // speed tiers: +20% at 25%, +40% at 50%, +60% at 75%
+  const pct = ch.dist / CHASE_TARGET_DIST;
+  if (ch.speedTier < CHASE_SPEED_TIERS.length && pct >= CHASE_SPEED_TIERS[ch.speedTier]) {
+    ch.speedTier++;
+    ch.speedMul = 1 + ch.speedTier * 0.2;
+    const taunts = ['¡MÁS RÁPIDO, BATS!', '¡NO VAS A ALCANZARME!', '¡ROBIN ES MÍO!'];
+    ch.taunt = { text: taunts[ch.speedTier - 1], until: now + 2200 };
+  }
+  if (ch.taunt && now >= ch.taunt.until) ch.taunt = null;
+
+  const speed = CHASE_SCROLL_SPEED * ch.speedMul;
+  ch.scrollY += speed * dt;
+  ch.dist += speed * dt;
 
   // player movement: left/right to steer the boat
   const accel = 0.7;
@@ -1487,7 +1524,7 @@ function updateChase(dt, now) {
   ch.batBoatX = Math.max(10, Math.min(CHASE_W - 100, ch.batBoatX));
   player.x = ch.batBoatX + 30;
 
-  // jump (dodge upward)
+  // jump (dodge upward — also clears full barriers)
   if (player.onGround && now < jumpBufferUntil) {
     jumpBufferUntil = 0;
     player.vy = CHASE_JUMP_VEL;
@@ -1507,21 +1544,32 @@ function updateChase(dt, now) {
   }
 
   // spawn obstacles from above
-  if (ch.scrollY - ch.lastObstacleAt > CHASE_OBSTACLE_GAP) {
+  const gap = CHASE_OBSTACLE_GAP / ch.speedMul;
+  if (ch.scrollY - ch.lastObstacleAt > gap) {
     ch.lastObstacleAt = ch.scrollY;
     const laneX = CHASE_LANE_LEFT + Math.random() * (CHASE_LANE_RIGHT - CHASE_LANE_LEFT);
     const kind = Math.random();
-    if (kind < 0.35) {
+    if (kind < 0.25) {
       ch.obstacles.push({ type: 'buoy', x: laneX, y: -30, w: 22, h: 22, hit: false });
-    } else if (kind < 0.65) {
+    } else if (kind < 0.45) {
       const w = 40 + Math.random() * 30;
       ch.obstacles.push({ type: 'wood', x: laneX - w / 2, y: -20, w, h: 12, hit: false });
-    } else {
+    } else if (kind < 0.60) {
       ch.obstacles.push({ type: 'barrel', x: laneX, y: -30, w: 24, h: 24, hit: false });
+    } else if (kind < 0.80) {
+      // half-barrier: wooden fence with a gap on one side
+      const gapSide = Math.random() < 0.5 ? 'left' : 'right';
+      const bw = CHASE_W - CHASE_LANE_LEFT * 2;
+      const halfW = bw * 0.55;
+      const bx = gapSide === 'left' ? CHASE_LANE_LEFT + bw - halfW : CHASE_LANE_LEFT;
+      ch.obstacles.push({ type: 'half_barrier', x: bx, y: -20, w: halfW, h: 14, hit: false, gapSide });
+    } else {
+      // full barrier: must jump over
+      ch.obstacles.push({ type: 'full_barrier', x: CHASE_LANE_LEFT - 10, y: -20, w: CHASE_LANE_RIGHT - CHASE_LANE_LEFT + 50, h: 14, hit: false });
     }
   }
 
-  for (const ob of ch.obstacles) ob.y += CHASE_SCROLL_SPEED * dt;
+  for (const ob of ch.obstacles) ob.y += speed * dt;
   ch.obstacles = ch.obstacles.filter(ob => ob.y < CHASE_H + 40);
 
   // Two-Face's boat appears at the top
@@ -1531,25 +1579,30 @@ function updateChase(dt, now) {
     tf.y = -100;
     tf.targetY = 40;
     tf.hideAt = now + CHASE_TF_VISIBLE_MS;
-    tf.threwGrenade = false;
+    tf.grenadesThrown = 0;
   }
   if (tf.visible) {
     tf.y += (tf.targetY - tf.y) * 0.04 * dt;
+    const maxGrenades = 1 + ch.speedTier;
+    if (tf.grenadesThrown < maxGrenades && tf.y > 20) {
+      if (tf.grenadesThrown === 0 || now >= tf.nextGrenadeAt) {
+        tf.grenadesThrown++;
+        tf.nextGrenadeAt = now + 600;
+        const aimX = ch.batBoatX + 45 + (Math.random() - 0.5) * 60;
+        ch.grenades.push({
+          x: CHASE_W / 2 + (Math.random() - 0.5) * 40, y: tf.y + 80,
+          vx: (aimX - CHASE_W / 2) * 0.02,
+          vy: CHASE_GRENADE_SPEED * ch.speedMul,
+          alive: true, bornAt: now,
+        });
+      }
+    }
     if (now >= tf.hideAt) {
       tf.y -= 3 * dt;
       if (tf.y < -140) {
         tf.visible = false;
-        tf.showAt = now + CHASE_TF_APPEAR_INTERVAL;
+        tf.showAt = now + CHASE_TF_APPEAR_INTERVAL / ch.speedMul;
       }
-    }
-    if (!tf.threwGrenade && tf.y > 20) {
-      tf.threwGrenade = true;
-      ch.grenades.push({
-        x: CHASE_W / 2, y: tf.y + 80,
-        vx: (ch.batBoatX + 45 - CHASE_W / 2) * 0.02,
-        vy: CHASE_GRENADE_SPEED,
-        alive: true, bornAt: now,
-      });
     }
   }
 
@@ -1582,10 +1635,13 @@ function updateChase(dt, now) {
   ch.explosions = ch.explosions.filter(ex => now - ex.born < 600);
   ch.splashes = ch.splashes.filter(sp => now - sp.born < 500);
 
-  // obstacle collision
+  // obstacle collision — barriers only hit the boat hull, jump clears them
   const boatHitbox = { x: ch.batBoatX, y: ch.batBoatY - 14, w: 90, h: 28 };
   for (const ob of ch.obstacles) {
     if (ob.hit) continue;
+    if (ob.type === 'full_barrier' || ob.type === 'half_barrier') {
+      if (!player.onGround) continue;
+    }
     if (boatHitbox.x + boatHitbox.w > ob.x && boatHitbox.x < ob.x + ob.w &&
         boatHitbox.y + boatHitbox.h > ob.y && boatHitbox.y < ob.y + ob.h) {
       ob.hit = true;
@@ -1684,6 +1740,37 @@ function renderChase(t) {
         ctx.lineTo(ob.x + lx, ob.y + ob.h);
         ctx.stroke();
       }
+    } else if (ob.type === 'half_barrier') {
+      ctx.fillStyle = '#6a4a2a';
+      ctx.fillRect(ob.x, ob.y, ob.w, ob.h);
+      ctx.strokeStyle = '#4a3018';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(ob.x, ob.y, ob.w, ob.h);
+      for (let px = 8; px < ob.w; px += 16) {
+        ctx.fillStyle = '#503a1a';
+        ctx.fillRect(ob.x + px, ob.y - 4, 4, ob.h + 4);
+      }
+      // arrow pointing to the open side
+      const arrowX = ob.gapSide === 'left' ? ob.x - 16 : ob.x + ob.w + 6;
+      ctx.fillStyle = '#29d985';
+      ctx.font = 'bold 14px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(ob.gapSide === 'left' ? '◀' : '▶', arrowX, ob.y + 12);
+    } else if (ob.type === 'full_barrier') {
+      ctx.fillStyle = '#7a4a2a';
+      ctx.fillRect(ob.x, ob.y, ob.w, ob.h);
+      ctx.strokeStyle = '#5a3018';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(ob.x, ob.y, ob.w, ob.h);
+      for (let px = 12; px < ob.w; px += 18) {
+        ctx.fillStyle = '#5a3a1a';
+        ctx.fillRect(ob.x + px, ob.y - 5, 5, ob.h + 5);
+      }
+      // warning: must jump
+      ctx.fillStyle = '#ff5e5e';
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('⤒ SALTÁ', ob.x + ob.w / 2, ob.y - 6);
     } else {
       ctx.fillStyle = '#555';
       ctx.beginPath();
@@ -1842,6 +1929,24 @@ function renderChase(t) {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#dbe4ff';
   ctx.fillText('PERSECUCIÓN', CW / 2, 18);
+
+  // Two-Face taunt on speed increase
+  if (ch.taunt) {
+    const age = now - (ch.taunt.until - 2200);
+    const alpha = age < 300 ? age / 300 : age > 1800 ? Math.max(0, 1 - (age - 1800) / 400) : 1;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = 'rgba(40,10,50,0.75)';
+    ctx.fillRect(CW / 2 - 140, 60, 280, 36);
+    ctx.strokeStyle = '#8e3140';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(CW / 2 - 140, 60, 280, 36);
+    ctx.fillStyle = '#ff5e5e';
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(ch.taunt.text, CW / 2, 83);
+    ctx.restore();
+  }
 
   // intro overlay
   if (ch.introTimer > 0) renderChaseIntro(t, ch);

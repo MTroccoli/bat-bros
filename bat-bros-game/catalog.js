@@ -85,12 +85,13 @@ const CHASE_SCROLL_SPEED = 3.0;
 const CHASE_BOAT_Y = 580;
 const CHASE_JUMP_VEL = -9;
 const CHASE_GRAVITY = 0.45;
-const CHASE_TARGET_DIST = 6000;
+const CHASE_TARGET_DIST = 9000;
 const CHASE_INTRO_MS = 3500;
-const CHASE_TF_APPEAR_INTERVAL = 4500;
+const CHASE_TF_APPEAR_INTERVAL = 3500;
 const CHASE_TF_VISIBLE_MS = 3000;
 const CHASE_GRENADE_SPEED = 3.5;
 const CHASE_OBSTACLE_GAP = 140;
+const CHASE_SPEED_TIERS = [0.25, 0.50, 0.75];
 const CHASE_LANE_LEFT = 60;
 const CHASE_LANE_RIGHT = 380;
 
@@ -241,12 +242,15 @@ function buildChaseState() {
   return {
     scrollY: 0,
     dist: 0,
+    speedMul: 1,
+    speedTier: 0,
+    taunt: null,
     introTimer: CHASE_INTRO_MS,
     obstacles: [],
     grenades: [],
     explosions: [],
     splashes: [],
-    tfBoat: { visible: false, y: -120, showAt: CHASE_INTRO_MS + 2000, hideAt: 0, threwGrenade: false },
+    tfBoat: { visible: false, y: -120, showAt: CHASE_INTRO_MS + 2000, hideAt: 0, grenadesThrown: 0 },
     lastObstacleAt: 0,
     finished: false,
     batBoatX: CHASE_W / 2 - 45,
