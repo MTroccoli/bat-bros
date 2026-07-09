@@ -254,7 +254,8 @@ function buildLevel(spec) {
       triggerX: (twoface.triggerX ?? 28) * TILE,
       barrage: [], spawnedThugs: [],
     } : null,
-    perches: indoor ? platforms.map(p => ({ x: p.x, w: p.w, y: p.y })) : [],
+    // gargoyle perches are only meaningful in the Bane warehouse fight
+    perches: (indoor && bane) ? platforms.map(p => ({ x: p.x, w: p.w, y: p.y })) : [],
     cave: cave ? buildCaveState(cave, width, height, groundY, solid) : null,
     chase: spec.chase ? buildChaseState() : null,
     spawn: { x: spawn.x * TILE, y: spawn.y * TILE },

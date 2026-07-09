@@ -1219,7 +1219,10 @@ function updateTwoFace(dt, now) {
   const floorY = tf.floorRow * TILE;
 
   if (tf.state === 'idle') {
-    if (player.x > tf.triggerX) {
+    // triggers when Batman is standing on the arena floor (or above),
+    // not just when he passes the trigger X while still climbing below
+    const onArenaFloor = (player.y + player.h) <= (tf.floorRow + 1) * TILE;
+    if (player.x > tf.triggerX && onArenaFloor) {
       tf.state = 'coin_flip';
       tf.coinFlipAt = now;
       tf.coinAngle = 0;
