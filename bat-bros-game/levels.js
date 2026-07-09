@@ -301,6 +301,58 @@ const LEVEL_SPECS = [
     bats: [],
     spawn: { x: 3, y: 10 },
   },
+  {
+    name: '2-4',
+    indoor: true,
+    dock: true,
+    width: 50, height: 20, groundY: 18,
+    pits: [],
+    platforms: [
+      // lower deck catwalks
+      { x: 8, y: 15, w: 6 },
+      { x: 18, y: 15, w: 4 },
+      // mid deck
+      { x: 3, y: 11, w: 7 },
+      { x: 14, y: 11, w: 6 },
+      // upper deck
+      { x: 7, y: 7, w: 8 },
+      // boss arena: wide flat top deck
+      { x: 26, y: 11, w: 22 },
+    ],
+    walls: [
+      // hull walls (left side of ship)
+      { x: 0, w: 2, topRow: 4 },
+      // divider between climb and boss arena
+      { x: 24, w: 2, topRow: 7 },
+    ],
+    ladders: [
+      { x: 14, topRow: 15, baseRow: 18 },
+      { x: 10, topRow: 11, baseRow: 15 },
+      { x: 6, topRow: 7, baseRow: 11 },
+      { x: 24, topRow: 7, baseRow: 11 },
+    ],
+    houses: [],
+    swingPoints: [
+      [4, 13],
+      [12, 9],
+      [20, 5],
+    ],
+    coins: [
+      [3, 17], [6, 17], [10, 14], [20, 14],
+      [5, 10], [9, 10], [16, 10],
+      [10, 6], [12, 6],
+    ],
+    thugs: [
+      { x: 10, y: 18, range: [8, 16], helmet: true },
+      { x: 4, y: 15, range: [3, 8] },
+      { x: 16, y: 11, range: [14, 19], helmet: true },
+      { x: 9, y: 7, range: [7, 14] },
+    ],
+    birds: [],
+    bats: [[20, 7]],
+    twoface: { x: 40, hp: TWOFACE_HP },
+    spawn: { x: 2, y: 16 },
+  },
 ];
 
 const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);

@@ -95,6 +95,15 @@ const CHASE_SPEED_TIERS = [0.25, 0.50, 0.75];
 const CHASE_LANE_LEFT = 60;
 const CHASE_LANE_RIGHT = 380;
 
+// --- Two-Face boss (Act 2 boss, level 2-4) ---
+const TWOFACE_HP = 5;
+const TWOFACE_HIT_FLASH_MS = 900;
+const TWOFACE_COIN_FLIP_MS = 2000;
+const TWOFACE_COIN_BARRAGE_COUNT = 8;
+const TWOFACE_COIN_SPEED = 4.5;
+const TWOFACE_THUG_WAVE = 3;
+const TWOFACE_ATTACK_COOLDOWN = 4500;
+
 // ---------------------------------------------------------------
 // Deterministic hash: sin-based, returns 0..1
 // ---------------------------------------------------------------
@@ -109,7 +118,7 @@ function hash01(n) {
 function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
-          boats = [], cranes = [], spawn, name, indoor = false, dock = false, bane = null, cave = null } = spec;
+          boats = [], cranes = [], spawn, name, indoor = false, dock = false, bane = null, cave = null, twoface = null } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
 
@@ -228,6 +237,19 @@ function buildLevel(spec) {
       w: 30, h: 42,
       minX: spec.villain.range[0] * TILE, maxX: spec.villain.range[1] * TILE,
       vx: 1.4, alive: true, hp: spec.villain.hp ?? 3, hitUntil: 0,
+    } : null,
+    twoface: twoface ? {
+      x: twoface.x * TILE, homeX: twoface.x * TILE,
+      y: 11 * TILE - 44,
+      w: 30, h: 44,
+      hp: twoface.hp ?? TWOFACE_HP, maxHp: twoface.hp ?? TWOFACE_HP,
+      vx: 1.2, alive: true, facing: -1,
+      state: 'idle',
+      hitUntil: 0, deadAt: 0,
+      coinFlipAt: 0, coinResult: null, coinAngle: 0,
+      attackCooldown: 0,
+      minX: 26 * TILE, maxX: (width - 3) * TILE,
+      barrage: [], spawnedThugs: [],
     } : null,
     perches: indoor ? platforms.map(p => ({ x: p.x, w: p.w, y: p.y })) : [],
     cave: cave ? buildCaveState(cave, width, height, groundY, solid) : null,

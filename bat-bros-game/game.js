@@ -966,6 +966,15 @@ function killPlayer() {
     if (bn.state !== 'idle') { bn.state = 'fight'; bn.waveAt = performance.now() + 4000; }
     level.waves.length = 0;
   }
+  if (level.twoface && level.twoface.alive) {
+    const tf = level.twoface;
+    tf.x = tf.homeX;
+    tf.y = 11 * TILE - tf.h;
+    if (tf.state !== 'idle') { tf.state = 'fight'; tf.attackCooldown = performance.now() + 3000; }
+    tf.barrage = [];
+    // remove spawned thugs from the boss arena
+    level.thugs = level.thugs.filter(g => g.minX < tf.minX);
+  }
 }
 
 function damageVillain() {
@@ -1200,6 +1209,162 @@ function updateBane(dt, now) {
   }
 }
 
+function updateTwoFace(dt, now) {
+  const tf = level.twoface;
+  if (!tf.alive) {
+    if (tf.deadAt && now - tf.deadAt > 1800 && state === 'playing') completeLevel();
+    return;
+  }
+
+  const floorY = tf.minX ? 11 * TILE : level.groundY * TILE;
+
+  if (tf.state === 'idle') {
+    if (player.x > 28 * TILE) {
+      tf.state = 'coin_flip';
+      tf.coinFlipAt = now;
+      tf.coinAngle = 0;
+    }
+    return;
+  }
+
+  if (tf.state === 'coin_flip') {
+    tf.coinAngle += 0.3 * dt;
+    if (now - tf.coinFlipAt >= TWOFACE_COIN_FLIP_MS) {
+      tf.coinResult = Math.random() < 0.5 ? 'thugs' : 'barrage';
+      tf.state = tf.coinResult === 'thugs' ? 'send_thugs' : 'fire_barrage';
+      tf.attackStart = now;
+    }
+    return;
+  }
+
+  if (tf.state === 'send_thugs') {
+    if (!tf.thugsSpawned) {
+      tf.thugsSpawned = true;
+      for (let i = 0; i < TWOFACE_THUG_WAVE; i++) {
+        const sx = tf.x - 30 - i * 40;
+        level.thugs.push({
+          x: sx, y: floorY - 26, w: 24, h: 26,
+          minX: tf.minX, maxX: tf.maxX,
+          vx: -1.5, alive: true, helmet: i === 0,
+        });
+      }
+    }
+    if (now - tf.attackStart > 1500) {
+      tf.state = 'fight';
+      tf.attackCooldown = now + TWOFACE_ATTACK_COOLDOWN;
+      tf.thugsSpawned = false;
+    }
+  }
+
+  if (tf.state === 'fire_barrage') {
+    if (!tf.barrageSpawned) {
+      tf.barrageSpawned = true;
+      tf.barrage = [];
+      for (let i = 0; i < TWOFACE_COIN_BARRAGE_COUNT; i++) {
+        const angle = -Math.PI * 0.15 - (Math.PI * 0.7) * (i / (TWOFACE_COIN_BARRAGE_COUNT - 1));
+        tf.barrage.push({
+          x: tf.x + tf.w / 2, y: tf.y + 10,
+          vx: Math.cos(angle) * TWOFACE_COIN_SPEED,
+          vy: Math.sin(angle) * TWOFACE_COIN_SPEED,
+          alive: true, born: now,
+        });
+      }
+    }
+    if (now - tf.attackStart > 1200) {
+      tf.state = 'fight';
+      tf.attackCooldown = now + TWOFACE_ATTACK_COOLDOWN;
+      tf.barrageSpawned = false;
+    }
+  }
+
+  // barrage projectile movement + collision
+  for (const c of tf.barrage) {
+    if (!c.alive) continue;
+    c.x += c.vx * dt;
+    c.y += c.vy * dt;
+    if (c.y > level.pixelHeight || c.x < 0 || c.x > level.pixelWidth) { c.alive = false; continue; }
+    if (aabbOverlap(player, { x: c.x - 6, y: c.y - 6, w: 12, h: 12 })) {
+      c.alive = false;
+      hurtPlayer();
+      if (state !== 'playing') return;
+    }
+  }
+  tf.barrage = tf.barrage.filter(c => c.alive);
+
+  if (tf.state === 'fight') {
+    const speed = tf.hp <= 2 ? 2.0 : 1.2;
+    tf.x += tf.vx * speed * dt;
+    if (tf.x < tf.minX) { tf.x = tf.minX; tf.vx = Math.abs(tf.vx); }
+    if (tf.x + tf.w > tf.maxX) { tf.x = tf.maxX - tf.w; tf.vx = -Math.abs(tf.vx); }
+    tf.facing = tf.vx > 0 ? 1 : -1;
+
+    if (now > tf.attackCooldown) {
+      tf.state = 'coin_flip';
+      tf.coinFlipAt = now;
+      tf.coinAngle = 0;
+      tf.coinResult = null;
+    }
+  }
+
+  // stomp detection
+  if (tf.state !== 'idle' && tf.state !== 'coin_flip') {
+    const stomped = !player.swinging && player.vy > 1 &&
+      aabbOverlap(player, { x: tf.x, y: tf.y, w: tf.w, h: 14 }) &&
+      (player.y + player.h - tf.y) < STOMP_TOLERANCE;
+    if (stomped && now > tf.hitUntil) {
+      tf.hp--;
+      tf.hitUntil = now + TWOFACE_HIT_FLASH_MS;
+      player.vy = STOMP_BOUNCE;
+      score += 400;
+      hud.score.textContent = score;
+      if (tf.hp <= 0) {
+        tf.alive = false;
+        tf.deadAt = now;
+        score += 5000;
+        hud.score.textContent = score;
+        return;
+      }
+      // coin flip after 3rd hit (hp goes from 5 to 2)
+      if (tf.hp === 2) {
+        tf.state = 'coin_flip';
+        tf.coinFlipAt = now;
+        tf.coinAngle = 0;
+        tf.coinResult = null;
+      }
+    }
+    // body contact hurts
+    if (!player.swinging && now >= tf.hitUntil &&
+        Date.now() >= invulnUntil && aabbOverlap(player, tf)) {
+      hurtPlayer();
+    }
+  }
+
+  // batarang hits
+  for (const b of batarangs) {
+    if (b.phase !== 'out' || !tf.alive || now < tf.hitUntil) continue;
+    if (b.x + 8 > tf.x && b.x - 8 < tf.x + tf.w && b.y + 8 > tf.y && b.y - 8 < tf.y + tf.h) {
+      tf.hp--;
+      tf.hitUntil = now + TWOFACE_HIT_FLASH_MS;
+      b.phase = 'back';
+      score += 400;
+      hud.score.textContent = score;
+      if (tf.hp <= 0) {
+        tf.alive = false;
+        tf.deadAt = now;
+        score += 5000;
+        hud.score.textContent = score;
+        return;
+      }
+      if (tf.hp === 2) {
+        tf.state = 'coin_flip';
+        tf.coinFlipAt = now;
+        tf.coinAngle = 0;
+        tf.coinResult = null;
+      }
+    }
+  }
+}
+
 function updatePlaying(dt) {
   const now = performance.now();
 
@@ -1407,7 +1572,13 @@ function updatePlaying(dt) {
   // Bane boss fight (warehouse arena)
   if (level.bane) {
     updateBane(dt, now);
-    if (state !== 'playing') return; // a shockwave/contact may have ended the run
+    if (state !== 'playing') return;
+  }
+
+  // Two-Face boss fight (carguero)
+  if (level.twoface) {
+    updateTwoFace(dt, now);
+    if (state !== 'playing') return;
   }
 
   // Batcave: ambient bats/drips, and the exit door only lets Batman through
@@ -2115,7 +2286,7 @@ function update(dt) {
         state = 'win';
         const arma = currentGadget === 'batigarra' ? 'batigarra' : 'batarang';
         showOverlay('¡ROBIN RESCATADO!',
-          `Batman alcanzó la lancha de Dos Caras y rescató a Robin. Con la ${arma} en mano, limpió los muelles de Gotham. Puntaje: ${score} con ${coinsCollected} monedas. La historia continúa en el ACTO 3...`,
+          `Batman abordó el carguero de Dos Caras, lo derrotó cara a cara y liberó a Robin. Con la ${arma} en mano, limpió los muelles de Gotham. Puntaje: ${score} con ${coinsCollected} monedas. La historia continúa en el ACTO 3...`,
           'JUGAR DE NUEVO');
       }
     }
@@ -2248,6 +2419,71 @@ function drawWarehouseBackground(t) {
     ctx.fillStyle = '#ffe9b0';
     ctx.beginPath(); ctx.arc(lx, 76, 5, 0, Math.PI * 2); ctx.fill();
   }
+}
+
+function drawCargueroBackground(t) {
+  // dark steel hull interior
+  const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
+  g.addColorStop(0, '#0e1520');
+  g.addColorStop(0.5, '#1a2535');
+  g.addColorStop(1, '#0c1018');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+  const par = camera.x * 0.4;
+
+  // riveted metal panels
+  ctx.strokeStyle = 'rgba(80,120,160,0.15)';
+  ctx.lineWidth = 1;
+  const off = -(par % 64);
+  for (let x = off - 64; x < CANVAS_W + 64; x += 64) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CANVAS_H); ctx.stroke();
+    for (let y = 20; y < CANVAS_H; y += 64) {
+      ctx.fillStyle = 'rgba(100,140,180,0.12)';
+      ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + 32, y + 32, 2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // horizontal girders (deck lines)
+  ctx.fillStyle = '#2a3a50';
+  ctx.fillRect(0, 7 * TILE - camera.y - 4, CANVAS_W, 8);
+  ctx.fillRect(0, 11 * TILE - camera.y - 4, CANVAS_W, 8);
+  ctx.fillRect(0, 15 * TILE - camera.y - 4, CANVAS_W, 8);
+
+  // portholes with water-light glow
+  const pOff = -(par % 260);
+  for (let i = -1; i < 5; i++) {
+    const px = pOff + i * 260 + 130;
+    const py = 4 * TILE - camera.y;
+    ctx.strokeStyle = '#3a5570';
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(px, py, 20, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = '#1a3550';
+    ctx.beginPath(); ctx.arc(px, py, 17, 0, Math.PI * 2); ctx.fill();
+    const flick = 0.5 + 0.3 * Math.sin(t / 500 + i * 1.7);
+    const lg = ctx.createRadialGradient(px, py, 2, px, py, 50);
+    lg.addColorStop(0, `rgba(100,180,220,${0.15 * flick})`);
+    lg.addColorStop(1, 'rgba(100,180,220,0)');
+    ctx.fillStyle = lg;
+    ctx.beginPath(); ctx.arc(px, py, 50, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // cargo containers in background
+  const cOff = -(par * 0.6 % 200);
+  const containerColors = ['#8b3a3a', '#3a5c3a', '#3a3a6b', '#6b5a2a'];
+  for (let i = 0; i < 5; i++) {
+    const cx = cOff + i * 200 + 50;
+    const cy = level.groundY * TILE - camera.y - 30 - (i % 2) * 25;
+    ctx.fillStyle = containerColors[i % containerColors.length];
+    ctx.globalAlpha = 0.25;
+    ctx.fillRect(cx, cy, 60, 25);
+    ctx.globalAlpha = 1;
+  }
+
+  // ceiling
+  ctx.fillStyle = '#0a0f18';
+  ctx.fillRect(0, 0, CANVAS_W, Math.max(0, 2 * TILE - camera.y));
 }
 
 // ---------------------------------------------------------------
@@ -2782,6 +3018,7 @@ function handleCaveUIInput(now) {
 
 function drawBackground(t) {
   if (level.cave) { drawCaveBackground(t); return; }
+  if (level.twoface) { drawCargueroBackground(t); return; }
   if (level.indoor) { drawWarehouseBackground(t); return; }
   const alt = levelAltitude();
   // vertical parallax: the whole skyline sinks as Batman climbs above it
@@ -4222,6 +4459,122 @@ function drawBane(t) {
   ctx.restore();
 }
 
+function drawTwoFace(t) {
+  const tf = level.twoface;
+  if (!tf) return;
+
+  const px = tf.x - camera.x;
+  const py = tf.y - camera.y;
+  const bw = tf.w, bh = tf.h;
+
+  if (!tf.alive) {
+    ctx.fillStyle = '#555';
+    ctx.fillRect(px + 2, py + bh - 12, bw - 4, 12);
+    ctx.fillStyle = '#eee';
+    ctx.beginPath();
+    ctx.arc(px + bw / 2, py + bh - 14, 8, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  const flashing = performance.now() < tf.hitUntil && Math.floor(performance.now() / 90) % 2 === 0;
+  if (flashing) return;
+
+  ctx.save();
+  const cx = px + bw / 2;
+
+  // legs
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(px + 4, py + bh * 0.6, bw * 0.35, bh * 0.4);
+  ctx.fillRect(px + bw * 0.55, py + bh * 0.6, bw * 0.35, bh * 0.4);
+  // shoes
+  ctx.fillStyle = '#111';
+  ctx.fillRect(px + 2, py + bh - 6, bw * 0.4, 6);
+  ctx.fillRect(px + bw * 0.55, py + bh - 6, bw * 0.4, 6);
+
+  // torso: split suit — left side dark, right side white
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(px, py + bh * 0.15, bw / 2, bh * 0.5);
+  ctx.fillStyle = '#e8e0d0';
+  ctx.fillRect(px + bw / 2, py + bh * 0.15, bw / 2, bh * 0.5);
+  // tie
+  ctx.fillStyle = '#222';
+  ctx.fillRect(cx - 2, py + bh * 0.18, 4, bh * 0.35);
+
+  // head: two-toned — left normal, right scarred
+  const headR = bw * 0.45;
+  ctx.fillStyle = '#f0d6b0';
+  ctx.beginPath();
+  ctx.arc(cx, py + bh * 0.08, headR, Math.PI * 0.5, Math.PI * 1.5);
+  ctx.fill();
+  ctx.fillStyle = '#6a3a6a';
+  ctx.beginPath();
+  ctx.arc(cx, py + bh * 0.08, headR, -Math.PI * 0.5, Math.PI * 0.5);
+  ctx.fill();
+
+  // eyes
+  ctx.fillStyle = '#111';
+  ctx.fillRect(cx - headR * 0.5, py + bh * 0.04, 3, 3);
+  ctx.fillStyle = '#d22';
+  ctx.fillRect(cx + headR * 0.2, py + bh * 0.04, 3, 3);
+
+  // mouth
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - 5, py + bh * 0.14);
+  ctx.lineTo(cx + 5, py + bh * 0.14);
+  ctx.stroke();
+
+  // HP pips
+  if (tf.state !== 'idle') {
+    for (let i = 0; i < tf.maxHp; i++) {
+      ctx.fillStyle = i < tf.hp ? '#ff5e5e' : 'rgba(255,255,255,0.25)';
+      ctx.beginPath();
+      ctx.arc(cx - (tf.maxHp - 1) * 6 + i * 12, py - headR - 18, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // coin flip animation
+  if (tf.state === 'coin_flip') {
+    const coinY = py - 30 - Math.abs(Math.sin(tf.coinAngle)) * 30;
+    const scaleX = Math.cos(tf.coinAngle * 3);
+    ctx.save();
+    ctx.translate(cx, coinY);
+    ctx.scale(scaleX, 1);
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.arc(0, 0, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#b8860b';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    if (Math.abs(scaleX) > 0.3) {
+      ctx.fillStyle = '#b8860b';
+      ctx.font = 'bold 8px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('$', 0, 3);
+    }
+    ctx.restore();
+  }
+
+  // barrage coins
+  for (const c of tf.barrage) {
+    if (!c.alive) continue;
+    const bx = c.x - camera.x, by = c.y - camera.y;
+    ctx.fillStyle = '#ffd700';
+    ctx.beginPath();
+    ctx.arc(bx, by, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#b8860b';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
 function drawShockwaves() {
   const floorY = level.groundY * TILE - camera.y;
   for (const wv of level.waves) {
@@ -4686,6 +5039,7 @@ function render(t) {
   drawBirds(t);
   drawVillain();
   drawBane(t);
+  drawTwoFace(t);
   drawShockwaves();
   drawImpactEffects(t);
   drawPlayer();
