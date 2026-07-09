@@ -123,6 +123,34 @@ function buildLevel(spec) {
     solid[l.topRow][l.x] = true;
   }
 
+  const builtCranes = cranes.map(c => ({
+    towerX: c.towerX * TILE,
+    armY: c.armY * TILE,
+    anchorX: c.armEndX * TILE,
+    anchorY: c.armY * TILE,
+    ropeLen: c.ropeLen * TILE,
+    cargoW: c.cargoW * TILE,
+    cargoH: TILE * 2,
+    speed: c.speed,
+    amplitude: c.amplitude,
+    angle: 0,
+    cargoX: c.armEndX * TILE - (c.cargoW * TILE) / 2,
+    cargoY: c.armY * TILE + c.ropeLen * TILE,
+    prevCargoX: c.armEndX * TILE - (c.cargoW * TILE) / 2,
+    craneCoins: [],
+  }));
+
+  const builtCoins = coins.map(([x, y]) => ({ x: x * TILE + TILE / 2, y: y * TILE + TILE / 2, taken: false }));
+  for (const crane of builtCranes) {
+    const n = Math.max(1, Math.floor(crane.cargoW / TILE));
+    for (let i = 0; i < n; i++) {
+      const localX = (i + 0.5) * (crane.cargoW / n);
+      const coin = { x: crane.cargoX + localX, y: crane.cargoY - 16, taken: false, craneLocalX: localX, craneRef: crane };
+      crane.craneCoins.push(coin);
+      builtCoins.push(coin);
+    }
+  }
+
   return {
     name,
     width, height, groundY, indoor, dock,
@@ -146,7 +174,7 @@ function buildLevel(spec) {
       minX: 3 * TILE, maxX: (width - 4) * TILE,
     } : null,
     waves: [],
-    coins: coins.map(([x, y]) => ({ x: x * TILE + TILE / 2, y: y * TILE + TILE / 2, taken: false })),
+    coins: builtCoins,
     thugs: thugs.map(g => ({
       x: g.x * TILE, y: g.y * TILE - 26,
       w: 24, h: 26,
@@ -170,21 +198,7 @@ function buildLevel(spec) {
       minX: b.range[0] * TILE, maxX: b.range[1] * TILE,
       vx: b.speed ?? 1.0,
     })),
-    cranes: cranes.map(c => ({
-      towerX: c.towerX * TILE,
-      armY: c.armY * TILE,
-      anchorX: c.armEndX * TILE,
-      anchorY: c.armY * TILE,
-      ropeLen: c.ropeLen * TILE,
-      cargoW: c.cargoW * TILE,
-      cargoH: TILE * 2,
-      speed: c.speed,
-      amplitude: c.amplitude,
-      angle: 0,
-      cargoX: c.armEndX * TILE - (c.cargoW * TILE) / 2,
-      cargoY: c.armY * TILE + c.ropeLen * TILE,
-      prevCargoX: c.armEndX * TILE - (c.cargoW * TILE) / 2,
-    })),
+    cranes: builtCranes,
     swingPoints: swingPoints.map(([x, row, minR, manual]) => {
       let floorTy = height;
       for (let ty = row; ty < height; ty++) {

@@ -235,8 +235,10 @@ const LEVEL_SPECS = [
     ],
     ladders: [
       { x: 13, topRow: 15, baseRow: 21 },
+      { x: 18, topRow: 15, baseRow: 21 },
       { x: 26, topRow: 15, baseRow: 21 },
       { x: 29, topRow: 13, baseRow: 21 },
+      { x: 37, topRow: 13, baseRow: 21 },
       { x: 42, topRow: 13, baseRow: 21 },
       { x: 71, topRow: 15, baseRow: 21 },
       { x: 77, topRow: 15, baseRow: 21 },
@@ -244,7 +246,7 @@ const LEVEL_SPECS = [
     ],
     houses: [],
     cranes: [
-      { towerX: 47, armY: 3, armEndX: 58, ropeLen: 11, cargoW: 3, speed: 0.0018, amplitude: 0.55 },
+      { towerX: 47, armY: 3, armEndX: 58, ropeLen: 11, cargoW: 3, speed: 0.0012, amplitude: 0.45 },
     ],
     boats: [
       { x: 92, y: 21, w: 3, range: [89, 99], speed: 1.5 },
@@ -257,7 +259,6 @@ const LEVEL_SPECS = [
       [4, 19], [8, 19], [12, 19],
       [17, 14], [25, 14],
       [33, 12], [41, 12],
-      [55, 14], [62, 14],
       [74, 14], [78, 19], [82, 19],
       [92, 18], [96, 18],
       [103, 14], [108, 19],
@@ -276,7 +277,7 @@ const LEVEL_SPECS = [
     ],
     birds: [
       { x: 28, y: 11, range: [26, 36] },
-      { x: 58, y: 7, range: [50, 66] },
+      { x: 58, y: 11, range: [50, 66] },
       { x: 95, y: 14, range: [88, 100] },
     ],
     bats: [[44, 19]],

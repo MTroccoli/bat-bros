@@ -856,6 +856,10 @@ function updateCranes(dt, now) {
     crane.angle = Math.sin(now * crane.speed) * crane.amplitude;
     crane.cargoX = crane.anchorX + Math.sin(crane.angle) * crane.ropeLen - crane.cargoW / 2;
     crane.cargoY = crane.anchorY + Math.cos(crane.angle) * crane.ropeLen;
+    for (const cc of crane.craneCoins) {
+      cc.x = crane.cargoX + cc.craneLocalX;
+      cc.y = crane.cargoY - 16;
+    }
   }
   if (player.swinging || player.climbing) return;
   for (const crane of level.cranes) {
