@@ -269,18 +269,16 @@ function updateBatarangs(dt) {
       if (b.x + 8 > g.x && b.x - 8 < g.x + g.w && b.y + 8 > g.y && b.y - 8 < g.y + g.h) {
         if (g.helmet) {
           g.helmet = false;
-          // send it home right away — otherwise it keeps overlapping the
-          // now-unhelmeted thug for a few more frames and kills him in the
-          // same throw instead of taking a second hit
-          b.phase = 'back';
         } else if (b.type !== 'batigarra') {
           g.alive = false;
           score += 100;
           hud.score.textContent = score;
         }
+        b.phase = 'back';
         break;
       }
     }
+    if (b.phase !== 'out') continue;
     if (b.type !== 'batigarra') {
       for (const bd of level.birds) {
         if (!bd.alive) continue;
@@ -288,6 +286,7 @@ function updateBatarangs(dt) {
           bd.alive = false;
           score += 100;
           hud.score.textContent = score;
+          b.phase = 'back';
           break;
         }
       }
@@ -367,6 +366,7 @@ function updateClimb(dt, now) {
 
 function tryAttachGrapple(now) {
   if (now < grappleCooldownUntil || !level.swingPoints.length) return;
+  if (player.onGround || player.climbing) return;
   const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
   for (const sp of level.swingPoints) {
     if (sp.minR) {

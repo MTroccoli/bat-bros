@@ -282,7 +282,7 @@ const LEVEL_SPECS = [
       { x: 58, y: 11, range: [50, 66] },
       { x: 95, y: 14, range: [88, 100] },
     ],
-    bats: [[43, 19]],
+    bats: [[45, 17]],
     spawn: { x: 2, y: 19 },
   },
 ];
