@@ -402,14 +402,10 @@ function tryAttachGrapple(now) {
       }
       continue;
     }
-    // Climb anchors (a rooftop right under them) have two guards: never
-    // re-grab a player already standing on that roof, and only latch while
-    // RISING — dropping down off a roof must never snag the rope. Anchors
-    // hanging over pits have no nearby floor and always latch.
+    if (player.vy >= 0) continue;
     const hasCloseFloor = sp.floorY - sp.y <= TILE * 4;
     if (hasCloseFloor) {
       if (player.y + player.h < sp.floorY + 6) continue;
-      if (player.vy >= 0) continue;
     }
     const dist = Math.hypot(sp.x - cx, sp.y - cy);
     if (dist < GRAPPLE_RANGE && sp.y < cy) {
@@ -2527,9 +2523,7 @@ function drawExpedienteScreen(now) {
   ctx.font = '12px monospace'; ctx.textAlign = 'left';
   lines.forEach(([txt, col], i) => { ctx.fillStyle = col; ctx.fillText(txt, x + 190, y + 66 + i * 26); });
 
-  // Batcomputer's private record on the vigilante using it — the game-over
-  // tally is only ever shown here, on this screen.
-  const boxX = x + 190, boxY = y + 232, boxW = w - 230, boxH = 44;
+  const boxX = x + 190, boxY = y + 232, boxW = w - 230, boxH = 68;
   ctx.strokeStyle = 'rgba(127,212,255,0.45)'; ctx.lineWidth = 1;
   ctx.strokeRect(boxX, boxY, boxW, boxH);
   ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left';
@@ -2539,6 +2533,8 @@ function drawExpedienteScreen(now) {
   ctx.fillStyle = '#ff5e5e'; ctx.textAlign = 'right';
   ctx.font = 'bold 14px monospace';
   ctx.fillText(`GAME OVERS: ${gameOverCount}`, boxX + boxW - 10, boxY + 30);
+  ctx.fillStyle = '#29d985'; ctx.textAlign = 'left'; ctx.font = '11px monospace';
+  ctx.fillText(`ACTO 2 ACTIVO · VIDAS: ${lives} · +1 VIDA POR EQUIPARSE`, boxX + 10, boxY + 54);
   ctx.textAlign = 'left';
 
   const blink = Math.floor(now / 400) % 2 === 0;
@@ -2608,6 +2604,8 @@ function chooseCaveWeapon() {
   cv.weaponChosen = cv.choiceSel === 1 ? 'batigarra' : 'batarang';
   setGadget(cv.weaponChosen);       // permanent tool, independent of health
   if (player.powerState === 'small') setPowerState('big'); // suit up
+  lives++;
+  hud.lives.textContent = lives;
   state = 'playing';
 }
 
