@@ -119,6 +119,10 @@ function buildLevel(spec) {
     }
   }
 
+  for (const l of ladders) {
+    solid[l.topRow][l.x] = true;
+  }
+
   return {
     name,
     width, height, groundY, indoor, dock,

@@ -262,10 +262,8 @@ function updateBatarangs(dt) {
 
     if (b.y > level.pixelHeight + 60) { b.alive = false; continue; }
 
-    // The batigarra is a grappling tool, not a weapon: it can knock a spiked
-    // helmet off a helmeted thug (making him stompable) but never deals
-    // lethal damage. Only the batarang takes enemies down outright, so the
-    // weapon choice stays a real trade-off (mobility vs. ranged offense).
+    if (b.phase !== 'out') continue;
+
     for (const g of level.thugs) {
       if (!g.alive) continue;
       if (b.x + 8 > g.x && b.x - 8 < g.x + g.w && b.y + 8 > g.y && b.y - 8 < g.y + g.h) {
@@ -322,19 +320,8 @@ function tryGrabLadder(now) {
   }
 }
 
-// A ladder shaft has no floor of its own where it lets off onto a rooftop —
-// the floor belongs to the platform beside it. Stepping off the top rung
-// used to catch the corner of that platform's face (the player's box was
-// exactly as tall as the gap, so gravity dropped it into the wall's edge
-// before it cleared onto the roof). Mantle onto whichever neighboring
-// column is solid so reaching the top always lands Batman ON the platform.
 function mountLadderExit(row) {
-  const cx = player.x + player.w / 2;
-  const tile = Math.floor(cx / TILE);
-  if (isSolidTile(tile, row)) { player.onGround = true; return; }
-  if (isSolidTile(tile + 1, row)) { player.x = (tile + 1) * TILE + 2; player.onGround = true; }
-  else if (isSolidTile(tile - 1, row)) { player.x = tile * TILE - player.w - 2; player.onGround = true; }
-  else { player.onGround = false; }
+  player.onGround = true;
 }
 
 function updateClimb(dt, now) {
@@ -342,11 +329,11 @@ function updateClimb(dt, now) {
   const l = level.ladders.find(ll => cx >= ll.x && cx < ll.x + TILE);
   if (!l) { player.climbing = false; return; }
 
-  if (keys.up && !keys.down) player.y -= LADDER_SPEED * dt;
-  else if (keys.down && !keys.up) player.y += LADDER_SPEED * dt;
+  const climbDir = (keys.up && !keys.down) ? -1 : (keys.down && !keys.up) ? 1 : 0;
+  if (climbDir) player.y += LADDER_SPEED * climbDir * dt;
   player.vx = 0; player.vy = 0;
   player.onGround = false;
-  player.walkDist = (player.walkDist || 0) + LADDER_SPEED * dt; // reuse for the rung-climb animation
+  if (climbDir) player.walkDist = (player.walkDist || 0) + LADDER_SPEED * dt;
 
   // jump off sideways, same buffered-press feel as a normal jump
   if (now < jumpBufferUntil) {
@@ -2363,19 +2350,31 @@ function drawBoats(t) {
     const x0 = boat.x - camera.x, y0 = boat.y - camera.y;
     if (x0 + boat.w < -20 || x0 > CANVAS_W + 20) continue;
     const bob = Math.sin(t / 260 + boat.x * 0.01) * 1.5;
-    ctx.fillStyle = '#6b4f2e';
-    ctx.fillRect(x0, y0 + bob, boat.w, boat.h);
+    const by = y0 + bob;
+    const bowDir = boat.vx > 0 ? 1 : -1;
+    const bowX = bowDir > 0 ? x0 + boat.w : x0;
+    const sternX = bowDir > 0 ? x0 : x0 + boat.w;
+    ctx.fillStyle = '#5a4020';
+    ctx.beginPath();
+    ctx.moveTo(sternX, by);
+    ctx.lineTo(bowX, by);
+    ctx.lineTo(bowX + bowDir * 14, by + boat.h * 0.4);
+    ctx.lineTo(bowX, by + boat.h);
+    ctx.lineTo(sternX, by + boat.h);
+    ctx.closePath();
+    ctx.fill();
     ctx.fillStyle = '#8a6a42';
-    ctx.fillRect(x0, y0 + bob, boat.w, 4);
-    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-    ctx.lineWidth = 1;
-    for (let px = 10; px < boat.w; px += 12) {
-      ctx.beginPath(); ctx.moveTo(x0 + px, y0 + bob + 4); ctx.lineTo(x0 + px, y0 + bob + boat.h); ctx.stroke();
+    ctx.fillRect(x0, by, boat.w, 4);
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1;
+    for (let px = 10; px < boat.w; px += 14) {
+      ctx.beginPath(); ctx.moveTo(x0 + px, by + 4); ctx.lineTo(x0 + px, by + boat.h); ctx.stroke();
     }
-    // small ripple wake at the waterline under each end
-    ctx.strokeStyle = 'rgba(180,220,255,0.35)';
-    ctx.beginPath(); ctx.moveTo(x0 - 4, y0 + bob + boat.h + 2); ctx.lineTo(x0 + 4, y0 + bob + boat.h + 2); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(x0 + boat.w - 4, y0 + bob + boat.h + 2); ctx.lineTo(x0 + boat.w + 4, y0 + bob + boat.h + 2); ctx.stroke();
+    ctx.fillStyle = '#6b4f2e';
+    ctx.fillRect(x0 + boat.w * 0.3, by + 1, boat.w * 0.15, boat.h - 2);
+    ctx.strokeStyle = 'rgba(180,220,255,0.35)'; ctx.lineWidth = 1;
+    const wakeX = bowX + bowDir * 12;
+    ctx.beginPath(); ctx.moveTo(wakeX, by + boat.h * 0.4 + 2); ctx.lineTo(wakeX + bowDir * 8, by + boat.h * 0.4 + 4); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(wakeX, by + boat.h * 0.4 + 5); ctx.lineTo(wakeX + bowDir * 5, by + boat.h * 0.4 + 7); ctx.stroke();
   }
 }
 
@@ -2438,6 +2437,14 @@ function drawLadders() {
     ctx.strokeStyle = '#6b4f2e'; ctx.lineWidth = 3;
     for (let y = y0 + 6; y < y1; y += 10) {
       ctx.beginPath(); ctx.moveTo(railL, y); ctx.lineTo(railR, y); ctx.stroke();
+    }
+    ctx.fillStyle = '#6a6e78';
+    ctx.fillRect(x0 - 4, y0 - 2, TILE + 8, 6);
+    ctx.fillStyle = '#8a8e98';
+    ctx.fillRect(x0 - 4, y0 - 2, TILE + 8, 2);
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1;
+    for (let gx = x0 - 2; gx < x0 + TILE + 4; gx += 5) {
+      ctx.beginPath(); ctx.moveTo(gx, y0 - 1); ctx.lineTo(gx, y0 + 3); ctx.stroke();
     }
   }
 }

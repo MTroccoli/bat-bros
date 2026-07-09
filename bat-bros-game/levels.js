@@ -192,7 +192,7 @@ const LEVEL_SPECS = [
     // hooks — no fixed rest stop anymore, land on it mid-swing or time a
     // hop onto it while it passes
     boats: [
-      { x: 58, y: 17, w: 3, range: [53, 66], speed: 1.7 },
+      { x: 58, y: 17, w: 3, range: [53, 66], speed: 2.0 },
     ],
     coins: [
       [4, 15], [9, 15], [13, 15],
