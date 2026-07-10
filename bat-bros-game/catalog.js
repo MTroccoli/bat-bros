@@ -113,7 +113,7 @@ const TWOFACE_CAGE_MAX_CUTS = 3;             // 3 cuts and Robin drops into the 
 // his coin. Heads = 3 bullets to jump over, tails = 1 thug + 1 bird
 const TWOFACE_COIN_FLIP_MS = 1500;
 const TWOFACE_BULLET_COUNT = 3;
-const TWOFACE_BULLET_INTERVAL = 550;
+const TWOFACE_BULLET_INTERVAL = 900;
 const TWOFACE_BULLET_SPEED = 3.4;
 
 // ---------------------------------------------------------------

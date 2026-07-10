@@ -952,7 +952,19 @@ function killPlayer() {
     return;
   }
   currentPowerState = 'small';
-  const respawn = level.checkpoint || level.spawn;
+  // Boss fights already in progress: keep Batman in the arena so the
+  // fight stays fluid — no punishing trek back to the level start. For
+  // Two-Face we drop him at the ladder top on the arena floor; for
+  // Bane, on the warehouse floor near his entrance.
+  let respawn = level.checkpoint || level.spawn;
+  const tfEngaged = level.twoface && level.twoface.alive && level.twoface.state !== 'idle';
+  const baneEngaged = level.bane && level.bane.alive && level.bane.state !== 'idle';
+  if (tfEngaged) {
+    const l = level.ladders?.[0];
+    if (l) respawn = { x: l.x, y: l.top - TILE * 2 };
+  } else if (baneEngaged) {
+    respawn = { x: 3 * TILE, y: (level.groundY - 2) * TILE };
+  }
   player = newPlayer(respawn, 'small', currentGadget);
   if (currentGadget === 'batarang') { batarangAmmo = BATARANG_MAX_AMMO; updateAmmoHud(); }
   if (level.chase) {
@@ -1313,7 +1325,6 @@ function updateTwoFace(dt, now) {
     if (player.x > tf.triggerX && onArenaFloor) {
       tf.state = 'patrol';
       tf.cutTimer = now + TWOFACE_ROPE_CUT_INTERVAL;
-      tf.nextThugAt = now + TWOFACE_THUG_SPAWN_INTERVAL;
       tf.vx = -Math.abs(TWOFACE_PATROL_SPEED);
     }
     return;
@@ -1375,18 +1386,6 @@ function updateTwoFace(dt, now) {
       tf.cutTimer = now + (enraged ? TWOFACE_ROPE_CUT_INTERVAL_RAGE : TWOFACE_ROPE_CUT_INTERVAL);
       tf.vx = Math.abs(TWOFACE_PATROL_SPEED);
     }
-  }
-
-  // === distraction thugs — spawn periodically once the fight is live
-  if (tf.state !== 'idle' && !cage.falling && now >= tf.nextThugAt) {
-    // spawn from the ladder side so they walk across Batman's path
-    const sx = tf.maxX - TILE;
-    level.thugs.push({
-      x: sx, y: tf.floorRow * TILE - 26, w: 24, h: 26,
-      minX: tf.minX, maxX: tf.maxX,
-      vx: -1.5, alive: true, helmet: false, bossSpawn: true,
-    });
-    tf.nextThugAt = now + (enraged ? TWOFACE_THUG_SPAWN_INTERVAL_RAGE : TWOFACE_THUG_SPAWN_INTERVAL);
   }
 
   // === special-attack bullets: 3 slow-moving coins-turned-projectiles that
