@@ -224,6 +224,13 @@ function updateWeaponButton() {
   const garra = currentGadget === 'batigarra';
   btnShoot.style.display = currentGadget ? 'flex' : '';
   btnShoot.textContent = garra ? '🪝' : '🪃';
+  // The rope reel arrows are only useful with the batigarra — hide
+  // them under the batarang so the touch pad doesn't clutter with
+  // dead buttons that do nothing.
+  const btnUp = document.getElementById('btn-up');
+  const btnDown = document.getElementById('btn-down');
+  if (btnUp) btnUp.style.display = garra ? '' : 'none';
+  if (btnDown) btnDown.style.display = garra ? '' : 'none';
   if (hud.ammoWrap) {
     const show = currentGadget === 'batarang';
     hud.ammoWrap.style.display = show ? '' : 'none';
@@ -260,6 +267,14 @@ let currentPowerState = 'small'; // HEALTH only: small | big — carries over be
 let currentGadget = null;        // null | 'batarang' | 'batigarra' — a permanent tool, kept through hits/levels
 let armored = false;             // Act 2 armor upgrade: every spawn starts as 'big' (takes one extra hit)
 let postTwoFaceReturn = false;   // routed back to the Batcave after 2-4; unlocks the Act 2 choice screen
+// Persist "beat Two-Face" so Continue from a fresh page reload also
+// lands the news feed instead of the Two-Face expediente.
+function saveAct2Beaten() {
+  try { localStorage.setItem('bitbros:act2beaten', '1'); } catch (e) {}
+}
+function loadAct2Beaten() {
+  try { return localStorage.getItem('bitbros:act2beaten') === '1'; } catch (e) { return false; }
+}
 let rescueStart = 0;             // performance.now() when the 2-4 rescue cutscene began
 let alfredStart = 0;             // performance.now() when Alfred's news cutscene began
 
@@ -708,7 +723,10 @@ function loadLevel(idx) {
 function startGame() {
   score = 0; coinsCollected = 0; lives = 3;
   armored = false;
-  postTwoFaceReturn = false;
+  // Auto-detect: if Continue drops the player back in the CUEVA (or
+  // past it) after they already beat Two-Face on a previous run, keep
+  // showing the frozen-Gotham news instead of the Two-Face expediente.
+  postTwoFaceReturn = loadAct2Beaten();
   currentPowerState = 'small';
   currentGadget = startLevelIndex > 0 ? savedGadget : null;
   // If continuing past the Batcave without a weapon, send back to pick one
@@ -1734,9 +1752,10 @@ function updatePlaying(dt) {
   if (level.cave) {
     const cv = level.cave;
     // Act 2 return: Robin walks in with Batman and follows him around
-    // the cave. He keeps his own feet on the ground and never mirrors
-    // Batman's jumps — his y is glued to the plateau he starts on and
-    // auto-steps up when the terrain rises under him.
+    // the cave. He runs his own tiny physics loop so he never mirrors
+    // Batman's jumps — instead, when the tile ahead is higher than the
+    // one under his feet he arcs UP with a normal jump velocity, like
+    // Batman would, and gravity pulls him back down onto the step.
     if (cv.act2Return && cv.companion) {
       const comp = cv.companion;
       const targetX = player.x - player.facing * 34;
@@ -1744,16 +1763,37 @@ function updatePlaying(dt) {
       const speedCap = 3.6;
       const step = Math.max(-speedCap, Math.min(speedCap, dx * 0.12)) * dt;
       const nextX = comp.x + step;
-      // find the highest solid tile top under Robin's new x within the
-      // cave's climbable range — that's what his feet land on
-      const compCx = nextX + 12; // approximate center
-      const tx = Math.max(0, Math.min(level.width - 1, Math.floor(compCx / TILE)));
-      let floorY = level.groundY * TILE;
-      for (let ty = Math.max(0, Math.floor(cv.plateauY / TILE) - 1); ty < level.height; ty++) {
-        if (level.solid[ty][tx]) { floorY = ty * TILE; break; }
-      }
+      // find the tile top under Robin's new center x
+      const findFloorY = (worldX) => {
+        const tx = Math.max(0, Math.min(level.width - 1, Math.floor(worldX / TILE)));
+        for (let ty = 0; ty < level.height; ty++) {
+          if (level.solid[ty][tx]) return ty * TILE;
+        }
+        return level.groundY * TILE;
+      };
       comp.x = nextX;
-      comp.y = floorY - player.h; // feet exactly on the tile top
+      const cxCenter = nextX + 12;
+      const floorHere = findFloorY(cxCenter);
+      // vertical physics: gravity + optional step-up hop
+      comp.vy = (comp.vy || 0) + 0.5 * dt;
+      comp.y += comp.vy * dt;
+      const feetY = comp.y + player.h;
+      // resolve landing
+      if (feetY >= floorHere) {
+        comp.y = floorHere - player.h;
+        comp.vy = 0;
+        comp.onGround = true;
+        // upcoming step trigger: if the floor at his forward foot is
+        // higher (smaller y) than the floor under him, kick a small jump
+        const aheadX = cxCenter + (comp.facing || 1) * 18;
+        const floorAhead = findFloorY(aheadX);
+        if (floorAhead < floorHere - 2 && Math.abs(step) > 0.3) {
+          comp.vy = -6.5; // enough to clear a one-tile step
+          comp.onGround = false;
+        }
+      } else {
+        comp.onGround = false;
+      }
       if (Math.abs(step) > 0.4) comp.walkPhase += Math.abs(step) * 0.06;
       comp.facing = dx > 0 ? 1 : (dx < 0 ? -1 : comp.facing);
     }
@@ -2724,6 +2764,17 @@ function update(dt) {
   } else if (state === 'levelcomplete') {
     stateTimer -= dt * (1000 / 60);
     if (stateTimer <= 0) {
+      // After the Act 2 Batcave visit the next level is 3-1 (the frozen
+      // city), not the Act 2 replay that comes right after CUEVA in
+      // LEVEL_SPECS. Jump there explicitly when postTwoFaceReturn is on.
+      if (level && level.cave && postTwoFaceReturn) {
+        const idx31 = LEVEL_SPECS.findIndex(s => s.name === '3-1');
+        if (idx31 >= 0) {
+          loadLevel(idx31);
+          state = 'playing';
+          return;
+        }
+      }
       if (levelIndex + 1 < LEVEL_SPECS.length) {
         loadLevel(levelIndex + 1);
         state = 'playing';
@@ -6880,6 +6931,7 @@ function loop(now) {
     if (now - rescueStart > 9000 || skip) {
       jumpBufferUntil = 0; shootBufferUntil = 0;
       postTwoFaceReturn = true;
+      saveAct2Beaten();
       const caveIdx = LEVEL_SPECS.findIndex(s => s.cave);
       loadLevel(caveIdx);
       // Batman + Robin walk into the cave normally — Alfred is waiting
