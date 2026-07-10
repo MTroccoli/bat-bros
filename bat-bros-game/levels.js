@@ -434,4 +434,93 @@ LEVEL_SPECS.push({
   spawn: { x: 2, y: 22 },
 });
 
+// 3-2 — twin gable-roof houses along the avenue, three helmeted thugs,
+// icy slopes across the block. Feels like an Act 1 rooftop chase gone
+// into a blizzard. The gable style is a triangular-roof house whose
+// solid box stays flat, but the render slaps a sharp icy pyramid on
+// top so the block LOOKS harder to climb.
+LEVEL_SPECS.push({
+  name: '3-2',
+  frozen: true,
+  width: 96, height: 30, groundY: 28,
+  pits: [[12, 13], [70, 76]],
+  platforms: [
+    { x: 6, y: 25, w: 3 },
+    { x: 60, y: 25, w: 3 },
+    { x: 80, y: 25, w: 3 },
+  ],
+  walls: [{ x: 32, w: 4, topRow: 22 }],
+  houses: [
+    { x: 22, w: 6, topRow: 22, baseRow: 28, style: 'gable' },
+    { x: 42, w: 6, topRow: 22, baseRow: 28, style: 'gable' },
+    { x: 86, w: 4, topRow: 24, baseRow: 28, style: 'brownstone' },
+  ],
+  swingPoints: [[33, 18], [50, 18]],
+  coins: [
+    [5, 27], [18, 27], [55, 27], [66, 27],
+    [22, 21], [45, 21],
+    [80, 24], [83, 24],
+  ],
+  thugs: [
+    { x: 6, y: 28, range: [3, 10], frozen: true },
+    { x: 16, y: 28, range: [14, 22], frozen: true },
+    { x: 24, y: 22, range: [22, 28], helmet: true, frozen: true },
+    { x: 44, y: 22, range: [42, 48], helmet: true, frozen: true },
+    { x: 56, y: 28, range: [54, 60], frozen: true },
+    { x: 66, y: 28, range: [62, 69], frozen: true },
+    { x: 82, y: 25, range: [80, 83], helmet: true, frozen: true },
+    { x: 90, y: 28, range: [88, 95], frozen: true },
+  ],
+  birds: [
+    { x: 30, y: 20, range: [26, 36], frozen: true },
+    { x: 66, y: 24, range: [63, 69], frozen: true },
+  ],
+  bats: [],
+  spawn: { x: 2, y: 26 },
+});
+
+// 3-3 — frozen docks. Wooden pier is skipped (kept indoor-ish feel);
+// gable roofs plus a stack of thugs to stomp/batarang.
+LEVEL_SPECS.push({
+  name: '3-3',
+  frozen: true,
+  width: 70, height: 34, groundY: 32,
+  pits: [[14, 16], [24, 26]],
+  platforms: [
+    { x: 8, y: 29, w: 3 },
+    { x: 20, y: 29, w: 3 },
+  ],
+  walls: [
+    { x: 30, w: 4, topRow: 26 },
+    { x: 34, w: 4, topRow: 20 },
+    { x: 38, w: 10, topRow: 14 },
+  ],
+  houses: [
+    { x: 48, w: 6, topRow: 26, baseRow: 32, style: 'gable' },
+    { x: 58, w: 6, topRow: 24, baseRow: 32, style: 'gable' },
+  ],
+  swingPoints: [[31, 24], [35, 18], [39, 12]],
+  coins: [
+    [9, 28], [21, 28],
+    [31, 25], [35, 19], [39, 13],
+    [50, 25], [60, 23],
+    [5, 31], [19, 31],
+  ],
+  thugs: [
+    { x: 5, y: 32, range: [3, 9], frozen: true },
+    { x: 18, y: 32, range: [17, 23], frozen: true },
+    { x: 28, y: 32, range: [27, 29], helmet: true, frozen: true },
+    { x: 35, y: 20, range: [34, 37], frozen: true },
+    { x: 42, y: 14, range: [40, 47], helmet: true, frozen: true },
+    { x: 50, y: 26, range: [48, 53], frozen: true },
+    { x: 60, y: 24, range: [58, 63], frozen: true },
+  ],
+  birds: [
+    { x: 20, y: 24, range: [15, 28], frozen: true },
+    { x: 50, y: 18, range: [45, 55], frozen: true },
+  ],
+  bats: [],
+  spawn: { x: 2, y: 30 },
+});
+
 const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);

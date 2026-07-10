@@ -90,8 +90,9 @@ window.addEventListener('keydown', e => {
   }
   if (state === 'levelselect') {
     const cv = level.cave;
+    const opts = (cv.selStep || 'act') === 'act' ? levelSelectActs() : levelSelectLevels(cv.selAct || 1);
     if (['ArrowLeft', 'KeyA'].includes(e.code)) cv.selLevel = Math.max(0, cv.selLevel - 1);
-    else if (['ArrowRight', 'KeyD'].includes(e.code)) cv.selLevel = Math.min(cv.replayOptions.length - 1, cv.selLevel + 1);
+    else if (['ArrowRight', 'KeyD'].includes(e.code)) cv.selLevel = Math.min(opts.length - 1, cv.selLevel + 1);
     else if (confirmCode) chooseReplayLevel();
     e.preventDefault();
     return;
@@ -496,6 +497,9 @@ function updateClimb(dt, now) {
 }
 
 function tryAttachGrapple(now) {
+  // Robin has no grappling hook — he reaches high spots via double
+  // jump instead. Grapple points on-screen still exist for Batman.
+  if (activeChar === 'robin') return;
   if (now < grappleCooldownUntil || !level.swingPoints.length) return;
   if (player.onGround || player.climbing) return;
   const cx = player.x + player.w / 2, cy = player.y + player.h / 2;
@@ -1863,6 +1867,8 @@ function updatePlaying(dt) {
       jumpBufferUntil = 0;
       player.vx = 0;
       cv.selLevel = 0;
+      cv.selStep = 'act';   // always start at the Act picker
+      cv.selAct = 1;
       state = 'levelselect';
       return;
     }
@@ -3710,13 +3716,32 @@ function drawCaveComputer(cx, plateauScreenY) {
   ctx.fillStyle = '#202737'; ctx.fillRect(x, y, scrW, scrH);
   ctx.restore();
   ctx.fillStyle = '#0b2438'; ctx.fillRect(x + 6, y + 6, scrW - 12, scrH - 12);
-  // Two-Face + mini file
+
+  const tx = x + 118;
+  ctx.textAlign = 'left';
+  if (postTwoFaceReturn) {
+    // Post-2-4: the desktop switches to the current villain — Mr.
+    // Freeze — with the frozen-Gotham file next to his mug shot.
+    ctx.save();
+    ctx.translate(x + 16, y + 16); ctx.scale(0.6, 0.6);
+    drawFreezePortrait(ctx);
+    ctx.restore();
+    ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 10px monospace'; ctx.fillText('VICTOR FRIES', tx, y + 30);
+    ctx.font = '9px monospace';
+    ctx.fillStyle = '#ff5e5e'; ctx.fillText('ALIAS: Mr. FREEZE', tx, y + 46);
+    ctx.fillStyle = '#ffd166'; ctx.fillText('GOTHAM: -40°C', tx, y + 62);
+    ctx.fillStyle = '#29d985'; ctx.fillText('IR A: CENTRO', tx, y + 78);
+    ctx.fillStyle = '#7fb5c8'; ctx.fillRect(tx, y + 92, 62, 16);
+    ctx.fillStyle = '#0b2438'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('CONGELADO', tx + 31, y + 103);
+    ctx.textAlign = 'left';
+    return;
+  }
+  // Pre-2-4: Two-Face wanted file
   ctx.save();
   ctx.translate(x + 16, y + 16); ctx.scale(0.6, 0.6);
   drawTwoFacePortrait(ctx);
   ctx.restore();
-  const tx = x + 118;
-  ctx.textAlign = 'left';
   ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 10px monospace'; ctx.fillText('HARVEY DENT', tx, y + 30);
   ctx.font = '9px monospace';
   ctx.fillStyle = '#ff5e5e'; ctx.fillText('ALIAS: TWO-FACE', tx, y + 46);
@@ -4045,37 +4070,68 @@ function chooseCaveWeapon() {
 }
 
 // full-screen "replay an Act 1 level" menu (state 'levelselect')
+// Two-step level select: first pick an Act, then pick the level inside
+// that Act. Prevents the whole grid of Act 1 + Act 2 levels from
+// spilling off screen once Two-Face is beaten.
+function levelSelectActs() {
+  const cv = level.cave;
+  const acts = [{ id: 1, name: 'ACTO 1', c: '#ffe066' }];
+  if (postTwoFaceReturn) acts.push({ id: 2, name: 'ACTO 2', c: '#7fd4ff' });
+  // Act 3 shows up once the player has actually made it to the frozen
+  // city (a Batcave hub visit is proof of that).
+  if (caveHubReturn) acts.push({ id: 3, name: 'ACTO 3', c: '#c9dff0' });
+  acts.push({ id: -1, name: 'SEGUIR', c: '#29d985' });
+  return acts;
+}
+function levelSelectLevels(actId) {
+  const re = new RegExp('^' + actId + '-');
+  const lvls = LEVEL_SPECS.map((s, i) => ({ i, name: s.name }))
+    .filter(o => re.test(o.name));
+  lvls.push({ i: -2, name: 'VOLVER' }); // back to act picker
+  return lvls;
+}
 function drawLevelSelectScreen(now) {
   const cv = level.cave;
-  const opts = cv.replayOptions;
+  cv.selStep = cv.selStep || 'act';
+  cv.selAct = cv.selAct || 1;
+  const opts = cv.selStep === 'act'
+    ? levelSelectActs()
+    : levelSelectLevels(cv.selAct);
+
   ctx.fillStyle = 'rgba(2,4,10,0.85)';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   ctx.fillStyle = '#ffd166'; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center';
-  ctx.fillText('REPETIR NIVEL — ACTO 1', CANVAS_W / 2, 78);
+  const heading = cv.selStep === 'act' ? 'REPETIR NIVEL — ELEGÍ EL ACTO' : `ACTO ${cv.selAct} — ELEGÍ EL NIVEL`;
+  ctx.fillText(heading, CANVAS_W / 2, 78);
   ctx.fillStyle = '#9fb4d8'; ctx.font = '12px monospace';
-  ctx.fillText('Elegí un nivel para volver a jugarlo (o SEGUIR para quedarte)', CANVAS_W / 2, 104);
+  const subtitle = cv.selStep === 'act'
+    ? 'Presioná SALTO para confirmar (SEGUIR se queda en la baticueva)'
+    : 'SALTO para jugar el nivel (VOLVER para elegir otro acto)';
+  ctx.fillText(subtitle, CANVAS_W / 2, 104);
 
   const n = opts.length;
-  const cw = 120, gap = 18;
+  const cw = Math.min(120, (CANVAS_W - 80) / Math.max(1, n) - 18);
+  const gap = 18;
   const totalW = n * cw + (n - 1) * gap;
   const x0 = (CANVAS_W - totalW) / 2;
   const cy = 200, ch = 120;
   opts.forEach((o, i) => {
     const cx = x0 + i * (cw + gap);
     const sel = cv.selLevel === i;
-    const resume = o.i < 0;
+    const special = o.i < 0; // SEGUIR or VOLVER
+    const isBack = o.i === -2;
+    const isResume = o.i === -1;
     ctx.save();
     if (sel) { ctx.shadowColor = 'rgba(255,209,102,0.55)'; ctx.shadowBlur = 16; }
-    ctx.fillStyle = resume ? '#101b16' : '#0e1420';
+    ctx.fillStyle = isResume ? '#101b16' : isBack ? '#1a1e2a' : '#0e1420';
     ctx.fillRect(cx, cy, cw, ch);
     ctx.restore();
     ctx.strokeStyle = sel ? '#ffd166' : '#3a4664'; ctx.lineWidth = sel ? 3 : 2;
     ctx.strokeRect(cx, cy, cw, ch);
-    // little bat glyph / arrow marker
-    ctx.fillStyle = resume ? '#29d985' : '#7fd4ff';
+    ctx.fillStyle = isResume ? '#29d985' : isBack ? '#9fb4d8' : (o.c || '#7fd4ff');
     ctx.font = 'bold 26px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(resume ? '↩' : '▶', cx + cw / 2, cy + 52);
-    ctx.fillStyle = resume ? '#29d985' : '#e8f0fb';
+    ctx.fillText(isResume ? '↩' : isBack ? '←' : '▶', cx + cw / 2, cy + 52);
+    ctx.fillStyle = isResume ? '#29d985' : isBack ? '#9fb4d8' : (o.c || '#e8f0fb');
     ctx.font = 'bold 18px monospace';
     ctx.fillText(o.name, cx + cw / 2, cy + 90);
   });
@@ -4086,9 +4142,35 @@ function drawLevelSelectScreen(now) {
 
 function chooseReplayLevel() {
   const cv = level.cave;
-  const opt = cv.replayOptions[cv.selLevel];
-  if (opt && opt.i >= 0) loadLevel(opt.i); // jump into the chosen Act 1 level
-  state = 'playing'; // SEGUIR (i < 0) just resumes the cave
+  cv.selStep = cv.selStep || 'act';
+  const opts = cv.selStep === 'act'
+    ? levelSelectActs()
+    : levelSelectLevels(cv.selAct);
+  const opt = opts[cv.selLevel];
+  if (!opt) return;
+  if (cv.selStep === 'act') {
+    if (opt.id === -1) {
+      // SEGUIR — stay in the batcave
+      cv.selStep = 'act';
+      cv.selLevel = 0;
+      state = 'playing';
+      return;
+    }
+    // step into the level picker for the chosen act
+    cv.selAct = opt.id;
+    cv.selStep = 'level';
+    cv.selLevel = 0;
+    return;
+  }
+  // level picker
+  if (opt.i === -2) {
+    // VOLVER — back to the act picker
+    cv.selStep = 'act';
+    cv.selLevel = 0;
+    return;
+  }
+  if (opt.i >= 0) loadLevel(opt.i);
+  state = 'playing';
 }
 
 // Touch path only: the jump/shoot buttons buffer a press; arrows are held.
@@ -4107,8 +4189,9 @@ function handleCaveUIInput(now) {
     if (keys.right && !keys.left) cv.choiceSel = 1;
     if (confirm) { jumpBufferUntil = 0; shootBufferUntil = 0; chooseCaveWeapon(); }
   } else if (state === 'levelselect') {
+    const opts = (cv.selStep || 'act') === 'act' ? levelSelectActs() : levelSelectLevels(cv.selAct || 1);
     if (keys.left && !keys.right && !cv._navHeld) { cv.selLevel = Math.max(0, cv.selLevel - 1); cv._navHeld = true; }
-    else if (keys.right && !keys.left && !cv._navHeld) { cv.selLevel = Math.min(cv.replayOptions.length - 1, cv.selLevel + 1); cv._navHeld = true; }
+    else if (keys.right && !keys.left && !cv._navHeld) { cv.selLevel = Math.min(opts.length - 1, cv.selLevel + 1); cv._navHeld = true; }
     else if (!keys.left && !keys.right) cv._navHeld = false;
     if (confirm) { jumpBufferUntil = 0; shootBufferUntil = 0; chooseReplayLevel(); }
   }
@@ -4795,8 +4878,66 @@ function drawHouses(t) {
     }
 
     drawHouseFacade(hs, x0, wpx, roofY, baseY);
-    if (hs.style === 'terrace') drawTerraceRoof(hs, t, x0, wpx, roofY);
+    if (hs.style === 'gable') drawGableRoof(hs, t, x0, wpx, roofY);
+    else if (hs.style === 'terrace') drawTerraceRoof(hs, t, x0, wpx, roofY);
     else drawBrownstoneRoof(hs, t, x0, wpx, roofY);
+  }
+}
+
+// Frozen-Gotham gable roof: a sharp icy triangular pyramid on top of
+// the house. The collision top-row stays FLAT (the walkable ridge is
+// still the house's topRow tile), but the visible peak reads as too
+// slippery to grip. Long icicles hang from each eave.
+function drawGableRoof(hs, t, x0, wpx, roofY) {
+  const peakH = 44;
+  // pale blue slate roof planes
+  ctx.fillStyle = '#3a4c68';
+  ctx.beginPath();
+  ctx.moveTo(x0 - 4, roofY + 4);
+  ctx.lineTo(x0 + wpx / 2, roofY - peakH);
+  ctx.lineTo(x0 + wpx + 4, roofY + 4);
+  ctx.closePath();
+  ctx.fill();
+  // horizontal shingle bands so the pyramid has depth
+  ctx.strokeStyle = 'rgba(20,30,50,0.55)';
+  ctx.lineWidth = 1;
+  for (let k = 1; k < 5; k++) {
+    const p = k / 5;
+    const yy = roofY + 4 - (roofY + 4 - (roofY - peakH)) * p;
+    const spanL = x0 - 4 + (x0 + wpx / 2 - (x0 - 4)) * p;
+    const spanR = x0 + wpx + 4 - (x0 + wpx + 4 - (x0 + wpx / 2)) * p;
+    ctx.beginPath(); ctx.moveTo(spanL, yy); ctx.lineTo(spanR, yy); ctx.stroke();
+  }
+  // thick snowy cap over both slopes — the "cueste subir" surface
+  ctx.fillStyle = '#eaf3ff';
+  ctx.beginPath();
+  ctx.moveTo(x0 - 6, roofY + 6);
+  ctx.lineTo(x0 + wpx / 2, roofY - peakH - 4);
+  ctx.lineTo(x0 + wpx + 6, roofY + 6);
+  ctx.lineTo(x0 + wpx + 6, roofY + 2);
+  ctx.lineTo(x0 + wpx / 2, roofY - peakH);
+  ctx.lineTo(x0 - 6, roofY + 2);
+  ctx.closePath();
+  ctx.fill();
+  // frost glint highlight along the ridge
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x0 + wpx * 0.25, roofY - peakH / 2);
+  ctx.lineTo(x0 + wpx * 0.55, roofY - peakH * 0.85);
+  ctx.stroke();
+  // hanging icicles under each eave
+  ctx.fillStyle = 'rgba(200,220,240,0.9)';
+  const icicles = Math.max(2, Math.floor(wpx / 32));
+  for (let k = 0; k < icicles; k++) {
+    const ix = x0 - 2 + (k + 0.5) * ((wpx + 4) / icicles);
+    const il = 10 + hash01(hs.x * 3 + k * 7) * 16;
+    ctx.beginPath();
+    ctx.moveTo(ix - 3, roofY + 4);
+    ctx.lineTo(ix + 3, roofY + 4);
+    ctx.lineTo(ix, roofY + 4 + il);
+    ctx.closePath();
+    ctx.fill();
   }
 }
 
@@ -5145,18 +5286,37 @@ function drawBirds(t) {
     ctx.arc(px + b.w * 0.62, cy - 2, 1.8, 0, Math.PI * 2);
     ctx.fill();
 
-    // Frozen bird overlay: bluish tint + snow riding on his back
+    // Frozen bird: no ice-cube box — a bluish tint that traces the
+    // bird's own silhouette + a rounded snow cap sitting on his back,
+    // matching the way frozen thugs look on the ground.
     if (b.frozen) {
-      ctx.fillStyle = 'rgba(120,180,220,0.4)';
-      ctx.fillRect(px - 6, cy - 12, b.w + 12, 24);
-      ctx.fillStyle = '#f0f4ff';
+      ctx.fillStyle = 'rgba(120,180,220,0.45)';
       ctx.beginPath();
-      ctx.moveTo(px - 2, cy - 6);
-      ctx.quadraticCurveTo(px + b.w * 0.4, cy - 12, px + b.w + 2, cy - 6);
-      ctx.lineTo(px + b.w + 2, cy - 3);
-      ctx.lineTo(px - 2, cy - 3);
+      ctx.moveTo(px + b.w / 2, cy);
+      ctx.lineTo(px - 8, cy - flap - 2);
+      ctx.lineTo(px + b.w * 0.32, cy + 3);
+      ctx.lineTo(px + b.w / 2, cy);
+      ctx.lineTo(px + b.w + 8, cy - flap - 2);
+      ctx.lineTo(px + b.w * 0.68, cy + 3);
       ctx.closePath();
       ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(px + b.w / 2, cy, b.w * 0.32, b.h * 0.36, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // rounded snow cap on his back
+      ctx.fillStyle = '#f0f4ff';
+      ctx.beginPath();
+      ctx.moveTo(px + b.w * 0.15, cy - 4);
+      ctx.quadraticCurveTo(px + b.w * 0.4, cy - 10, px + b.w * 0.5, cy - 5);
+      ctx.quadraticCurveTo(px + b.w * 0.65, cy - 11, px + b.w * 0.85, cy - 4);
+      ctx.lineTo(px + b.w * 0.85, cy - 1);
+      ctx.lineTo(px + b.w * 0.15, cy - 1);
+      ctx.closePath();
+      ctx.fill();
+      // little snow fleck on his tail
+      ctx.fillStyle = 'rgba(240,248,255,0.85)';
+      ctx.fillRect(px + b.w * 0.35, cy - 2, 2, 2);
+      ctx.fillRect(px + b.w * 0.6, cy - 2, 2, 2);
     }
   }
 }
