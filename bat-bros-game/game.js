@@ -85,9 +85,22 @@ window.addEventListener('keydown', e => {
     return;
   }
   if (state === 'choice') {
-    if (['ArrowLeft', 'KeyA'].includes(e.code)) level.cave.choiceSel = 0;
-    else if (['ArrowRight', 'KeyD'].includes(e.code)) level.cave.choiceSel = 1;
-    else if (confirmCode) chooseCaveWeapon();
+    const cv = level.cave;
+    const step = cv.pickStep || 'slot';
+    if (step === 'slot') {
+      const empties = emptyBeltSlots();
+      if (empties.length) {
+        const idx = Math.max(0, empties.indexOf(cv.slotSel));
+        if (['ArrowLeft', 'KeyA'].includes(e.code)) cv.slotSel = empties[Math.max(0, idx - 1)];
+        else if (['ArrowRight', 'KeyD'].includes(e.code)) cv.slotSel = empties[Math.min(empties.length - 1, idx + 1)];
+      }
+      if (confirmCode) chooseCaveWeapon();
+    } else {
+      const w = availableWeapons();
+      if (['ArrowLeft', 'KeyA'].includes(e.code)) cv.weaponSel = Math.max(0, cv.weaponSel - 1);
+      else if (['ArrowRight', 'KeyD'].includes(e.code)) cv.weaponSel = Math.min(w.length - 1, cv.weaponSel + 1);
+      if (confirmCode) chooseCaveWeapon();
+    }
     e.preventDefault();
     return;
   }
@@ -991,6 +1004,14 @@ async function submitName() {
   btnNameOk.disabled = true;
   btnNameOk.textContent = 'CARGANDO…';
   [savedMaxLevel, gameOverCount, savedGadget] = await Promise.all([loadProgress(name), loadGameOvers(name), loadGadget(name)]);
+  // Dev shortcut: the tester account "Troco" always starts Continue on
+  // level 3-1 so the full Act-3 loop is one click away.
+  if (name.trim().toLowerCase() === 'troco') {
+    const idx31 = LEVEL_SPECS.findIndex(s => s.name === '3-1');
+    if (idx31 >= 0) savedMaxLevel = Math.max(savedMaxLevel, idx31);
+    savedGadget = savedGadget || 'batarang';
+    try { localStorage.setItem('bitbros:act2beaten', '1'); } catch (e) {}
+  }
   btnNameOk.disabled = false;
   btnNameOk.textContent = 'ACEPTAR';
 
@@ -1146,6 +1167,65 @@ function updateCranes(dt, now) {
       player.onGround = true;
     }
   }
+}
+
+// Act-3 hazard. Fires an upward snowball on a cadence. The projectile
+// arcs up then falls with gravity; touching Batman freezes him for 5 s
+// (halves his speed, disables jump — see the frozenNow gate above).
+function updateSnowCannons(dt, now) {
+  const cannons = level.snowCannons || [];
+  level.snowballs = level.snowballs || [];
+  for (const c of cannons) {
+    if (!c.alive) continue;
+    // First shot lands ~1 s after the level starts so a fresh spawn
+    // doesn't eat a snowball before Batman can even see the cannon.
+    if (!c.nextFireAt) c.nextFireAt = now + 1000;
+    if (now >= c.nextFireAt) {
+      level.snowballs.push({
+        x: c.x + c.w / 2 - 6, y: c.y - 8,
+        w: 12, h: 12,
+        vx: 0, vy: -8.4,
+        rot: 0, alive: true, born: now,
+      });
+      c.nextFireAt = now + c.fireInterval;
+    }
+    // Stomp / batarang from above knocks the cannon out. Batman must
+    // clear it (vy > 0) and land on the top face.
+    const overlap = aabbOverlap({ x: player.x, y: player.y, w: player.w, h: player.h }, c);
+    if (overlap && player.vy > 0 && player.y + player.h - c.y < STOMP_TOLERANCE) {
+      c.alive = false;
+      player.vy = STOMP_BOUNCE;
+      score += 100;
+      hud.score.textContent = score;
+    }
+  }
+  // Snowballs
+  const invuln = (player.invulnUntil || 0) > now;
+  const balls = level.snowballs;
+  for (const b of balls) {
+    if (!b.alive) continue;
+    b.vy += GRAVITY * dt;
+    if (b.vy > MAX_FALL) b.vy = MAX_FALL;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.rot = (b.rot || 0) + 0.2 * dt;
+    if (rectHitsSolid(b.x, b.y, b.w, b.h)) { b.alive = false; continue; }
+    if (b.y > (level.pixelHeight || level.height * TILE) + 60) { b.alive = false; continue; }
+    // Batarangs shatter snowballs mid-flight (batman's counter-play)
+    for (const g of batarangs) {
+      if (!g.alive) continue;
+      if (Math.hypot((g.x - b.x), (g.y - b.y)) < 22) { b.alive = false; break; }
+    }
+    if (!b.alive) continue;
+    // Hit test against the player (skip during i-frames from a hurt)
+    if (!invuln && !player.swinging && aabbOverlap(b, { x: player.x, y: player.y, w: player.w, h: player.h })) {
+      player.frozenUntil = now + 5000;
+      player.vx *= 0.3;
+      b.alive = false;
+    }
+  }
+  // Prune every ~1 s so the array doesn't bloat during long levels
+  if (balls.length > 40) level.snowballs = balls.filter(b => b.alive);
 }
 
 function moveAndCollide(p, dt) {
@@ -1887,7 +1967,13 @@ function updatePlaying(dt) {
       player.vx = 0;
       cv.openedAt = now;
       cv.computerDone = true;
-      cv.choiceSel = cv.weaponChosen === 'batigarra' ? 1 : 0;
+      // Belt UI: cursor starts on the first empty slot. Slots are
+      // 0=batarang, 1=batigarra, 2=armor. `pickStep` alternates between
+      // slot selection and weapon sub-menu inside the 'choice' state.
+      cv.pickStep = 'slot';
+      const empties = emptyBeltSlots();
+      cv.slotSel = empties[0] ?? 0;
+      cv.weaponSel = 0;
       // Hub visits from Act 3+ open straight into the current-act
       // expediente (Mr. Freeze). Fresh post-2-4 visits still start with
       // the news feed. Act 1 always shows the Two-Face expediente.
@@ -1916,7 +2002,10 @@ function updatePlaying(dt) {
     updateClimb(dt, now);
   } else {
     // horizontal input
-    const accel = player.onGround ? MOVE_ACCEL : AIR_ACCEL;
+    const iced = (player.frozenUntil || 0) > now;
+    const accelMul = iced ? 0.4 : 1;
+    const speedCap = iced ? MAX_SPEED * 0.45 : MAX_SPEED;
+    const accel = (player.onGround ? MOVE_ACCEL : AIR_ACCEL) * accelMul;
     if (keys.left && !keys.right) {
       player.vx -= accel * dt;
       player.facing = -1;
@@ -1929,22 +2018,24 @@ function updatePlaying(dt) {
       player.vx *= level.frozen ? 0.93 : FRICTION;
       if (Math.abs(player.vx) < 0.05) player.vx = 0;
     }
-    player.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, player.vx));
+    player.vx = Math.max(-speedCap, Math.min(speedCap, player.vx));
 
     // walk-cycle distance: only advances while actually moving on the ground,
     // so the legs animate in step with real travel instead of just sliding
     if (player.onGround) player.walkDist = (player.walkDist || 0) + Math.abs(player.vx) * dt;
 
     // jump: buffered press + coyote time, so a tap always registers even if it
-    // lands a frame or two before touching ground / after leaving a ledge
+    // lands a frame or two before touching ground / after leaving a ledge.
+    // A snow-cannon hit freezes Batman for 5 s: no jumps until it thaws.
+    const frozenNow = (player.frozenUntil || 0) > now;
     if (player.onGround) { coyoteUntil = now + COYOTE_MS; player.jumpsUsed = 0; }
-    if (now < jumpBufferUntil && now < coyoteUntil) {
+    if (!frozenNow && now < jumpBufferUntil && now < coyoteUntil) {
       player.vy = JUMP_VELOCITY;
       player.onGround = false;
       player.jumpsUsed = 1;
       jumpBufferUntil = 0;
       coyoteUntil = 0;
-    } else if (activeChar === 'robin' && now < jumpBufferUntil &&
+    } else if (!frozenNow && activeChar === 'robin' && now < jumpBufferUntil &&
                !player.onGround && (player.jumpsUsed || 0) < 2) {
       // Robin's aerial double jump — a little weaker than the first, plus a
       // 400 ms somersault animation window the renderer draws through
@@ -1969,6 +2060,7 @@ function updatePlaying(dt) {
 
   updateBoats(dt);
   updateCranes(dt, now);
+  updateSnowCannons(dt, now);
   // Act 3 co-op companion — follows behind the active character
   if (companion) {
     const targetX = player.x - player.facing * 40;
@@ -2138,8 +2230,10 @@ function updatePlaying(dt) {
     const cv = level.cave;
     updateCaveAmbience(dt, now);
     // exit the cave when Batman reaches the door — Act 1 requires a
-    // weapon pick; Act 2 also accepts the armor upgrade
-    const equipped = cv.weaponChosen || (postTwoFaceReturn && armored);
+    // weapon pick; Act 2 also accepts the armor upgrade; Act 3+ hub
+    // visits let Batman leave freely (he already has his arsenal).
+    const equipped = cv.weaponChosen || (postTwoFaceReturn && armored) ||
+                     caveHubReturn || ownedGadgets.batarang || ownedGadgets.batigarra;
     if (equipped && player.x + player.w >= cv.doorX - 4) {
       completeLevel();
       return;
@@ -4009,140 +4103,225 @@ function drawFreezeExpedienteScreen(now) {
 }
 
 // full-screen weapon-choice panel (state 'choice')
+// Which belt slots are still empty (0=batarang, 1=batigarra, 2=armor).
+// Ordered so the cursor lands on lower-numbered slots first.
+function emptyBeltSlots() {
+  const out = [];
+  if (!ownedGadgets.batarang) out.push(0);
+  if (!ownedGadgets.batigarra) out.push(1);
+  if (!armored) out.push(2);
+  return out;
+}
+
+// The unowned weapons the player can pick for a gadget slot. Used to
+// build the second-step sub-menu inside the choice screen.
+function availableWeapons() {
+  const w = [];
+  if (!ownedGadgets.batarang) w.push('batarang');
+  if (!ownedGadgets.batigarra) w.push('batigarra');
+  return w;
+}
+
+// Draw one belt slot (index i in [0..2]) at (x, y). `state` is
+// 'filled' | 'empty-avail' | 'empty-locked'. Cursor highlight is drawn
+// on top when selected.
+function drawBeltSlot(i, x, y, w, h, state, selected) {
+  ctx.save();
+  ctx.fillStyle = state === 'filled' ? '#0e1420' : 'rgba(20,25,45,0.6)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = selected ? '#ffd166'
+    : state === 'filled' ? '#3a4664' : 'rgba(127,150,200,0.35)';
+  ctx.lineWidth = selected ? 3 : 2;
+  ctx.strokeRect(x, y, w, h);
+  if (selected) { ctx.shadowColor = 'rgba(255,209,102,0.55)'; ctx.shadowBlur = 14; ctx.strokeRect(x, y, w, h); }
+  ctx.restore();
+
+  const cx = x + w / 2, cy = y + h / 2 - 6;
+  const c = i === 0 ? '#ffe066' : i === 1 ? '#7fd4ff' : '#c95a3a';
+  const label = i === 0 ? 'BATARANG' : i === 1 ? 'BATIGARRA' : 'ARMADURA';
+
+  if (state !== 'filled') {
+    // Empty placeholder: dashed silhouette + question mark
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.setLineDash([4, 4]);
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-32, -22, 64, 44);
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = 'bold 30px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('?', 0, 12);
+    ctx.restore();
+    ctx.fillStyle = state === 'empty-avail' ? '#ffd166' : 'rgba(255,255,255,0.35)';
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('SLOT VACÍO', cx, y + h - 26);
+    ctx.font = '10px monospace';
+    ctx.fillText(state === 'empty-avail' ? 'pulsá para cargar' : '', cx, y + h - 10);
+    return;
+  }
+
+  // Filled slot: draw the equipment icon (same style as before)
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (i === 0) {
+    ctx.fillStyle = c;
+    ctx.rotate(-0.3);
+    ctx.beginPath();
+    ctx.moveTo(-32, 0); ctx.quadraticCurveTo(-14, -14, -4, -10); ctx.lineTo(-3, -16);
+    ctx.lineTo(-1, -10); ctx.lineTo(1, -10); ctx.lineTo(3, -16); ctx.lineTo(4, -10);
+    ctx.quadraticCurveTo(14, -14, 32, 0); ctx.quadraticCurveTo(18, -1, 11, 6);
+    ctx.quadraticCurveTo(5, 1, 0, 7); ctx.quadraticCurveTo(-5, 1, -11, 6);
+    ctx.quadraticCurveTo(-18, -1, -32, 0); ctx.closePath(); ctx.fill();
+  } else if (i === 1) {
+    ctx.fillStyle = '#6b7280'; ctx.fillRect(-24, -6, 32, 12);
+    ctx.fillStyle = '#171920'; ctx.fillRect(-16, 6, 10, 18);
+    ctx.strokeStyle = '#c9cdd6'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(8, 0); ctx.quadraticCurveTo(30, -18, 46, -30); ctx.stroke();
+    ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(46, -36); ctx.lineTo(46, -24); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(46, -35); ctx.quadraticCurveTo(38, -33, 40, -26); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(46, -35); ctx.quadraticCurveTo(54, -33, 52, -26); ctx.stroke();
+    ctx.lineCap = 'butt';
+  } else {
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(-30, -24); ctx.lineTo(30, -24); ctx.lineTo(27, 20);
+    ctx.lineTo(0, 32); ctx.lineTo(-27, 20); ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#7a2f22';
+    ctx.fillRect(-24, -10, 48, 3); ctx.fillRect(-24, -2, 48, 3); ctx.fillRect(-24, 6, 48, 3);
+    ctx.fillStyle = '#131722';
+    ctx.beginPath();
+    ctx.moveTo(-16, -16); ctx.lineTo(-5, -6); ctx.lineTo(-2, -11); ctx.lineTo(0, -6);
+    ctx.lineTo(2, -11); ctx.lineTo(5, -6); ctx.lineTo(16, -16);
+    ctx.lineTo(8, -3); ctx.lineTo(0, -1); ctx.lineTo(-8, -3);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.fillStyle = c; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'center';
+  ctx.fillText(label, cx, y + h - 26);
+  ctx.fillStyle = '#9bffcf'; ctx.font = 'bold 10px monospace';
+  ctx.fillText('EQUIPADO', cx, y + h - 10);
+}
+
 function drawChoiceScreen(now) {
   const cv = level.cave;
   ctx.fillStyle = 'rgba(2,4,10,0.82)';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   ctx.fillStyle = '#ffd166'; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center';
-  ctx.fillText('NUEVO EQUIPO DISPONIBLE', CANVAS_W / 2, 44);
-  ctx.fillStyle = '#9fb4d8'; ctx.font = '12px monospace';
-  ctx.fillText('Cada elección se ACUMULA — Batman puede llevar los dos gadgets a la vez', CANVAS_W / 2, 68);
+  ctx.fillText('CINTURÓN DE BATMAN', CANVAS_W / 2, 44);
 
-  // Equipment slots — show what's already stashed on the utility belt
-  // so the player sees the choice adds a slot, not replaces one.
-  const slotY = 78;
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  ctx.fillRect(CANVAS_W / 2 - 200, slotY, 400, 24);
-  ctx.strokeStyle = 'rgba(127,212,255,0.35)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(CANVAS_W / 2 - 200, slotY, 400, 24);
-  ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
-  ctx.fillText('CINTURÓN:', CANVAS_W / 2 - 190, slotY + 16);
-  const slots = [
-    { label: '🪃 BATARANG', on: ownedGadgets.batarang, c: '#ffe066' },
-    { label: '🪝 BATIGARRA', on: ownedGadgets.batigarra, c: '#7fd4ff' },
-    { label: '🛡 ARMADURA', on: armored, c: '#c95a3a' },
-  ];
-  ctx.font = 'bold 11px monospace';
-  slots.forEach((s, i) => {
-    const sx = CANVAS_W / 2 - 90 + i * 100;
-    ctx.fillStyle = s.on ? s.c : 'rgba(255,255,255,0.25)';
-    ctx.fillText(s.label, sx, slotY + 16);
-  });
+  const step = cv.pickStep || 'slot';
+  const empties = emptyBeltSlots();
 
-  // Act 2 Batcave: after the Two-Face rescue Batman can either get the
-  // gadget he didn't pick in Act 1, or lock in an armor upgrade that
-  // makes every spawn start as big Batman (soaks one extra hit).
-  const cards = postTwoFaceReturn
-    ? [
-        ownedGadgets.batarang
-          ? { x: 96, title: '1. BATIGARRA', c: '#7fd4ff', lines: ['Se SUMA al batarang', 'Herramienta de movilidad', 'Control total del balanceo'] }
-          : { x: 96, title: '1. BATARANG', c: '#ffe066', lines: ['Se SUMA a la batigarra', 'Arma arrojadiza', 'Derriba enemigos a distancia'] },
-        { x: 424, title: '2. ARMADURA', c: '#c95a3a', lines: ['Mejora la resistencia', 'Batman arranca siempre grande', 'Aguanta un golpe extra'] },
-      ]
-    : [
-        { x: 96, title: '1. BATARANG', c: '#ffe066', lines: ['Arma arrojadiza', 'Derriba enemigos a distancia', 'NO controla el balanceo'] },
-        { x: 424, title: '2. BATIGARRA', c: '#7fd4ff', lines: ['Herramienta de movilidad', 'Control total del balanceo', 'NO mata enemigos'] },
-      ];
-  cards.forEach((card, i) => {
-    const sel = cv.choiceSel === i;
-    ctx.save();
-    if (sel) { ctx.shadowColor = 'rgba(255,209,102,0.55)'; ctx.shadowBlur = 16; }
-    ctx.fillStyle = '#0e1420'; ctx.fillRect(card.x, 108, 280, 250);
-    ctx.restore();
-    ctx.strokeStyle = sel ? '#ffd166' : '#3a4664'; ctx.lineWidth = sel ? 3 : 2;
-    ctx.strokeRect(card.x, 108, 280, 250);
-    // icon — picked by title so the Act 2 rearrangement (weapon left,
-    // armor right, or the weapon that wasn't chosen in Act 1) draws the
-    // right glyph on the right card
-    ctx.save();
-    ctx.translate(card.x + 140, 180);
-    const iconKind = card.title.includes('BATARANG') ? 'batarang'
-                   : card.title.includes('BATIGARRA') ? 'grapple'
-                   : 'armor';
-    if (iconKind === 'batarang') {
-      ctx.fillStyle = card.c;
-      ctx.rotate(-0.3);
-      ctx.beginPath();
-      ctx.moveTo(-40, 0); ctx.quadraticCurveTo(-18, -17, -5, -12); ctx.lineTo(-4, -19);
-      ctx.lineTo(-1, -12); ctx.lineTo(1, -12); ctx.lineTo(4, -19); ctx.lineTo(5, -12);
-      ctx.quadraticCurveTo(18, -17, 40, 0); ctx.quadraticCurveTo(22, -1, 14, 7);
-      ctx.quadraticCurveTo(6, 1, 0, 9); ctx.quadraticCurveTo(-6, 1, -14, 7);
-      ctx.quadraticCurveTo(-22, -1, -40, 0); ctx.closePath(); ctx.fill();
-    } else if (iconKind === 'armor') {
-      // chest plate with a bat emblem
-      ctx.fillStyle = card.c;
-      ctx.beginPath();
-      ctx.moveTo(-38, -30); ctx.lineTo(38, -30); ctx.lineTo(34, 26);
-      ctx.lineTo(0, 40); ctx.lineTo(-34, 26); ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = '#7a2f22';
-      ctx.fillRect(-30, -12, 60, 4);
-      ctx.fillRect(-30, -2, 60, 4);
-      ctx.fillRect(-30, 8, 60, 4);
-      // bat emblem
-      ctx.fillStyle = '#131722';
-      ctx.beginPath();
-      ctx.moveTo(-20, -20); ctx.lineTo(-6, -8); ctx.lineTo(-2, -14); ctx.lineTo(0, -8);
-      ctx.lineTo(2, -14); ctx.lineTo(6, -8); ctx.lineTo(20, -20);
-      ctx.lineTo(10, -4); ctx.lineTo(0, -2); ctx.lineTo(-10, -4);
-      ctx.closePath(); ctx.fill();
-    } else {
-      // grapple gun + hook + rope
-      ctx.fillStyle = '#6b7280'; ctx.fillRect(-30, -8, 40, 16);
-      ctx.fillStyle = '#171920'; ctx.fillRect(-20, 8, 12, 22);
-      ctx.strokeStyle = '#c9cdd6'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(10, 0); ctx.quadraticCurveTo(40, -26, 60, -40); ctx.stroke();
-      ctx.strokeStyle = card.c; ctx.lineWidth = 3; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.moveTo(60, -48); ctx.lineTo(60, -32); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(60, -47); ctx.quadraticCurveTo(48, -45, 50, -34); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(60, -47); ctx.quadraticCurveTo(72, -45, 70, -34); ctx.stroke();
-      ctx.lineCap = 'butt';
-    }
-    ctx.restore();
-    ctx.fillStyle = card.c; ctx.font = 'bold 17px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(card.title, card.x + 140, 268);
-    ctx.fillStyle = '#bfd0ea'; ctx.font = '11px monospace';
-    card.lines.forEach((l, j) => ctx.fillText(l, card.x + 140, 292 + j * 17));
-  });
+  // Belt row: 3 slots side-by-side, showing filled + empty state
+  const slotW = 200, slotH = 200, gap = 20;
+  const totalW = slotW * 3 + gap * 2;
+  const startX = (CANVAS_W - totalW) / 2;
+  const slotY = 100;
 
+  for (let i = 0; i < 3; i++) {
+    const x = startX + i * (slotW + gap);
+    const filled = (i === 0 && ownedGadgets.batarang)
+                || (i === 1 && ownedGadgets.batigarra)
+                || (i === 2 && armored);
+    const isEmpty = !filled;
+    const canPickHere = i === 2 ? true : availableWeapons().length > 0;
+    const state = filled ? 'filled'
+                : (isEmpty && canPickHere) ? 'empty-avail'
+                : 'empty-locked';
+    const selected = step === 'slot' && cv.slotSel === i;
+    drawBeltSlot(i, x, slotY, slotW, slotH, state, selected);
+  }
+
+  // Hint line at the bottom, or the weapon sub-menu when step='weapon'
   ctx.fillStyle = '#9fb4d8'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
-  ctx.fillText('◄ ►  elegir      SALTO  confirmar', CANVAS_W / 2, 392);
+
+  if (step === 'weapon') {
+    // Sub-menu: pick which weapon fills the selected gadget slot. Only
+    // appears when the slot is a gadget slot AND more than one weapon
+    // is still unowned (otherwise the slot auto-fills).
+    ctx.fillStyle = '#ffd166'; ctx.font = 'bold 16px monospace';
+    const slotName = cv.slotSel === 0 ? 'SLOT 1' : cv.slotSel === 1 ? 'SLOT 2' : 'SLOT 3';
+    ctx.fillText(`Elegí el arma para el ${slotName}`, CANVAS_W / 2, 340);
+    const weapons = availableWeapons();
+    ctx.font = 'bold 14px monospace';
+    weapons.forEach((wname, k) => {
+      const bx = CANVAS_W / 2 - 130 + k * 140;
+      const sel = cv.weaponSel === k;
+      ctx.strokeStyle = sel ? '#ffd166' : '#3a4664';
+      ctx.lineWidth = sel ? 3 : 2;
+      ctx.strokeRect(bx, 358, 120, 38);
+      ctx.fillStyle = wname === 'batarang' ? '#ffe066' : '#7fd4ff';
+      ctx.fillText(wname === 'batarang' ? '🪃 BATARANG' : '🪝 BATIGARRA', bx + 60, 383);
+    });
+    ctx.fillStyle = '#9fb4d8'; ctx.font = '12px monospace';
+    ctx.fillText('◄ ►  cambiar arma      SALTO  cargar', CANVAS_W / 2, 425);
+  } else if (empties.length === 0) {
+    ctx.fillStyle = '#9bffcf'; ctx.font = 'bold 14px monospace';
+    ctx.fillText('CINTURÓN COMPLETO — pulsá SALTO para cerrar', CANVAS_W / 2, 360);
+  } else {
+    ctx.fillText('◄ ►  elegir slot vacío      SALTO  cargarlo', CANVAS_W / 2, 360);
+    ctx.fillStyle = '#8fa3d9'; ctx.font = '11px monospace';
+    ctx.fillText('Los slots equipados no pueden cambiarse.', CANVAS_W / 2, 380);
+  }
 }
 
+// Two-step belt pick. Step 1 selects an empty slot; step 2 (only for
+// gadget slots with >1 unowned weapon) picks WHICH weapon fills it. A
+// slot with only one valid weapon auto-fills on step 1 confirm; the
+// armor slot always auto-fills.
 function chooseCaveWeapon() {
   const cv = level.cave;
-  // Every pick ADDS to Batman's arsenal — nothing is ever replaced.
-  // The choice screen offers the tool(s) he doesn't already own plus
-  // the armor upgrade slot.
-  if (postTwoFaceReturn) {
-    if (cv.choiceSel === 0) {
-      // whichever weapon isn't in the arsenal yet
-      const otherWeapon = ownedGadgets.batarang ? 'batigarra' : 'batarang';
-      cv.weaponChosen = otherWeapon;
-      setGadget(otherWeapon);
-    } else {
+  const step = cv.pickStep || 'slot';
+  const empties = emptyBeltSlots();
+  if (empties.length === 0) {
+    // Nothing to pick; SALTO just closes the menu so Batman can leave.
+    cv.weaponChosen = cv.weaponChosen || currentGadget || 'batarang';
+    state = 'playing';
+    return;
+  }
+
+  if (step === 'slot') {
+    if (!empties.includes(cv.slotSel)) cv.slotSel = empties[0];
+    if (cv.slotSel === 2) {
+      // Armor slot: auto-fill, no sub-menu.
       armored = true;
+      cv.weaponChosen = cv.weaponChosen || currentGadget || 'armor';
+    } else {
+      const weapons = availableWeapons();
+      if (weapons.length === 1) {
+        // Only one weapon left: skip the sub-menu.
+        applyWeaponToSlot(weapons[0]);
+      } else {
+        // Enter the weapon sub-menu.
+        cv.pickStep = 'weapon';
+        cv.weaponSel = 0;
+        return;
+      }
     }
   } else {
-    const chosen = cv.choiceSel === 1 ? 'batigarra' : 'batarang';
-    cv.weaponChosen = chosen;
-    setGadget(chosen);
+    // step === 'weapon' — pick the highlighted weapon
+    const weapons = availableWeapons();
+    if (!weapons.length) { cv.pickStep = 'slot'; return; }
+    const wname = weapons[cv.weaponSel] || weapons[0];
+    applyWeaponToSlot(wname);
   }
+
   if (player.powerState === 'small') setPowerState('big');
   lives++;
   hud.lives.textContent = lives;
   state = 'playing';
+}
+
+function applyWeaponToSlot(wname) {
+  const cv = level.cave;
+  cv.weaponChosen = wname;
+  setGadget(wname);
 }
 
 // full-screen "replay an Act 1 level" menu (state 'levelselect')
@@ -4261,8 +4440,21 @@ function handleCaveUIInput(now) {
   } else if (state === 'freezeExpediente') {
     if (confirm) { jumpBufferUntil = 0; shootBufferUntil = 0; state = 'choice'; }
   } else if (state === 'choice') {
-    if (keys.left && !keys.right) cv.choiceSel = 0;
-    if (keys.right && !keys.left) cv.choiceSel = 1;
+    const step = cv.pickStep || 'slot';
+    if (step === 'slot') {
+      const empties = emptyBeltSlots();
+      if (empties.length) {
+        const idx = Math.max(0, empties.indexOf(cv.slotSel));
+        if (keys.left && !keys.right && !cv._navHeld) { cv.slotSel = empties[Math.max(0, idx - 1)]; cv._navHeld = true; }
+        else if (keys.right && !keys.left && !cv._navHeld) { cv.slotSel = empties[Math.min(empties.length - 1, idx + 1)]; cv._navHeld = true; }
+        else if (!keys.left && !keys.right) cv._navHeld = false;
+      }
+    } else {
+      const w = availableWeapons();
+      if (keys.left && !keys.right && !cv._navHeld) { cv.weaponSel = Math.max(0, cv.weaponSel - 1); cv._navHeld = true; }
+      else if (keys.right && !keys.left && !cv._navHeld) { cv.weaponSel = Math.min(w.length - 1, cv.weaponSel + 1); cv._navHeld = true; }
+      else if (!keys.left && !keys.right) cv._navHeld = false;
+    }
     if (confirm) { jumpBufferUntil = 0; shootBufferUntil = 0; chooseCaveWeapon(); }
   } else if (state === 'levelselect') {
     const opts = (cv.selStep || 'act') === 'act' ? levelSelectActs() : levelSelectLevels(cv.selAct || 1);
@@ -5561,6 +5753,34 @@ function drawPlayer() {
   ctx.fillRect(w - 9 + strideB, h - shoesH - liftB, 8, shoesH);
 
   ctx.restore();
+
+  // Frozen overlay: cool blue wash + crystalline flecks over the body
+  // while a snowball hit is still ticking down. Drawn AFTER the sprite
+  // restore so it hangs above the shadow, not inside it.
+  const now = performance.now();
+  if ((player.frozenUntil || 0) > now) {
+    const px2 = player.x - camera.x;
+    const py2 = player.y - camera.y;
+    ctx.save();
+    ctx.fillStyle = 'rgba(140,200,240,0.45)';
+    ctx.fillRect(px2 - 2, py2 - 2, w + 4, h + 4);
+    ctx.strokeStyle = 'rgba(230,245,255,0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(px2 - 2, py2 - 2, w + 4, h + 4);
+    // ice shards
+    ctx.fillStyle = '#e6f6ff';
+    ctx.fillRect(px2 + 2, py2 + 3, 3, 3);
+    ctx.fillRect(px2 + w - 5, py2 + 8, 3, 3);
+    ctx.fillRect(px2 + 4, py2 + h - 8, 3, 3);
+    ctx.fillRect(px2 + w - 7, py2 + h - 5, 3, 3);
+    // timer bar above the head
+    const left = (player.frozenUntil - now) / 5000;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(px2 - 2, py2 - 10, w + 4, 5);
+    ctx.fillStyle = '#7fd4ff';
+    ctx.fillRect(px2 - 1, py2 - 9, (w + 2) * Math.max(0, Math.min(1, left)), 3);
+    ctx.restore();
+  }
 }
 
 function drawPlayerClimbing(px, w, h, cowlH, faceH, bodyTop, suitH, shoesH) {
@@ -5675,6 +5895,79 @@ function drawVillain() {
     ctx.beginPath();
     ctx.arc(px + v.w / 2 - 12 + i * 12, vy - 16, 4, 0, Math.PI * 2);
     ctx.fill();
+  }
+}
+
+// Squat metal cannon on a shovel-tipped tripod, painted arctic blue so
+// it reads against the frozen skyline. Muzzle points straight up.
+function drawSnowCannons(t) {
+  const cannons = level.snowCannons || [];
+  for (const c of cannons) {
+    if (!c.alive) continue;
+    const px = c.x - camera.x, py = c.y - camera.y;
+    if (px < -40 || px > CANVAS_W + 40) continue;
+    // Barrel
+    ctx.fillStyle = '#39516d';
+    ctx.fillRect(px + 8, py, 12, 22);
+    ctx.fillStyle = '#7aa5c7';
+    ctx.fillRect(px + 9, py, 2, 22);
+    // Muzzle rim
+    ctx.fillStyle = '#c9dff0';
+    ctx.fillRect(px + 6, py - 3, 16, 4);
+    // Body
+    ctx.fillStyle = '#2a3a52';
+    ctx.beginPath();
+    ctx.moveTo(px, py + 20);
+    ctx.lineTo(px + c.w, py + 20);
+    ctx.lineTo(px + c.w - 3, py + c.h);
+    ctx.lineTo(px + 3, py + c.h);
+    ctx.closePath();
+    ctx.fill();
+    // Snow cap sitting on top of the barrel
+    ctx.fillStyle = '#f2f7fb';
+    ctx.beginPath();
+    ctx.arc(px + 14, py - 1, 6, Math.PI, 0);
+    ctx.fill();
+    // Barrel glow when charging (last 300 ms before firing)
+    const now = performance.now();
+    if (c.nextFireAt && c.nextFireAt - now < 300 && c.nextFireAt - now > 0) {
+      ctx.fillStyle = 'rgba(180,220,255,0.65)';
+      ctx.beginPath();
+      ctx.arc(px + 14, py - 2, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// White snowball with a subtle rotation ring. Tiny trail of icy sparks
+// behind it so it reads at speed against the sky.
+function drawSnowballs(t) {
+  const balls = level.snowballs || [];
+  for (const b of balls) {
+    if (!b.alive) continue;
+    const cx = b.x + b.w / 2 - camera.x, cy = b.y + b.h / 2 - camera.y;
+    if (cx < -20 || cx > CANVAS_W + 20) continue;
+    // trail
+    ctx.fillStyle = 'rgba(200,225,240,0.35)';
+    ctx.beginPath();
+    ctx.arc(cx, cy - Math.sign(b.vy) * 6, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy - Math.sign(b.vy) * 12, 2, 0, Math.PI * 2);
+    ctx.fill();
+    // ball
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#b2c8dd';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+    ctx.stroke();
+    // ice sparkle
+    ctx.fillStyle = '#7fd4ff';
+    ctx.fillRect(cx - 1, cy - 4, 2, 2);
   }
 }
 
@@ -7148,6 +7441,8 @@ function render(t) {
   drawSwingRope();
   drawThugs();
   drawBirds(t);
+  drawSnowCannons(t);
+  drawSnowballs(t);
   drawVillain();
   drawBane(t);
   drawTwoFace(t);

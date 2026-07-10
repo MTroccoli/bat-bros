@@ -130,7 +130,7 @@ function hash01(n) {
 function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
-          boats = [], cranes = [], spawn, name, indoor = false, dock = false, frozen = false,
+          boats = [], cranes = [], snowCannons = [], spawn, name, indoor = false, dock = false, frozen = false,
           bane = null, cave = null, twoface = null } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
@@ -240,6 +240,18 @@ function buildLevel(spec) {
       vx: b.speed ?? 1.0,
     })),
     cranes: builtCranes,
+    // Act-3 cold-city hazard: a snow cannon on the ground that lobs a
+    // snowball straight up every fireInterval ms. If it clips Batman on
+    // the way up or falling back down he freezes for ~5 s (slow move,
+    // no jump). One-shot: a stomp or batarang from above knocks it out.
+    snowCannons: snowCannons.map(c => ({
+      x: c.x * TILE, y: (c.y ?? groundY) * TILE - 30,
+      w: 28, h: 30,
+      fireInterval: c.interval ?? 2200,
+      nextFireAt: 0,
+      alive: true,
+    })),
+    snowballs: [],
     swingPoints: swingPoints.map(([x, row, minR, manual]) => {
       let floorTy = height;
       for (let ty = row; ty < height; ty++) {

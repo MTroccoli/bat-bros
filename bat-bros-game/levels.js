@@ -458,6 +458,12 @@ LEVEL_SPECS.push({
     { x: 76, y: 20, range: [74, 78], frozen: true },
     { x: 82, y: 24, range: [80, 83], frozen: true },
   ],
+  // Snow cannons — anti-air upward shots. Placed on open street tiles
+  // so Batman has to time his crossings around the puff of snowballs.
+  snowCannons: [
+    { x: 20, interval: 2600 },
+    { x: 52, interval: 2200 },
+  ],
   birds: [
     { x: 22, y: 20, range: [16, 28], frozen: true },
     { x: 50, y: 18, range: [44, 58], frozen: true },
@@ -534,6 +540,10 @@ LEVEL_SPECS.push({
     { x: 89, y: 18, range: [88, 90], helmet: true, frozen: true },
     { x: 92, y: 28, range: [90, 95], frozen: true },
   ],
+  snowCannons: [
+    { x: 18, interval: 2400 },
+    { x: 58, interval: 2600 },
+  ],
   birds: [
     { x: 30, y: 22, range: [26, 36], frozen: true },
     { x: 66, y: 20, range: [60, 72], frozen: true },
@@ -577,6 +587,11 @@ LEVEL_SPECS.push({
     { x: 42, y: 14, range: [40, 47], helmet: true, frozen: true },
     { x: 50, y: 26, range: [48, 53], frozen: true },
     { x: 60, y: 24, range: [58, 63], frozen: true },
+  ],
+  snowCannons: [
+    { x: 12, interval: 2500 },
+    { x: 22, interval: 2900 },
+    { x: 52, interval: 2300 },
   ],
   birds: [
     { x: 20, y: 24, range: [15, 28], frozen: true },
