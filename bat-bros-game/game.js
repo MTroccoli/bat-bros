@@ -66,6 +66,15 @@ window.addEventListener('keydown', e => {
   // never lost to frame timing (touch buttons go through handleCaveUIInput).
   const confirmCode = ['ArrowUp', 'KeyW', 'Space', 'KeyX', 'Enter'].includes(e.code);
   if (state === 'computer') {
+    if (confirmCode) {
+      // Act 2 return: the first screen is the news; a second tap opens
+      // the Mr. Freeze expediente; a third goes to the choice screen.
+      state = postTwoFaceReturn ? 'freezeExpediente' : 'choice';
+      e.preventDefault();
+    }
+    return;
+  }
+  if (state === 'freezeExpediente') {
     if (confirmCode) { state = 'choice'; e.preventDefault(); }
     return;
   }
@@ -141,10 +150,23 @@ if (caveBtnEl) {
     }
   });
 }
+const swapBtnEl = document.getElementById('btn-swap');
+if (swapBtnEl) {
+  swapBtnEl.addEventListener('click', (e) => {
+    e.preventDefault();
+    if (state !== 'playing') return;
+    switchCharacter();
+    updateCaveButtonVisibility();
+  });
+}
 function updateCaveButtonVisibility() {
   if (!caveBtnEl) return;
   const show = level && level.name && level.name.startsWith('3-');
   caveBtnEl.style.display = show ? 'block' : 'none';
+  if (swapBtnEl) {
+    swapBtnEl.style.display = show ? 'block' : 'none';
+    swapBtnEl.textContent = activeChar === 'batman' ? '⇄ ROBIN' : '⇄ BATMAN';
+  }
 }
 
 // Mobile browsers (iOS Safari especially) ignore user-scalable=no and can
@@ -1711,17 +1733,27 @@ function updatePlaying(dt) {
   // of making Batman hop.
   if (level.cave) {
     const cv = level.cave;
-    // Act 2 return: Robin walks in with Batman and follows him around the
-    // cave; Alfred is waiting between the entrance and the batcomputer.
+    // Act 2 return: Robin walks in with Batman and follows him around
+    // the cave. He keeps his own feet on the ground and never mirrors
+    // Batman's jumps — his y is glued to the plateau he starts on and
+    // auto-steps up when the terrain rises under him.
     if (cv.act2Return && cv.companion) {
       const comp = cv.companion;
-      // stay ~34 px behind Batman on the same y band
       const targetX = player.x - player.facing * 34;
       const dx = targetX - comp.x;
       const speedCap = 3.6;
       const step = Math.max(-speedCap, Math.min(speedCap, dx * 0.12)) * dt;
-      comp.x += step;
-      comp.y = player.y; // ride the same platform / floor
+      const nextX = comp.x + step;
+      // find the highest solid tile top under Robin's new x within the
+      // cave's climbable range — that's what his feet land on
+      const compCx = nextX + 12; // approximate center
+      const tx = Math.max(0, Math.min(level.width - 1, Math.floor(compCx / TILE)));
+      let floorY = level.groundY * TILE;
+      for (let ty = Math.max(0, Math.floor(cv.plateauY / TILE) - 1); ty < level.height; ty++) {
+        if (level.solid[ty][tx]) { floorY = ty * TILE; break; }
+      }
+      comp.x = nextX;
+      comp.y = floorY - player.h; // feet exactly on the tile top
       if (Math.abs(step) > 0.4) comp.walkPhase += Math.abs(step) * 0.06;
       comp.facing = dx > 0 ? 1 : (dx < 0 ? -1 : comp.facing);
     }
@@ -1779,8 +1811,9 @@ function updatePlaying(dt) {
       player.vx += accel * dt;
       player.facing = 1;
     } else if (player.onGround) {
-      // frozen levels: slippery ice — Batman keeps sliding after letting go
-      player.vx *= level.frozen ? 0.965 : FRICTION;
+      // frozen levels: slippery ice — Batman keeps sliding after letting
+      // go but not so much that he's uncontrollable
+      player.vx *= level.frozen ? 0.93 : FRICTION;
       if (Math.abs(player.vx) < 0.05) player.vx = 0;
     }
     player.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, player.vx));
@@ -3502,6 +3535,83 @@ function drawTwoFacePortrait(ctx) {
   ctx.beginPath(); ctx.moveTo(75, 0); ctx.lineTo(75, 170); ctx.stroke();
 }
 
+// Mr. Freeze mug-shot for the Batcomputer expediente: chrome dome,
+// blue-tinted skin, orange cryo goggles, ridged neck coupling on the
+// life-support suit. Same 150 x 170 canvas as drawTwoFacePortrait so
+// the expediente layout doesn't need to change.
+function drawFreezePortrait(ctx) {
+  // suit/backplate
+  ctx.fillStyle = '#4a5b78'; ctx.fillRect(0, 20, 150, 150);
+  ctx.fillStyle = '#2c3a52'; ctx.fillRect(0, 20, 150, 10);
+  // shoulder pauldrons
+  ctx.fillStyle = '#38495f';
+  ctx.beginPath();
+  ctx.moveTo(4, 128); ctx.lineTo(28, 96); ctx.lineTo(62, 108); ctx.lineTo(62, 170); ctx.lineTo(4, 170); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(146, 128); ctx.lineTo(122, 96); ctx.lineTo(88, 108); ctx.lineTo(88, 170); ctx.lineTo(146, 170); ctx.closePath(); ctx.fill();
+  // pale ice-blue face
+  ctx.fillStyle = '#c9dff0'; ctx.fillRect(38, 22, 74, 82);
+  // rounded jaw
+  ctx.beginPath();
+  ctx.moveTo(38, 90); ctx.lineTo(38, 104); ctx.quadraticCurveTo(75, 118, 112, 104); ctx.lineTo(112, 90); ctx.closePath();
+  ctx.fill();
+  // chrome dome + rivets
+  ctx.fillStyle = '#dbe4f0';
+  ctx.beginPath();
+  ctx.ellipse(75, 24, 40, 24, 0, Math.PI, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(80,110,140,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(38, 24); ctx.lineTo(112, 24); ctx.stroke();
+  ctx.fillStyle = '#8a99ac';
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath(); ctx.arc(46 + i * 14, 20, 1.6, 0, Math.PI * 2); ctx.fill();
+  }
+  // frost patches along the cheeks + brow
+  ctx.strokeStyle = 'rgba(240,250,255,0.75)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 6; i++) {
+    const cxp = 42 + hash01(i * 3.1) * 66, cyp = 40 + hash01(i * 5.7) * 50;
+    ctx.beginPath();
+    for (let k = 0; k < 6; k++) {
+      const ang = k * Math.PI / 3;
+      ctx.moveTo(cxp, cyp);
+      ctx.lineTo(cxp + Math.cos(ang) * 4, cyp + Math.sin(ang) * 4);
+    }
+    ctx.stroke();
+  }
+  // cryo goggles — orange glow behind a dark strap
+  ctx.fillStyle = '#0e1420'; ctx.fillRect(34, 52, 84, 16);
+  ctx.fillStyle = '#ff6b1a'; ctx.fillRect(40, 55, 30, 10);
+  ctx.fillStyle = '#ff6b1a'; ctx.fillRect(80, 55, 30, 10);
+  ctx.fillStyle = '#ffd166'; ctx.fillRect(48, 57, 12, 6);
+  ctx.fillStyle = '#ffd166'; ctx.fillRect(88, 57, 12, 6);
+  // stern mouth
+  ctx.fillStyle = '#4a637a'; ctx.fillRect(58, 92, 34, 4);
+  // life-support neck ring with tubes
+  ctx.fillStyle = '#8a99ac'; ctx.fillRect(52, 100, 46, 12);
+  ctx.strokeStyle = '#1a222e'; ctx.lineWidth = 1;
+  for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(52 + i * 7.5, 100); ctx.lineTo(52 + i * 7.5, 112); ctx.stroke(); }
+  // chest cryo canister with frost
+  ctx.fillStyle = '#243244'; ctx.fillRect(56, 120, 38, 44);
+  ctx.fillStyle = '#3a4c68'; ctx.fillRect(56, 120, 38, 6);
+  ctx.fillStyle = '#7fb5c8'; ctx.fillRect(60, 130, 30, 24);
+  ctx.strokeStyle = 'rgba(220,240,255,0.65)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath();
+    ctx.moveTo(60, 132 + i * 6);
+    ctx.lineTo(90, 132 + i * 6);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#ff5e5e';
+  ctx.beginPath(); ctx.arc(75, 152, 3, 0, Math.PI * 2); ctx.fill();
+  // hairline crack across the dome for character
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(50, 8); ctx.lineTo(58, 20); ctx.lineTo(66, 14); ctx.stroke();
+}
+
 function drawCaveComputer(cx, plateauScreenY) {
   const scrW = 230, scrH = 138;
   const x = cx - scrW / 2, y = plateauScreenY - scrH - 18;
@@ -3537,6 +3647,11 @@ function drawCaveComputer(cx, plateauScreenY) {
 }
 
 // full-screen expediente panel (state 'computer')
+// Batcave computer overlay. Two flows:
+// - Act 1 return: title reads TWO-FACE, portrait + expediente lines
+// - Act 2 return: title reads NOTICIAS EN VIVO, the news feed fills the
+//   whole screen. A second confirmation opens drawFreezeExpedienteScreen
+//   with the Mr. Freeze mug-shot + info.
 function drawExpedienteScreen(now) {
   ctx.fillStyle = 'rgba(2,4,10,0.72)';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
@@ -3554,82 +3669,21 @@ function drawExpedienteScreen(now) {
   ctx.fillText(title, x + 18, y + 25);
 
   if (postTwoFaceReturn) {
-    // Frozen Gotham news feed rendered right on the Batcomputer instead
-    // of on a wall TV — sized the same as the Two-Face portrait area so
-    // the info column on the right never overlaps it
-    const sx = x + 30, sy = y + 54, sw = 130, sh = 140;
-    const sg = ctx.createLinearGradient(0, sy, 0, sy + sh);
-    sg.addColorStop(0, '#0d1830');
-    sg.addColorStop(0.6, '#264a6a');
-    sg.addColorStop(1, '#7fb5c8');
-    ctx.fillStyle = sg;
-    ctx.fillRect(sx, sy, sw, sh);
-    // skyline
-    const base = sy + sh - 28;
-    for (let i = 0; i < 5; i++) {
-      const bx = sx + 4 + i * ((sw - 8) / 5);
-      const bw = ((sw - 8) / 5) - 2;
-      const bh = 22 + hash01(i * 2.3) * 44;
-      ctx.fillStyle = '#0f1728';
-      ctx.fillRect(bx, base - bh, bw, bh);
-      ctx.fillStyle = '#f0f4ff';
-      ctx.fillRect(bx - 1, base - bh - 2, bw + 2, 3);
-      if (i % 2 === 0) {
-        ctx.fillStyle = 'rgba(180,220,240,0.85)';
-        ctx.beginPath();
-        ctx.moveTo(bx + bw - 4, base - bh);
-        ctx.lineTo(bx + bw - 2, base - bh + 10);
-        ctx.lineTo(bx + bw + 1, base - bh);
-        ctx.closePath(); ctx.fill();
-      }
-    }
-    // frozen ground
-    ctx.fillStyle = '#c5dcea';
-    ctx.fillRect(sx, base, sw, sy + sh - base - 14);
-    // falling snow
-    for (let i = 0; i < 24; i++) {
-      const fx = sx + ((hash01(i * 11.3) * sw + now * 0.03) % sw);
-      const fy = sy + ((hash01(i * 4.7) * sh + now * 0.05) % sh);
-      ctx.fillStyle = `rgba(240,248,255,${0.35 + 0.4 * hash01(i * 3.9)})`;
-      ctx.fillRect(fx, fy, 2, 2);
-    }
-    // red crawler, clipped to its bar
-    const barY = sy + sh - 14;
-    ctx.fillStyle = '#c0392b';
-    ctx.fillRect(sx, barY, sw, 14);
-    ctx.save();
-    ctx.beginPath(); ctx.rect(sx, barY, sw, 14); ctx.clip();
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 8px monospace';
+    // === Full-panel frozen-Gotham news feed ===
+    drawFrozenNewsFeed(x + 20, y + 44, w - 40, h - 90, now);
+    const blink = Math.floor(now / 400) % 2 === 0;
+    ctx.fillStyle = '#ffd166'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+    if (blink) ctx.fillText('▶ SALTO / DISPARAR PARA VER EL EXPEDIENTE', CANVAS_W / 2, y + h - 18);
     ctx.textAlign = 'left';
-    const crawl = 'GOTHAM CONGELADA — Mr. FREEZE avanza — -40°C — ';
-    const gw = 5, cyc = crawl.length * gw;
-    const off = (now / 40) % cyc;
-    ctx.fillText(crawl + crawl, sx + 3 - off, barY + 10);
-    ctx.restore();
-    // GCN LIVE bug
-    ctx.fillStyle = '#f6d743';
-    ctx.font = 'bold 8px monospace';
-    ctx.textAlign = 'right';
-    ctx.fillText('GCN LIVE', sx + sw - 4, sy + 12);
-    ctx.fillStyle = Math.sin(now / 300) > 0 ? '#ff5e5e' : '#4a1616';
-    ctx.beginPath(); ctx.arc(sx + sw - 3, sy + 6, 2.5, 0, Math.PI * 2); ctx.fill();
-    ctx.textAlign = 'left';
-  } else {
-    ctx.save();
-    ctx.translate(x + 30, y + 54); ctx.scale(0.86, 0.86);
-    drawTwoFacePortrait(ctx);
-    ctx.restore();
+    return;
   }
+  // === Act 1 flow: Two-Face portrait + info column ===
+  ctx.save();
+  ctx.translate(x + 30, y + 54); ctx.scale(0.86, 0.86);
+  drawTwoFacePortrait(ctx);
+  ctx.restore();
 
-  const lines = postTwoFaceReturn ? [
-    ['> AMENAZA: Mr. FREEZE — VICTOR FRIES', '#bfe3ff'],
-    ['> ALIAS: EL DR. HIELO — TEMP: -40°C', '#bfe3ff'],
-    ['> M.O.: CAÑÓN CRIOGÉNICO SOBRE GOTHAM', '#ff5e5e'],
-    ['> ZONAS CONGELADAS: CENTRO Y DIQUES', '#bfe3ff'],
-    ['> COMPAÑERO: ROBIN — DÚO OPERATIVO', '#ffd166'],
-    ['► RUTA: BATICUEVA → GOTHAM · ACTO 3', '#29d985'],
-  ] : [
+  const lines = [
     ['> IDENTIDAD: HARVEY DENT, EX-FISCAL', '#bfe3ff'],
     ['> ALIAS: TWO-FACE — CICATRIZ DE ÁCIDO', '#bfe3ff'],
     ['> M.O.: DECIDE CADA CRIMEN CON UNA MONEDA', '#ff5e5e'],
@@ -3657,6 +3711,142 @@ function drawExpedienteScreen(now) {
   const blink = Math.floor(now / 400) % 2 === 0;
   ctx.fillStyle = '#ffd166'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
   if (blink) ctx.fillText('▶ SALTO / DISPARAR PARA CONTINUAR', CANVAS_W / 2, y + h - 18);
+}
+
+// Big frozen-Gotham news feed used inside the Batcomputer overlay.
+function drawFrozenNewsFeed(sx, sy, sw, sh, now) {
+  const sg = ctx.createLinearGradient(0, sy, 0, sy + sh);
+  sg.addColorStop(0, '#0d1830');
+  sg.addColorStop(0.6, '#264a6a');
+  sg.addColorStop(1, '#7fb5c8');
+  ctx.fillStyle = sg;
+  ctx.fillRect(sx, sy, sw, sh);
+  // snowy skyline of Gotham
+  const base = sy + sh - 60;
+  for (let i = 0; i < 12; i++) {
+    const bx = sx + 6 + i * ((sw - 12) / 12);
+    const bw = ((sw - 12) / 12) - 3;
+    const bh = 40 + hash01(i * 2.3) * 110;
+    ctx.fillStyle = '#0f1728';
+    ctx.fillRect(bx, base - bh, bw, bh);
+    // lit / iced windows
+    for (let wy = 0; wy < 4; wy++) {
+      for (let wx = 0; wx < 2; wx++) {
+        const on = (i + wy + wx) % 3 === 0;
+        ctx.fillStyle = on ? '#b8dbef' : '#1a2436';
+        ctx.fillRect(bx + 4 + wx * (bw - 10), base - bh + 18 + wy * 24, 6, 10);
+      }
+    }
+    // snow cap
+    ctx.fillStyle = '#f0f4ff';
+    ctx.fillRect(bx - 2, base - bh - 5, bw + 4, 6);
+    // hanging icicle
+    if (i % 2 === 0) {
+      ctx.fillStyle = 'rgba(180,220,240,0.85)';
+      ctx.beginPath();
+      ctx.moveTo(bx + bw - 6, base - bh);
+      ctx.lineTo(bx + bw - 3, base - bh + 22);
+      ctx.lineTo(bx + bw + 1, base - bh);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+  // frozen ground with cracked ice patterns
+  ctx.fillStyle = '#c5dcea';
+  ctx.fillRect(sx, base, sw, sy + sh - base - 28);
+  ctx.strokeStyle = 'rgba(80,110,140,0.6)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 12; i++) {
+    const cx = sx + hash01(i * 7.1) * sw;
+    const cy = base + 8 + hash01(i * 4.3) * 24;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + 28 + hash01(i * 9) * 40, cy + 6);
+    ctx.stroke();
+  }
+  // falling snow
+  for (let i = 0; i < 60; i++) {
+    const fx = sx + ((hash01(i * 11.3) * sw + now * 0.04) % sw);
+    const fy = sy + ((hash01(i * 4.7) * sh + now * 0.06) % sh);
+    ctx.fillStyle = `rgba(240,248,255,${0.35 + 0.5 * hash01(i * 3.9)})`;
+    ctx.fillRect(fx, fy, 2, 2);
+  }
+  // red crawler, clipped to its bar
+  const barH = 26, barY = sy + sh - barH;
+  ctx.fillStyle = '#c0392b';
+  ctx.fillRect(sx, barY, sw, barH);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(sx, barY, sw, barH); ctx.clip();
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'left';
+  const crawl = 'ALERTA — GOTHAM CONGELADA — Mr. FREEZE avanza sobre la ciudad — temperatura -40°C — POLICÍA COLAPSADA — ';
+  const gw = 9, cyc = crawl.length * gw;
+  const off = (now / 30) % cyc;
+  ctx.fillText(crawl + crawl, sx + 8 - off, barY + 18);
+  ctx.restore();
+  // GCN LIVE bug
+  ctx.fillStyle = '#f6d743';
+  ctx.font = 'bold 14px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText('GCN LIVE', sx + sw - 12, sy + 24);
+  ctx.fillStyle = Math.sin(now / 300) > 0 ? '#ff5e5e' : '#4a1616';
+  ctx.beginPath(); ctx.arc(sx + sw - 8, sy + 12, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.textAlign = 'left';
+  // outline
+  ctx.strokeStyle = 'rgba(127,212,255,0.5)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(sx, sy, sw, sh);
+}
+
+// State 'freezeExpediente' — the Mr. Freeze mug-shot + info page shown
+// AFTER the news screen when Batman opens the Batcomputer post-2-4.
+function drawFreezeExpedienteScreen(now) {
+  ctx.fillStyle = 'rgba(2,4,10,0.72)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  const x = 40, y = 40, w = CANVAS_W - 80, h = CANVAS_H - 80;
+  ctx.save();
+  ctx.shadowColor = 'rgba(80,180,255,0.5)'; ctx.shadowBlur = 20;
+  ctx.fillStyle = '#232a3a'; ctx.fillRect(x, y, w, h);
+  ctx.restore();
+  ctx.fillStyle = '#061826'; ctx.fillRect(x + 8, y + 8, w - 16, h - 16);
+  ctx.fillStyle = '#0a2438'; ctx.fillRect(x + 8, y + 8, w - 16, 24);
+  ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'left';
+  ctx.fillText('BATCOMPUTADORA — EXPEDIENTE: Mr. FREEZE', x + 18, y + 25);
+
+  // Mr. Freeze portrait
+  ctx.save();
+  ctx.translate(x + 30, y + 54); ctx.scale(0.86, 0.86);
+  drawFreezePortrait(ctx);
+  ctx.restore();
+
+  const lines = [
+    ['> IDENTIDAD: DR. VICTOR FRIES — CIENTÍFICO', '#bfe3ff'],
+    ['> ALIAS: Mr. FREEZE — TRAJE CRIOGÉNICO', '#bfe3ff'],
+    ['> M.O.: CAÑÓN QUE CONGELA TODO A -40°C', '#ff5e5e'],
+    ['> DEBILIDAD: NECESITA FRÍO PARA VIVIR', '#bfe3ff'],
+    ['> COMPAÑERO: ROBIN — DÚO EN GOTHAM', '#ffd166'],
+    ['► RUTA: BATICUEVA → GOTHAM · ACTO 3', '#29d985'],
+  ];
+  ctx.font = '12px monospace'; ctx.textAlign = 'left';
+  lines.forEach(([txt, col], i) => { ctx.fillStyle = col; ctx.fillText(txt, x + 190, y + 66 + i * 26); });
+
+  const boxX = x + 190, boxY = y + 232, boxW = w - 230, boxH = 68;
+  ctx.strokeStyle = 'rgba(127,212,255,0.45)'; ctx.lineWidth = 1;
+  ctx.strokeRect(boxX, boxY, boxW, boxH);
+  ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'left';
+  ctx.fillText('REGISTRO BATCOMPUTADORA', boxX + 10, boxY + 16);
+  ctx.fillStyle = '#e8f0fb'; ctx.font = '12px monospace';
+  ctx.fillText(`VIGILANTE: ${(playerName || '—').toUpperCase()}`, boxX + 10, boxY + 34);
+  ctx.fillStyle = '#ff5e5e'; ctx.textAlign = 'right';
+  ctx.font = 'bold 14px monospace';
+  ctx.fillText(`GAME OVERS: ${gameOverCount}`, boxX + boxW - 10, boxY + 30);
+  ctx.fillStyle = '#29d985'; ctx.textAlign = 'left'; ctx.font = '11px monospace';
+  ctx.fillText(`ACTO 3 · VIDAS: ${lives} · DÚO OPERATIVO`, boxX + 10, boxY + 54);
+  ctx.textAlign = 'left';
+
+  const blink = Math.floor(now / 400) % 2 === 0;
+  ctx.fillStyle = '#ffd166'; ctx.font = 'bold 13px monospace'; ctx.textAlign = 'center';
+  if (blink) ctx.fillText('▶ SALTO / DISPARAR PARA ELEGIR EQUIPO', CANVAS_W / 2, y + h - 18);
 }
 
 // full-screen weapon-choice panel (state 'choice')
@@ -3824,6 +4014,11 @@ function handleCaveUIInput(now) {
   const cv = level.cave;
   const confirm = now < jumpBufferUntil || now < shootBufferUntil;
   if (state === 'computer') {
+    if (confirm) {
+      jumpBufferUntil = 0; shootBufferUntil = 0;
+      state = postTwoFaceReturn ? 'freezeExpediente' : 'choice';
+    }
+  } else if (state === 'freezeExpediente') {
     if (confirm) { jumpBufferUntil = 0; shootBufferUntil = 0; state = 'choice'; }
   } else if (state === 'choice') {
     if (keys.left && !keys.right) cv.choiceSel = 0;
@@ -4761,18 +4956,10 @@ function drawThugs() {
     if (px < -40 || px > CANVAS_W + 40) continue;
     const gy = g.y - camera.y;
 
-    // frozen thug: encased in a cyan ice cube, tinted paler behind it
-    if (g.frozen) {
-      ctx.fillStyle = 'rgba(140,210,240,0.35)';
-      ctx.fillRect(px - 4, gy - 4, g.w + 8, g.h + 8);
-      ctx.strokeStyle = 'rgba(220,240,255,0.9)';
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(px - 4, gy - 4, g.w + 8, g.h + 8);
-      // sparkles
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.fillRect(px + 2, gy + 3, 2, 2);
-      ctx.fillRect(px + g.w - 5, gy + g.h - 8, 2, 2);
-    }
+    // frozen thug: no ice cube — instead a heavier snow cap on his hood
+    // + a cool blue tint over the sprite. Draw the tint AFTER the body
+    // in an overlay pass at the bottom of this block.
+    // (blue tint drawn below after the body sprite)
 
     ctx.fillStyle = '#15171c';
     ctx.fillRect(px + 4, gy + g.h - 7, 6, 7);
@@ -4815,6 +5002,28 @@ function drawThugs() {
         ctx.closePath(); ctx.fill();
       }
     }
+
+    // Frozen thug overlay: bluish tint over the whole body + a puff of
+    // snow piled on his head. Draws AFTER the body so it stays on top.
+    if (g.frozen) {
+      ctx.fillStyle = 'rgba(120,180,220,0.4)';
+      ctx.fillRect(px, gy, g.w, g.h);
+      // snow on his head (or on the helmet if there is one)
+      const domeTop = gy - (g.helmet ? 12 : 2);
+      ctx.fillStyle = '#f0f4ff';
+      ctx.beginPath();
+      ctx.moveTo(px - 1, domeTop + 6);
+      ctx.quadraticCurveTo(px + g.w * 0.35, domeTop - 4, px + g.w * 0.55, domeTop + 2);
+      ctx.quadraticCurveTo(px + g.w * 0.75, domeTop - 5, px + g.w + 1, domeTop + 5);
+      ctx.lineTo(px + g.w + 1, domeTop + 8);
+      ctx.lineTo(px - 1, domeTop + 8);
+      ctx.closePath();
+      ctx.fill();
+      // a couple of snow flecks on his shoulders
+      ctx.fillStyle = 'rgba(240,248,255,0.85)';
+      ctx.fillRect(px + 2, gy + 10, 3, 2);
+      ctx.fillRect(px + g.w - 5, gy + 12, 3, 2);
+    }
   }
 }
 
@@ -4826,13 +5035,6 @@ function drawBirds(t) {
     // frozen birds barely flap — cut the wing beat down when iced
     const flap = Math.sin(t / (b.frozen ? 260 : 90) + b.x) * (b.frozen ? 3 : 9);
     const cy = b.y + b.h / 2 - camera.y;
-    if (b.frozen) {
-      ctx.fillStyle = 'rgba(140,210,240,0.35)';
-      ctx.fillRect(px - 6, cy - 12, b.w + 12, 24);
-      ctx.strokeStyle = 'rgba(220,240,255,0.85)';
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(px - 6, cy - 12, b.w + 12, 24);
-    }
 
     ctx.save();
     ctx.shadowColor = 'rgba(160,190,230,0.9)';
@@ -4860,6 +5062,20 @@ function drawBirds(t) {
     ctx.beginPath();
     ctx.arc(px + b.w * 0.62, cy - 2, 1.8, 0, Math.PI * 2);
     ctx.fill();
+
+    // Frozen bird overlay: bluish tint + snow riding on his back
+    if (b.frozen) {
+      ctx.fillStyle = 'rgba(120,180,220,0.4)';
+      ctx.fillRect(px - 6, cy - 12, b.w + 12, 24);
+      ctx.fillStyle = '#f0f4ff';
+      ctx.beginPath();
+      ctx.moveTo(px - 2, cy - 6);
+      ctx.quadraticCurveTo(px + b.w * 0.4, cy - 12, px + b.w + 2, cy - 6);
+      ctx.lineTo(px + b.w + 2, cy - 3);
+      ctx.lineTo(px - 2, cy - 3);
+      ctx.closePath();
+      ctx.fill();
+    }
   }
 }
 
@@ -6619,7 +6835,8 @@ function render(t) {
   drawTwoFace(t);
   drawShockwaves();
   drawImpactEffects(t);
-  drawCompanion(t);
+  // Act 3 co-op: only the active character is on screen. The other one
+  // is stored in `companion` and only comes back when you hit switch.
   drawPlayer();
   if (level.frozen) drawSnowfall(t);
   drawHeroMessage();
@@ -6682,11 +6899,12 @@ function loop(now) {
         state = 'playing';
       }
     }
-  } else if (state === 'computer' || state === 'choice' || state === 'levelselect') {
+  } else if (state === 'computer' || state === 'freezeExpediente' || state === 'choice' || state === 'levelselect') {
     // Batcave UI: the frozen scene stays behind the expediente / choice /
     // replay panel
     render(now);
     if (state === 'computer') drawExpedienteScreen(now);
+    else if (state === 'freezeExpediente') drawFreezeExpedienteScreen(now);
     else if (state === 'choice') drawChoiceScreen(now);
     else drawLevelSelectScreen(now);
     handleCaveUIInput(now);

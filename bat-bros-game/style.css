@@ -65,6 +65,27 @@ html, body {
   color: #111528;
 }
 
+.swap-btn {
+  position: absolute;
+  top: 46px;
+  left: 128px;
+  background: rgba(20, 24, 40, 0.9);
+  color: #7fd4ff;
+  border: 2px solid #7fd4ff;
+  padding: 6px 10px;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  font-size: 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  z-index: 10;
+  letter-spacing: 0.05em;
+}
+.swap-btn:hover, .swap-btn:active {
+  background: #7fd4ff;
+  color: #111528;
+}
+
 canvas {
   display: block;
   width: 100%;
