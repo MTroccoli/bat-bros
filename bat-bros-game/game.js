@@ -2648,9 +2648,152 @@ function drawCargueroBackground(t) {
     ctx.fill();
   }
 
-  // ceiling
-  ctx.fillStyle = '#0a0f18';
-  ctx.fillRect(0, 0, CANVAS_W, Math.max(0, 2 * TILE - camera.y - 48));
+  // Boss arena ceiling: when the fight camera pushes camera.y negative,
+  // world y < 0 becomes the tall dark hall above the engine room. Fill
+  // it with a dark base then hang crane rails, girders, chains, pipes
+  // and warning lamps so it doesn't read as an empty black void.
+  if (camera.y < 0) {
+    // dark base fill up to y=0
+    const ceilBottom = -camera.y;
+    const cg = ctx.createLinearGradient(0, 0, 0, ceilBottom);
+    cg.addColorStop(0, '#05070d');
+    cg.addColorStop(1, '#101828');
+    ctx.fillStyle = cg;
+    ctx.fillRect(0, 0, CANVAS_W, ceilBottom);
+    drawArenaCeiling(t, ceilBottom);
+  } else {
+    // normal narrow ceiling strip drawn on top of the climb
+    ctx.fillStyle = '#0a0f18';
+    ctx.fillRect(0, 0, CANVAS_W, Math.max(0, 2 * TILE - camera.y - 48));
+  }
+}
+
+// Overhead structure hanging in the tall boss-arena hall: three riveted
+// I-beams, a crane rail, dangling chains + hooks, pipe runs, blinking
+// lamps. Drawn only when camera.y is negative (fight camera engaged).
+function drawArenaCeiling(t, ceilBottom) {
+  const off = -(camera.x * 0.35);
+
+  // ceiling plate seams — thin vertical panel divisions on the deckhead
+  ctx.strokeStyle = 'rgba(70,100,140,0.14)';
+  ctx.lineWidth = 1;
+  for (let x = off - 96; x < CANVAS_W + 96; x += 96) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ceilBottom); ctx.stroke();
+  }
+
+  // three I-beam girders spanning the full width
+  const beams = [
+    { screenY: Math.max(24, ceilBottom * 0.18), h: 14, col: '#3d4c60' },
+    { screenY: Math.max(48, ceilBottom * 0.36), h: 12, col: '#354458' },
+    { screenY: Math.max(80, ceilBottom * 0.58), h: 12, col: '#2f3d50' },
+  ];
+  for (const b of beams) {
+    if (b.screenY > ceilBottom - 8) continue;
+    ctx.fillStyle = b.col;
+    ctx.fillRect(0, b.screenY, CANVAS_W, b.h);
+    // top / bottom flange highlights
+    ctx.fillStyle = 'rgba(255,255,255,0.10)';
+    ctx.fillRect(0, b.screenY, CANVAS_W, 2);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(0, b.screenY + b.h - 2, CANVAS_W, 2);
+    // rivets
+    ctx.fillStyle = '#0f1420';
+    const rOff = -(camera.x % 40);
+    for (let x = rOff; x < CANVAS_W + 20; x += 40) {
+      ctx.beginPath(); ctx.arc(x, b.screenY + b.h / 2, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // overhead crane rail with a wandering hook
+  const railY = beams[0].screenY - 10;
+  if (railY > 6) {
+    ctx.fillStyle = '#c9902a';
+    ctx.fillRect(0, railY, CANVAS_W, 4);
+    ctx.fillStyle = '#8a5f18';
+    ctx.fillRect(0, railY + 4, CANVAS_W, 2);
+    // trolley
+    const trolleyX = (CANVAS_W * 0.5) + Math.sin(t / 2400) * (CANVAS_W * 0.35);
+    ctx.fillStyle = '#242c3a';
+    ctx.fillRect(trolleyX - 22, railY + 4, 44, 10);
+    ctx.fillStyle = '#f6d743';
+    ctx.fillRect(trolleyX - 20, railY + 5, 40, 3);
+    // hook chain
+    ctx.strokeStyle = '#6a5238';
+    ctx.lineWidth = 2;
+    const hookLen = 90 + Math.sin(t / 900) * 12;
+    const hookY = railY + 14 + hookLen;
+    ctx.beginPath(); ctx.moveTo(trolleyX, railY + 14); ctx.lineTo(trolleyX, hookY); ctx.stroke();
+    ctx.fillStyle = '#8a6a42';
+    ctx.beginPath(); ctx.arc(trolleyX, hookY, 5, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // horizontal pipe run between beam 1 and beam 2
+  const pipeY = (beams[0].screenY + beams[1].screenY) / 2;
+  if (pipeY > 12 && pipeY < ceilBottom - 4) {
+    ctx.fillStyle = '#4a4436';
+    ctx.fillRect(0, pipeY - 3, CANVAS_W, 6);
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.fillRect(0, pipeY - 3, CANVAS_W, 2);
+    // flanges every 130px
+    const fOff = -(camera.x % 130);
+    ctx.fillStyle = '#221e14';
+    for (let x = fOff; x < CANVAS_W + 20; x += 130) {
+      ctx.fillRect(x, pipeY - 5, 8, 10);
+    }
+  }
+
+  // dangling chains between the girders
+  for (const seed of [0.15, 0.35, 0.6, 0.82]) {
+    const cx = (seed * CANVAS_W) + Math.sin(t / (900 + seed * 500)) * 3;
+    const c0 = beams[0].screenY + 12;
+    const c1 = beams[2].screenY + 12;
+    if (c1 < c0) continue;
+    ctx.strokeStyle = '#4a5468';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    // draw the chain as a series of short segments
+    let px = cx, py = c0;
+    for (let s = 0; s < 12; s++) {
+      const ny = c0 + ((c1 - c0) * (s + 1)) / 12;
+      const nx = cx + Math.sin(t / 700 + s * 0.7) * 1.4;
+      ctx.moveTo(px, py); ctx.lineTo(nx, ny);
+      px = nx; py = ny;
+    }
+    ctx.stroke();
+    // hook at bottom
+    ctx.fillStyle = '#5a6478';
+    ctx.beginPath(); ctx.arc(px, py + 2, 3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // warning lamps between girder 2 and girder 3
+  const lampY = (beams[1].screenY + beams[2].screenY) / 2 + 4;
+  if (lampY > 8 && lampY < ceilBottom - 8) {
+    for (let i = 0; i < 4; i++) {
+      const lx = (i + 0.5) * CANVAS_W / 4;
+      const on = Math.sin(t / 320 + i * 1.7) > 0;
+      // conduit
+      ctx.strokeStyle = '#2a2f3a';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(lx, beams[1].screenY + 12); ctx.lineTo(lx, lampY - 4); ctx.stroke();
+      // shade
+      ctx.fillStyle = '#333a48';
+      ctx.beginPath();
+      ctx.moveTo(lx - 8, lampY - 4); ctx.lineTo(lx + 8, lampY - 4);
+      ctx.lineTo(lx + 5, lampY + 4); ctx.lineTo(lx - 5, lampY + 4);
+      ctx.closePath(); ctx.fill();
+      // bulb
+      ctx.fillStyle = on ? '#ffdb6a' : '#4a3f22';
+      ctx.beginPath(); ctx.arc(lx, lampY + 2, 3, 0, Math.PI * 2); ctx.fill();
+      // glow
+      if (on) {
+        const g = ctx.createRadialGradient(lx, lampY + 2, 1, lx, lampY + 2, 40);
+        g.addColorStop(0, 'rgba(255,220,120,0.25)');
+        g.addColorStop(1, 'rgba(255,220,120,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(lx, lampY + 2, 40, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------
