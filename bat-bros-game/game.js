@@ -274,8 +274,14 @@ function updateBatarangs(dt) {
         if (g.helmet) {
           g.helmet = false;
         } else if (b.type !== 'batigarra') {
-          g.alive = false;
-          score += 100;
+          if (g.frozen) {
+            g.frozen = false;
+            g.vx = (g.vx < 0 ? -1 : 1) * 1.2;
+            score += 50;
+          } else {
+            g.alive = false;
+            score += 100;
+          }
           hud.score.textContent = score;
         }
         b.phase = 'back';
@@ -287,8 +293,14 @@ function updateBatarangs(dt) {
       for (const bd of level.birds) {
         if (!bd.alive) continue;
         if (b.x + 8 > bd.x && b.x - 8 < bd.x + bd.w && b.y + 8 > bd.y && b.y - 8 < bd.y + bd.h) {
-          bd.alive = false;
-          score += 100;
+          if (bd.frozen) {
+            bd.frozen = false;
+            bd.vx = (bd.vx < 0 ? -1 : 1) * 1.7;
+            score += 50;
+          } else {
+            bd.alive = false;
+            score += 100;
+          }
           hud.score.textContent = score;
           b.phase = 'back';
           break;
@@ -526,6 +538,12 @@ function loadLevel(idx) {
   // Armor upgrade: force every fresh level spawn back up to big
   if (armored) currentPowerState = 'big';
   player = newPlayer(level.spawn, currentPowerState, currentGadget);
+  // Act 3 (frozen Gotham) always spawns Batman with 5 lives, and drops
+  // 3 more the first time an Act 3 level is entered.
+  if (level.name && level.name.startsWith('3-') && lives < 5) {
+    lives = 5;
+    hud.lives.textContent = 5;
+  }
   // Act 2 Batcave return: Batman walks in with Robin at his side, and
   // Alfred is waiting halfway to the batcomputer with the news.
   if (level.cave && postTwoFaceReturn) {
@@ -1670,7 +1688,8 @@ function updatePlaying(dt) {
       player.vx += accel * dt;
       player.facing = 1;
     } else if (player.onGround) {
-      player.vx *= FRICTION;
+      // frozen levels: slippery ice — Batman keeps sliding after letting go
+      player.vx *= level.frozen ? 0.965 : FRICTION;
       if (Math.abs(player.vx) < 0.05) player.vx = 0;
     }
     player.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, player.vx));
@@ -1764,10 +1783,19 @@ function updatePlaying(dt) {
       // (batarang or batigarra) before diving on his head is safe
       const stomped = !g.helmet && player.vy > 0 && (player.y + player.h - g.y) < STOMP_TOLERANCE;
       if (stomped) {
-        g.alive = false;
-        player.vy = STOMP_BOUNCE;
-        score += 100;
-        hud.score.textContent = score;
+        if (g.frozen) {
+          // 1st stomp only thaws him — he's now fast + dangerous
+          g.frozen = false;
+          g.vx = (g.vx < 0 ? -1 : 1) * 1.2;
+          player.vy = STOMP_BOUNCE;
+          score += 50;
+          hud.score.textContent = score;
+        } else {
+          g.alive = false;
+          player.vy = STOMP_BOUNCE;
+          score += 100;
+          hud.score.textContent = score;
+        }
       } else {
         hurtPlayer();
         return;
@@ -1787,10 +1815,18 @@ function updatePlaying(dt) {
     if (aabbOverlap(player, b)) {
       const stomped = player.vy > 0 && (player.y + player.h - b.y) < STOMP_TOLERANCE;
       if (stomped) {
-        b.alive = false;
-        player.vy = STOMP_BOUNCE;
-        score += 150;
-        hud.score.textContent = score;
+        if (b.frozen) {
+          b.frozen = false;
+          b.vx = (b.vx < 0 ? -1 : 1) * 1.7;
+          player.vy = STOMP_BOUNCE;
+          score += 75;
+          hud.score.textContent = score;
+        } else {
+          b.alive = false;
+          player.vy = STOMP_BOUNCE;
+          score += 150;
+          hud.score.textContent = score;
+        }
       } else {
         hurtPlayer();
         return;
@@ -1835,7 +1871,10 @@ function updatePlaying(dt) {
   if (level.cave) {
     const cv = level.cave;
     updateCaveAmbience(dt, now);
-    if (cv.weaponChosen && player.x + player.w >= cv.doorX - 4) {
+    // exit the cave when Batman reaches the door — Act 1 requires a
+    // weapon pick; Act 2 also accepts the armor upgrade
+    const equipped = cv.weaponChosen || (postTwoFaceReturn && armored);
+    if (equipped && player.x + player.w >= cv.doorX - 4) {
       completeLevel();
       return;
     }
@@ -3670,11 +3709,18 @@ function drawBackground(t) {
   // vertical parallax: the whole skyline sinks as Batman climbs above it
   const skySink = (level.pixelHeight - CANVAS_H - camera.y) * 0.22;
 
-  // sky gets deeper and clearer with altitude
+  // sky gets deeper and clearer with altitude — frozen levels swap to a
+  // pale blue-white blizzard sky instead of Gotham's usual purple night
   const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
-  g.addColorStop(0, mixColor([8, 11, 28], [2, 3, 12], alt));
-  g.addColorStop(0.55, mixColor([18, 23, 54], [9, 12, 34], alt));
-  g.addColorStop(1, mixColor([35, 42, 77], [19, 24, 56], alt));
+  if (level.frozen) {
+    g.addColorStop(0, '#152a48');
+    g.addColorStop(0.55, '#3a6a90');
+    g.addColorStop(1, '#7fb5c8');
+  } else {
+    g.addColorStop(0, mixColor([8, 11, 28], [2, 3, 12], alt));
+    g.addColorStop(0.55, mixColor([18, 23, 54], [9, 12, 34], alt));
+    g.addColorStop(1, mixColor([35, 42, 77], [19, 24, 56], alt));
+  }
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
@@ -3914,6 +3960,32 @@ function drawTiles() {
         ctx.fillRect(px, py + 7, TILE, TILE - 7);
         ctx.strokeStyle = 'rgba(0,0,0,0.3)';
         ctx.strokeRect(px + 4, py + 2, TILE - 8, 2);
+        // Frozen levels: a snow cap on every walkable ledge so the whole
+        // city looks buried and Batman visibly walks on ice.
+        if (level.frozen) {
+          ctx.fillStyle = '#eaf3ff';
+          ctx.beginPath();
+          ctx.moveTo(px - 1, py + 5);
+          ctx.quadraticCurveTo(px + TILE * 0.25, py - 3, px + TILE * 0.5, py + 2);
+          ctx.quadraticCurveTo(px + TILE * 0.75, py - 4, px + TILE + 1, py + 4);
+          ctx.lineTo(px + TILE + 1, py + 6);
+          ctx.lineTo(px - 1, py + 6);
+          ctx.closePath();
+          ctx.fill();
+          ctx.fillStyle = 'rgba(160,200,230,0.6)';
+          ctx.fillRect(px, py + 6, TILE, 1);
+          // occasional icicle
+          if (hash01(tx * 2.3 + ty * 7.1) > 0.72) {
+            ctx.fillStyle = 'rgba(200,220,240,0.85)';
+            const ix = px + hash01(tx * 3.7) * (TILE - 4) + 2;
+            const il = 6 + hash01(tx * 5.1) * 10;
+            ctx.beginPath();
+            ctx.moveTo(ix - 2, py + TILE);
+            ctx.lineTo(ix + 2, py + TILE);
+            ctx.lineTo(ix, py + TILE + il);
+            ctx.closePath(); ctx.fill();
+          }
+        }
       } else {
         ctx.fillStyle = bodyCol;
         ctx.fillRect(px, py, TILE, TILE);
@@ -4553,6 +4625,19 @@ function drawThugs() {
     if (px < -40 || px > CANVAS_W + 40) continue;
     const gy = g.y - camera.y;
 
+    // frozen thug: encased in a cyan ice cube, tinted paler behind it
+    if (g.frozen) {
+      ctx.fillStyle = 'rgba(140,210,240,0.35)';
+      ctx.fillRect(px - 4, gy - 4, g.w + 8, g.h + 8);
+      ctx.strokeStyle = 'rgba(220,240,255,0.9)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(px - 4, gy - 4, g.w + 8, g.h + 8);
+      // sparkles
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(px + 2, gy + 3, 2, 2);
+      ctx.fillRect(px + g.w - 5, gy + g.h - 8, 2, 2);
+    }
+
     ctx.fillStyle = '#15171c';
     ctx.fillRect(px + 4, gy + g.h - 7, 6, 7);
     ctx.fillRect(px + g.w - 10, gy + g.h - 7, 6, 7);
@@ -4602,8 +4687,16 @@ function drawBirds(t) {
     if (!b.alive) continue;
     const px = b.x - camera.x;
     if (px < -40 || px > CANVAS_W + 40) continue;
-    const flap = Math.sin(t / 90 + b.x) * 9;
+    // frozen birds barely flap — cut the wing beat down when iced
+    const flap = Math.sin(t / (b.frozen ? 260 : 90) + b.x) * (b.frozen ? 3 : 9);
     const cy = b.y + b.h / 2 - camera.y;
+    if (b.frozen) {
+      ctx.fillStyle = 'rgba(140,210,240,0.35)';
+      ctx.fillRect(px - 6, cy - 12, b.w + 12, 24);
+      ctx.strokeStyle = 'rgba(220,240,255,0.85)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(px - 6, cy - 12, b.w + 12, 24);
+    }
 
     ctx.save();
     ctx.shadowColor = 'rgba(160,190,230,0.9)';
@@ -5559,6 +5652,23 @@ function drawTwoFace(t) {
   }
 }
 
+// Continuous snowfall for Act 3 frozen levels. Parallaxes with the
+// camera so flakes feel anchored to the world, not the screen.
+function drawSnowfall(t) {
+  const par = camera.x * 0.3;
+  ctx.fillStyle = 'rgba(240,248,255,0.75)';
+  for (let i = 0; i < 90; i++) {
+    const seed = i * 3.1;
+    const x = ((hash01(seed) * CANVAS_W + t * 0.05 - par * 0.4) % (CANVAS_W + 40) + CANVAS_W + 40) % (CANVAS_W + 40) - 20;
+    const y = ((hash01(seed + 1.7) * CANVAS_H + t * (0.08 + hash01(seed + 4) * 0.06)) % CANVAS_H);
+    const sway = Math.sin(t / 260 + i) * 4;
+    const sz = 1.5 + hash01(seed + 5) * 1.5;
+    ctx.globalAlpha = 0.4 + 0.5 * hash01(seed + 7);
+    ctx.fillRect(x + sway, y, sz, sz);
+  }
+  ctx.globalAlpha = 1;
+}
+
 function drawShockwaves() {
   const floorY = level.groundY * TILE - camera.y;
   for (const wv of level.waves) {
@@ -6312,6 +6422,7 @@ function render(t) {
   drawShockwaves();
   drawImpactEffects(t);
   drawPlayer();
+  if (level.frozen) drawSnowfall(t);
   drawHeroMessage();
 
   camera.x = origCamX;

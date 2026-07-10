@@ -395,4 +395,43 @@ const LEVEL_SPECS = [
   },
 ];
 
+// ============================================================
+// ACTO 3 — Mr. Freeze congela Gotham. Piso resbaladizo, enemigos
+// congelados que arrancan lentísimos y se descongelan al primer hit.
+// ============================================================
+LEVEL_SPECS.push({
+  name: '3-1',
+  frozen: true,          // triggers icy background + slippery friction
+  width: 80, height: 26, groundY: 24,
+  pits: [[18, 20], [46, 52]],
+  platforms: [
+    { x: 8, y: 21, w: 3 },
+    { x: 38, y: 21, w: 3 },
+    { x: 66, y: 21, w: 3 },
+  ],
+  walls: [{ x: 30, w: 3, topRow: 18 }],
+  houses: [{ x: 54, w: 6, topRow: 21, baseRow: 24, style: 'brownstone' }],
+  swingPoints: [[31, 16], [49, 16]],
+  coins: [
+    [9, 20], [39, 20], [67, 20],
+    [30, 17], [31, 17], [32, 17],
+    [56, 20], [57, 20],
+    [14, 23], [24, 23], [43, 23], [72, 23],
+  ],
+  thugs: [
+    { x: 12, y: 24, range: [10, 16], frozen: true },
+    { x: 24, y: 24, range: [22, 29], frozen: true },
+    { x: 30, y: 18, range: [30, 32], frozen: true },
+    { x: 40, y: 24, range: [36, 44], frozen: true },
+    { x: 56, y: 21, range: [54, 59], frozen: true },
+    { x: 62, y: 24, range: [61, 66], frozen: true },
+  ],
+  birds: [
+    { x: 22, y: 21, range: [20, 27], frozen: true },
+    { x: 47, y: 20, range: [45, 53], frozen: true },
+  ],
+  bats: [],
+  spawn: { x: 2, y: 22 },
+});
+
 const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);

@@ -130,7 +130,8 @@ function hash01(n) {
 function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
-          boats = [], cranes = [], spawn, name, indoor = false, dock = false, bane = null, cave = null, twoface = null } = spec;
+          boats = [], cranes = [], spawn, name, indoor = false, dock = false, frozen = false,
+          bane = null, cave = null, twoface = null } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
 
@@ -191,7 +192,7 @@ function buildLevel(spec) {
 
   return {
     name,
-    width, height, groundY, indoor, dock,
+    width, height, groundY, indoor, dock, frozen,
     solid,
     pits,
     ladders: ladders.map(l => ({ x: l.x * TILE, top: l.topRow * TILE, bottom: l.baseRow * TILE })),
@@ -217,14 +218,16 @@ function buildLevel(spec) {
       x: g.x * TILE, y: g.y * TILE - 26,
       w: 24, h: 26,
       minX: g.range[0] * TILE, maxX: g.range[1] * TILE,
-      vx: 1.2, alive: true,
+      vx: g.frozen ? 0.35 : 1.2, alive: true,
       helmet: !!g.helmet,
+      frozen: !!g.frozen,   // moves at 30% speed until Batman lands the 1st hit
     })),
     birds: birds.map(b => ({
       x: b.x * TILE, y: b.y * TILE, baseY: b.y * TILE,
       w: 26, h: 20,
       minX: b.range[0] * TILE, maxX: b.range[1] * TILE,
-      vx: 1.7, alive: true,
+      vx: b.frozen ? 0.5 : 1.7, alive: true,
+      frozen: !!b.frozen,
     })),
     bats: bats.map(([x, row]) => ({
       x: x * TILE, y: row * TILE - 22, w: 24, h: 20, taken: false,
