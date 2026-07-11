@@ -12,14 +12,20 @@ const CANVAS_H = 480;
 // --- Physics ---
 const GRAVITY = 0.52;
 const MAX_FALL = 15;
-const MOVE_ACCEL = 0.7;
-const MAX_SPEED = 4.4;
-const AIR_ACCEL = 0.5;
+// Movement calmed down a touch so a quick tap doesn't shove Batman
+// (or Robin) across a rooftop. Accel + top speed each drop ~11%,
+// which keeps the wide 4-tile pit crossings still doable.
+const MOVE_ACCEL = 0.62;
+const MAX_SPEED = 3.9;
+const AIR_ACCEL = 0.44;
 const FRICTION = 0.78;
 const JUMP_VELOCITY = -11.2;
 const JUMP_CUT = 0.5;
 const STOMP_BOUNCE = -8.5;
-const STOMP_TOLERANCE = 14;
+// Widened stomp margin: as long as Batman's feet are within 22 px of
+// the enemy's top on the frame of contact it still counts as a
+// landing. Makes rooftop dives feel more forgiving.
+const STOMP_TOLERANCE = 22;
 const INVULN_TIME = 1500;
 const LEVEL_TIME = 500;
 
