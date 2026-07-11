@@ -529,7 +529,6 @@ LEVEL_SPECS.push({
   ],
   thugs: [
     { x: 6, y: 28, range: [3, 10], frozen: true },
-    { x: 12, y: 28, range: [12, 13], frozen: true },
     { x: 22, y: 23, range: [22, 25], helmet: true, frozen: true },
     { x: 26, y: 28, range: [22, 30], frozen: true },
     { x: 38, y: 28, range: [36, 42], frozen: true },

@@ -240,14 +240,17 @@ function buildLevel(spec) {
       vx: b.speed ?? 1.0,
     })),
     cranes: builtCranes,
-    // Act-3 cold-city hazard: a snow cannon on the ground that lobs a
-    // snowball straight up every fireInterval ms. If it clips Batman on
-    // the way up or falling back down he freezes for ~5 s (slow move,
-    // no jump). One-shot: a stomp or batarang from above knocks it out.
+    // Act-3 cold-city hazard: a chunky snow cannon on the ground that
+    // fires a burst of 3 snowballs straight up every fireInterval ms.
+    // Any of them clipping Batman freezes him for ~5 s (slow move, no
+    // jump). Indestructible: standing on top of the muzzle also
+    // freezes him — it's an ice trap, not a mushroom.
     snowCannons: snowCannons.map(c => ({
-      x: c.x * TILE, y: (c.y ?? groundY) * TILE - 30,
-      w: 28, h: 30,
-      fireInterval: c.interval ?? 2200,
+      x: c.x * TILE, y: (c.y ?? groundY) * TILE - 50,
+      w: 42, h: 50,
+      fireInterval: c.interval ?? 3200,
+      burstCount: c.burst ?? 3,
+      burstIndex: 0,
       nextFireAt: 0,
       alive: true,
     })),
