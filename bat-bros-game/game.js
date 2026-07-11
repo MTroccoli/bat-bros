@@ -4270,14 +4270,106 @@ function drawBeltSlot(x, y, w, h, kind, selected) {
   ctx.fillText('EQUIPADO', cx, y + h - 10);
 }
 
+// The accessory picker sub-screen. Same rich cards as the old two-card
+// choice: icon + name + 3 description lines, plus a highlight ring on
+// the selected one. Only unowned accessories are shown.
+const ACCESSORY_LINES = {
+  batarang: ['Arma arrojadiza', 'Derriba enemigos a distancia', 'NO controla el balanceo'],
+  batigarra: ['Herramienta de movilidad', 'Control total del balanceo', 'NO mata enemigos'],
+  armor:    ['Mejora la resistencia', 'Batman arranca siempre grande', 'Aguanta un golpe extra'],
+};
+
+function drawAccessoryCard(kind, x, y, selected) {
+  const W = 240, H = 260;
+  ctx.save();
+  if (selected) { ctx.shadowColor = 'rgba(255,209,102,0.55)'; ctx.shadowBlur = 16; }
+  ctx.fillStyle = '#0e1420'; ctx.fillRect(x, y, W, H);
+  ctx.restore();
+  ctx.strokeStyle = selected ? '#ffd166' : '#3a4664'; ctx.lineWidth = selected ? 3 : 2;
+  ctx.strokeRect(x, y, W, H);
+  // icon at the top of the card
+  ctx.save();
+  ctx.translate(x + W / 2, y + 92);
+  const c = accessoryColor(kind);
+  if (kind === 'batarang') {
+    ctx.fillStyle = c;
+    ctx.rotate(-0.3);
+    ctx.beginPath();
+    ctx.moveTo(-40, 0); ctx.quadraticCurveTo(-18, -17, -5, -12); ctx.lineTo(-4, -19);
+    ctx.lineTo(-1, -12); ctx.lineTo(1, -12); ctx.lineTo(4, -19); ctx.lineTo(5, -12);
+    ctx.quadraticCurveTo(18, -17, 40, 0); ctx.quadraticCurveTo(22, -1, 14, 7);
+    ctx.quadraticCurveTo(6, 1, 0, 9); ctx.quadraticCurveTo(-6, 1, -14, 7);
+    ctx.quadraticCurveTo(-22, -1, -40, 0); ctx.closePath(); ctx.fill();
+  } else if (kind === 'batigarra') {
+    ctx.fillStyle = '#6b7280'; ctx.fillRect(-30, -8, 40, 16);
+    ctx.fillStyle = '#171920'; ctx.fillRect(-20, 8, 12, 22);
+    ctx.strokeStyle = '#c9cdd6'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(10, 0); ctx.quadraticCurveTo(40, -26, 60, -40); ctx.stroke();
+    ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(60, -48); ctx.lineTo(60, -32); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(60, -47); ctx.quadraticCurveTo(48, -45, 50, -34); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(60, -47); ctx.quadraticCurveTo(72, -45, 70, -34); ctx.stroke();
+    ctx.lineCap = 'butt';
+  } else {
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(-38, -30); ctx.lineTo(38, -30); ctx.lineTo(34, 26);
+    ctx.lineTo(0, 40); ctx.lineTo(-34, 26); ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#7a2f22';
+    ctx.fillRect(-30, -12, 60, 4);
+    ctx.fillRect(-30, -2, 60, 4);
+    ctx.fillRect(-30, 8, 60, 4);
+    ctx.fillStyle = '#131722';
+    ctx.beginPath();
+    ctx.moveTo(-20, -20); ctx.lineTo(-6, -8); ctx.lineTo(-2, -14); ctx.lineTo(0, -8);
+    ctx.lineTo(2, -14); ctx.lineTo(6, -8); ctx.lineTo(20, -20);
+    ctx.lineTo(10, -4); ctx.lineTo(0, -2); ctx.lineTo(-10, -4);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+  ctx.fillStyle = c; ctx.font = 'bold 17px monospace'; ctx.textAlign = 'center';
+  ctx.fillText(accessoryIcon(kind) + ' ' + accessoryLabel(kind), x + W / 2, y + 168);
+  ctx.fillStyle = '#bfd0ea'; ctx.font = '11px monospace';
+  (ACCESSORY_LINES[kind] || []).forEach((line, j) => {
+    ctx.fillText(line, x + W / 2, y + 196 + j * 17);
+  });
+}
+
+function drawAccessoryPickerScreen(cv) {
+  ctx.fillStyle = 'rgba(2,4,10,0.9)';
+  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.fillStyle = '#ffd166'; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center';
+  ctx.fillText(`SLOT ${cv.slotSel + 1} — elegí un accesorio`, CANVAS_W / 2, 48);
+  ctx.fillStyle = '#9fb4d8'; ctx.font = '12px monospace';
+  ctx.fillText('Cada accesorio se equipa una sola vez', CANVAS_W / 2, 72);
+
+  const opts = availableAccessories();
+  const W = 240, gap = 20;
+  const totalW = opts.length * W + (opts.length - 1) * gap;
+  const startX = (CANVAS_W - totalW) / 2;
+  const cardY = 96;
+  opts.forEach((kind, k) => {
+    drawAccessoryCard(kind, startX + k * (W + gap), cardY, cv.weaponSel === k);
+  });
+
+  ctx.fillStyle = '#9fb4d8'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('◄ ►  cambiar accesorio      SALTO  cargar en el slot', CANVAS_W / 2, 420);
+}
+
 function drawChoiceScreen(now) {
   const cv = level.cave;
+  const step = cv.pickStep || 'slot';
+
+  // Accessory sub-menu takes over the whole screen so the descriptions
+  // read cleanly. The belt only shows during the slot-selection step.
+  if (step === 'accessory') { drawAccessoryPickerScreen(cv); return; }
+
   ctx.fillStyle = 'rgba(2,4,10,0.82)';
   ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
   ctx.fillStyle = '#ffd166'; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center';
   ctx.fillText('CINTURÓN DE BATMAN', CANVAS_W / 2, 44);
 
-  const step = cv.pickStep || 'slot';
   const empties = emptyBeltSlots();
   const contents = beltContents();
 
@@ -4291,38 +4383,13 @@ function drawChoiceScreen(now) {
   for (let i = 0; i < BELT_SLOTS; i++) {
     const x = startX + i * (slotW + gap);
     const kind = contents[i] || null;
-    const selected = step === 'slot' && cv.slotSel === i;
+    const selected = cv.slotSel === i;
     drawBeltSlot(x, slotY, slotW, slotH, kind, selected);
   }
 
-  // Hint line at the bottom, or the accessory sub-menu when step='accessory'
+  // Hint line at the bottom
   ctx.fillStyle = '#9fb4d8'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
-
-  if (step === 'accessory') {
-    // Sub-menu: pick which accessory fills the chosen empty slot. Shows
-    // every unowned item (batarang / batigarra / armor). When only one
-    // is left it auto-fills — see chooseCaveWeapon.
-    ctx.fillStyle = '#ffd166'; ctx.font = 'bold 16px monospace';
-    ctx.fillText(`Elegí el accesorio para el SLOT ${cv.slotSel + 1}`, CANVAS_W / 2, 340);
-    const opts = availableAccessories();
-    const btnW = 150, btnH = 42, spacing = 12;
-    const rowW = opts.length * btnW + (opts.length - 1) * spacing;
-    const rowX = (CANVAS_W - rowW) / 2;
-    opts.forEach((kind, k) => {
-      const bx = rowX + k * (btnW + spacing);
-      const sel = cv.weaponSel === k;
-      ctx.strokeStyle = sel ? '#ffd166' : '#3a4664';
-      ctx.lineWidth = sel ? 3 : 2;
-      ctx.fillStyle = sel ? 'rgba(255,209,102,0.08)' : '#0e1420';
-      ctx.fillRect(bx, 358, btnW, btnH);
-      ctx.strokeRect(bx, 358, btnW, btnH);
-      ctx.fillStyle = accessoryColor(kind);
-      ctx.font = 'bold 14px monospace';
-      ctx.fillText(accessoryIcon(kind) + ' ' + accessoryLabel(kind), bx + btnW / 2, 385);
-    });
-    ctx.fillStyle = '#9fb4d8'; ctx.font = '12px monospace';
-    ctx.fillText('◄ ►  cambiar accesorio      SALTO  cargar', CANVAS_W / 2, 425);
-  } else if (empties.length === 0) {
+  if (empties.length === 0) {
     ctx.fillStyle = '#9bffcf'; ctx.font = 'bold 14px monospace';
     ctx.fillText('CINTURÓN COMPLETO — pulsá SALTO para cerrar', CANVAS_W / 2, 360);
   } else {
