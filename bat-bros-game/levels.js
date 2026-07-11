@@ -478,137 +478,188 @@ LEVEL_SPECS.push({
   spawn: { x: 2, y: 22 },
 });
 
-// 3-2 — mixed Act-1/Act-2 climb up frozen dock rooftops. Warm-up
-// pyramid, a tall building with a grapple over, a big gable-house
-// stepped roof (Act-1 vocabulary), and one Robin-friendly chain of
-// small platforms at the end. Every height sits within Batman's
-// jump arc from an adjacent step.
+// 3-2 — SKYLINE CONGELADO. Torres altas del centro de Gotham
+// bajo el hielo (misma familia que 1-3: paredes escalonadas que
+// crecen hacia el pico y bajan del otro lado, mucho grapple).
+// Batman salta de techo en techo entre spires; el suelo tiene
+// pits + cañones, así que quedarse abajo es peligroso.
 LEVEL_SPECS.push({
   name: '3-2',
   frozen: true,
   width: 96, height: 30, groundY: 28,
-  pits: [[14, 16], [72, 76]],
+  pits: [[16, 20], [56, 60]],
   platforms: [
-    { x: 6, y: 26, w: 3 },
-    // warm-up pyramid before the first pit
-    { x: 8, y: 26, w: 2 },
-    { x: 10, y: 24, w: 3 },
-    // stepped rooftop past pit #1 — pushed right so big Batman has
-    // room to squeeze between the first snow cannon (x=18) and the
-    // first step. Was x=20/22/26; now x=22/24/28.
-    { x: 22, y: 25, w: 2 },
-    { x: 24, y: 23, w: 4 },
-    { x: 28, y: 25, w: 2 },
-    // twin-gable stepped roof (mid-air)
-    { x: 42, y: 25, w: 2 },
-    { x: 44, y: 23, w: 3 },
-    { x: 47, y: 21, w: 3 },
-    { x: 50, y: 23, w: 3 },
-    { x: 53, y: 25, w: 2 },
-    // ledge before the last pit
-    { x: 62, y: 25, w: 3 },
-    // Robin double-jump chain (Batman can also climb via ladder wall
-    // at x=80, but the small platforms let Robin show off)
-    { x: 80, y: 25, w: 2 },
-    { x: 84, y: 23, w: 2 },
-    { x: 88, y: 21, w: 3 },
+    // ledge on the way up to the first tower cluster
+    { x: 8, y: 25, w: 3 },
+    // small stepping stone between the two skylines (mid-air ledge
+    // reachable from the tower right before the 2nd pit)
+    { x: 42, y: 20, w: 3 },
+    // final ledge before landing zone
+    { x: 74, y: 24, w: 3 },
   ],
-  // One grapple-required tall wall (like 1-2's stepped skyline).
-  walls: [{ x: 32, w: 3, topRow: 20 }],
+  // Skyline: two clusters of buildings, each stepped up to a spire.
+  // First cluster peaks at row 12 (tower spike), then steps back
+  // down; second cluster peaks at row 8 (the tallest tower).
+  walls: [
+    // Cluster 1 — climbs 24 → 20 → 12 → 18
+    { x: 22, w: 3, topRow: 24 },
+    { x: 25, w: 3, topRow: 20 },
+    { x: 28, w: 4, topRow: 12 },
+    { x: 32, w: 3, topRow: 18 },
+    // Cluster 2 — climbs 22 → 16 → 8 → 14 → 20
+    { x: 46, w: 3, topRow: 22 },
+    { x: 49, w: 3, topRow: 16 },
+    { x: 63, w: 4, topRow: 8 },
+    { x: 67, w: 3, topRow: 14 },
+    { x: 70, w: 3, topRow: 20 },
+    // Terminal building
+    { x: 82, w: 4, topRow: 22 },
+  ],
   ladders: [
-    // ladders let Robin climb the tall wall without the grapple
-    { x: 32, topRow: 20, baseRow: 28 },
-    { x: 34, topRow: 20, baseRow: 28 },
+    // Robin can climb the tallest spire without a grapple
+    { x: 28, topRow: 12, baseRow: 28 },
+    { x: 63, topRow: 8, baseRow: 28 },
   ],
   houses: [],
-  // Only the swing anchor before the big pit remains — the wall is
-  // climbable via ladders and the twin-gable roof is a stair
-  // Batman can already hop up. So [33,17] and [46,18] were dropped
-  // as decoration; [66,18] stays because the 5-tile pit at 72-76
-  // is impossible to jump.
-  swingPoints: [[66, 18]],
-  coins: [
-    [5, 27], [18, 27], [56, 27], [68, 27],
-    [10, 23], [24, 22],
-    [45, 22], [47, 20], [48, 20], [50, 22],
-    [62, 24], [63, 24],
-    [80, 24], [84, 22], [88, 20],
-    [30, 19], [31, 19], [32, 19],
+  // Grapples to the peaks — the tall spires can't be reached
+  // otherwise; each step in the skyline gets its swing anchor.
+  swingPoints: [
+    [24, 22],   // helps clear the pit and reach the first cluster
+    [30, 10],   // spire 1 top
+    [46, 20],   // between clusters
+    [65, 6],    // spire 2 (tallest) top
+    [78, 18],   // final descent
   ],
-  // Opener pushed away from the spawn (tile 2) per the general
-  // "don't crowd the start" rule — was range [3, 10]. The rooftop
-  // helmet + walker at x=89 sat on the demolished house, so both
-  // came out with it.
+  coins: [
+    [4, 27], [6, 27], [14, 27],
+    [9, 24], [10, 24],
+    [23, 23], [26, 19], [29, 11], [30, 11],
+    [40, 26], [42, 19], [43, 19],
+    [47, 21], [50, 15],
+    [63, 7], [64, 7], [65, 7],
+    [68, 13], [70, 19],
+    [75, 23], [82, 21],
+    [90, 27], [92, 27],
+  ],
   thugs: [
+    // Opener pushed away from spawn (tile 2) per the general rule
     { x: 12, y: 28, range: [10, 14], frozen: true },
-    { x: 24, y: 23, range: [24, 27], helmet: true, frozen: true },
-    { x: 26, y: 28, range: [22, 30], frozen: true },
-    { x: 38, y: 28, range: [36, 42], frozen: true },
-    { x: 47, y: 21, range: [47, 49], helmet: true, frozen: true },
-    { x: 56, y: 28, range: [54, 62], frozen: true },
-    { x: 65, y: 28, range: [62, 71], frozen: true },
-    { x: 80, y: 25, range: [80, 81], helmet: true, frozen: true },
-    { x: 92, y: 28, range: [90, 95], frozen: true },
+    { x: 26, y: 20, range: [25, 27], helmet: true, frozen: true },
+    { x: 29, y: 12, range: [28, 31], helmet: true, frozen: true },
+    { x: 40, y: 28, range: [38, 44], frozen: true },
+    { x: 50, y: 16, range: [49, 51], frozen: true },
+    { x: 64, y: 8, range: [63, 66], helmet: true, frozen: true },
+    { x: 70, y: 20, range: [70, 72], frozen: true },
+    { x: 84, y: 22, range: [82, 85], frozen: true },
+    { x: 90, y: 28, range: [88, 94], frozen: true },
   ],
   snowCannons: [
-    { x: 18, interval: 2400 },
-    { x: 58, interval: 2600 },
+    { x: 36, interval: 2600 },
+    { x: 78, interval: 2400 },
   ],
   birds: [
-    { x: 30, y: 22, range: [26, 36], frozen: true },
-    { x: 66, y: 20, range: [60, 72], frozen: true },
+    { x: 36, y: 14, range: [30, 44], frozen: true },
+    { x: 74, y: 12, range: [66, 80], frozen: true },
   ],
-  bats: [[47, 20]],
+  // Bat power-up on the tallest spire — reaching it is the
+  // checkpoint for the second half of the skyline.
+  bats: [[65, 7]],
   spawn: { x: 2, y: 26 },
 });
 
-// 3-3 — frozen docks. Wooden pier is skipped (kept indoor-ish feel);
-// gable roofs plus a stack of thugs to stomp/batarang.
+// 3-3 — MUELLES CONGELADOS. Motivo puerto: galpones bajos,
+// grúas con contenedores oscilando sobre el agua helada, dos
+// balsas atrapadas en el hielo que van y vienen por las brechas.
+// Reutiliza el vocabulario de 2-2 (dock + boats + cranes) pero
+// congelado y con cañones alineados al pier.
 LEVEL_SPECS.push({
   name: '3-3',
   frozen: true,
-  width: 70, height: 34, groundY: 32,
-  pits: [[14, 16], [24, 26]],
+  dock: true,
+  width: 108, height: 22, groundY: 19,
+  // Water gaps between pier sections — the boats sail these.
+  pits: [[30, 46], [72, 90]],
   platforms: [
-    { x: 8, y: 29, w: 3 },
-    { x: 20, y: 29, w: 3 },
+    // small crate stack on the opening pier
+    { x: 10, y: 17, w: 2 },
+    // pier landing between the two water gaps
+    { x: 62, y: 17, w: 3 },
   ],
+  // Warehouses along the pier: short at the start, taller at the
+  // container yard mid-level, and one last shed at the end.
   walls: [
-    { x: 30, w: 4, topRow: 26 },
-    { x: 34, w: 4, topRow: 20 },
-    { x: 38, w: 10, topRow: 14 },
+    { x: 16, w: 3, topRow: 15 },   // first warehouse
+    { x: 24, w: 3, topRow: 13 },   // taller warehouse
+    { x: 50, w: 4, topRow: 14 },   // container yard building
+    { x: 66, w: 3, topRow: 15 },   // pre-water shed
+    { x: 96, w: 4, topRow: 12 },   // end warehouse
   ],
-  houses: [
-    { x: 48, w: 6, topRow: 26, baseRow: 32, style: 'gable' },
-    { x: 58, w: 6, topRow: 24, baseRow: 32, style: 'gable' },
+  ladders: [
+    { x: 15, topRow: 15, baseRow: 19 },
+    { x: 23, topRow: 13, baseRow: 19 },
+    { x: 27, topRow: 13, baseRow: 19 },
+    { x: 49, topRow: 14, baseRow: 19 },
+    { x: 65, topRow: 15, baseRow: 19 },
+    { x: 95, topRow: 12, baseRow: 19 },
   ],
-  swingPoints: [[31, 24], [35, 18], [39, 12]],
+  houses: [],
+  // Two cargo cranes swing containers over the water so a well-timed
+  // stomp or grapple hop crosses the gap on top of the load.
+  cranes: [
+    { towerX: 27, armY: 3, armEndX: 38, ropeLen: 10, cargoW: 3, speed: 0.0012, amplitude: 0.42 },
+    { towerX: 89, armY: 3, armEndX: 80, ropeLen: 11, cargoW: 3, speed: 0.0010, amplitude: 0.45 },
+  ],
+  // Drifting rafts frozen into moving ice sheets — same class as
+  // 2-1's dock raft, one per water gap.
+  boats: [
+    { x: 36, y: 19, w: 3, range: [31, 44], speed: 2.1 },
+    { x: 78, y: 19, w: 3, range: [73, 88], speed: 2.4 },
+  ],
+  swingPoints: [
+    // Anchor before pit #1 in case the crane cargo is on the wrong side
+    [28, 11],
+    // Anchor mid-crossing for pit #1
+    [42, 10],
+    // Anchor before pit #2
+    [70, 10],
+    // Anchor across the final water gap
+    [88, 9],
+  ],
   coins: [
-    [9, 28], [21, 28],
-    [31, 25], [35, 19], [39, 13],
-    [50, 25], [60, 23],
-    [5, 31], [19, 31],
+    [4, 18], [7, 18], [12, 18],
+    [17, 14], [24, 12], [25, 12],
+    [37, 18], [40, 18],   // sit on boat #1
+    [51, 13], [52, 13],
+    [63, 16],
+    [79, 18], [82, 18],   // sit on boat #2
+    [97, 11], [100, 18], [104, 18],
   ],
   thugs: [
-    { x: 5, y: 32, range: [3, 9], frozen: true },
-    { x: 18, y: 32, range: [17, 23], frozen: true },
-    { x: 28, y: 32, range: [27, 29], helmet: true, frozen: true },
-    { x: 35, y: 20, range: [34, 37], frozen: true },
-    { x: 42, y: 14, range: [40, 47], helmet: true, frozen: true },
-    { x: 50, y: 26, range: [48, 53], frozen: true },
-    { x: 60, y: 24, range: [58, 63], frozen: true },
+    // Opener with a 10-tile buffer from spawn (tile 2)
+    { x: 12, y: 19, range: [10, 14], frozen: true },
+    { x: 18, y: 15, range: [17, 19], helmet: true, frozen: true },
+    { x: 25, y: 13, range: [24, 27], frozen: true },
+    { x: 52, y: 14, range: [50, 54], helmet: true, frozen: true },
+    { x: 63, y: 19, range: [60, 66], frozen: true },
+    { x: 68, y: 15, range: [67, 69], helmet: true, frozen: true },
+    { x: 92, y: 19, range: [90, 94], frozen: true },
+    { x: 97, y: 12, range: [96, 100], helmet: true, frozen: true },
+    { x: 103, y: 19, range: [100, 107], frozen: true },
   ],
   snowCannons: [
-    { x: 12, interval: 2500 },
-    { x: 22, interval: 2900 },
-    { x: 52, interval: 2300 },
+    // Cannon at the start of the pier
+    { x: 6, interval: 2800 },
+    // Cannon at the container yard entrance
+    { x: 56, interval: 2500 },
   ],
   birds: [
-    { x: 20, y: 24, range: [15, 28], frozen: true },
-    { x: 50, y: 18, range: [45, 55], frozen: true },
+    { x: 38, y: 10, range: [30, 46], frozen: true },
+    { x: 80, y: 8, range: [72, 90], frozen: true },
   ],
-  bats: [],
-  spawn: { x: 2, y: 30 },
+  // Checkpoint bat on the mid-level pier — reaching it is the
+  // waypoint that saves Batman before the second crane crossing.
+  bats: [[62, 16]],
+  spawn: { x: 2, y: 17 },
 });
 
 const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);
