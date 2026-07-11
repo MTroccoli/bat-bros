@@ -3948,82 +3948,169 @@ function drawTwoFacePortrait(ctx) {
   ctx.beginPath(); ctx.moveTo(75, 0); ctx.lineTo(75, 170); ctx.stroke();
 }
 
-// Mr. Freeze mug-shot for the Batcomputer expediente: chrome dome,
-// blue-tinted skin, orange cryo goggles, ridged neck coupling on the
-// life-support suit. Same 150 x 170 canvas as drawTwoFacePortrait so
-// the expediente layout doesn't need to change.
-function drawFreezePortrait(ctx) {
-  // suit/backplate
-  ctx.fillStyle = '#4a5b78'; ctx.fillRect(0, 20, 150, 150);
-  ctx.fillStyle = '#2c3a52'; ctx.fillRect(0, 20, 150, 10);
-  // shoulder pauldrons
-  ctx.fillStyle = '#38495f';
+// Penguin mug-shot for the Batcomputer expediente. Top hat, monocle,
+// long pointy nose, purple bowtie, umbrella tucked over the shoulder.
+// Same 150 x 170 canvas as drawTwoFacePortrait so the expediente
+// layout doesn't need to change.
+function drawPenguinPortrait(ctx) {
+  // Backplate — dark curtain of the Iceberg Lounge with purple accent
+  ctx.fillStyle = '#181420'; ctx.fillRect(0, 20, 150, 150);
+  ctx.fillStyle = '#241a30'; ctx.fillRect(0, 20, 150, 10);
+  ctx.fillStyle = 'rgba(90,40,120,0.35)';
+  for (let i = 0; i < 4; i++) ctx.fillRect(6 + i * 40, 26, 4, 138);
+
+  // Tuxedo — black jacket with tails, wider at the shoulders
+  ctx.fillStyle = '#0e0e14';
   ctx.beginPath();
-  ctx.moveTo(4, 128); ctx.lineTo(28, 96); ctx.lineTo(62, 108); ctx.lineTo(62, 170); ctx.lineTo(4, 170); ctx.closePath(); ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(146, 128); ctx.lineTo(122, 96); ctx.lineTo(88, 108); ctx.lineTo(88, 170); ctx.lineTo(146, 170); ctx.closePath(); ctx.fill();
-  // pale ice-blue face
-  ctx.fillStyle = '#c9dff0'; ctx.fillRect(38, 22, 74, 82);
-  // rounded jaw
-  ctx.beginPath();
-  ctx.moveTo(38, 90); ctx.lineTo(38, 104); ctx.quadraticCurveTo(75, 118, 112, 104); ctx.lineTo(112, 90); ctx.closePath();
+  ctx.moveTo(20, 170); ctx.lineTo(28, 118); ctx.lineTo(60, 108);
+  ctx.lineTo(90, 108); ctx.lineTo(122, 118); ctx.lineTo(130, 170);
+  ctx.closePath();
   ctx.fill();
-  // chrome dome + rivets
-  ctx.fillStyle = '#dbe4f0';
+  // Lapels — lighter satin
+  ctx.fillStyle = '#1e1e28';
   ctx.beginPath();
-  ctx.ellipse(75, 24, 40, 24, 0, Math.PI, Math.PI * 2);
+  ctx.moveTo(60, 108); ctx.lineTo(50, 128); ctx.lineTo(68, 128);
+  ctx.lineTo(75, 118); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(90, 108); ctx.lineTo(100, 128); ctx.lineTo(82, 128);
+  ctx.lineTo(75, 118); ctx.closePath(); ctx.fill();
+
+  // White shirt showing between the lapels
+  ctx.fillStyle = '#e8e8e8';
+  ctx.beginPath();
+  ctx.moveTo(68, 120); ctx.lineTo(75, 138); ctx.lineTo(82, 120);
+  ctx.closePath(); ctx.fill();
+
+  // Purple bowtie
+  ctx.fillStyle = '#7a4cb2';
+  ctx.beginPath();
+  ctx.moveTo(60, 110); ctx.lineTo(75, 118); ctx.lineTo(90, 110);
+  ctx.lineTo(88, 126); ctx.lineTo(75, 120); ctx.lineTo(62, 126);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#5a3488';
+  ctx.beginPath();
+  ctx.arc(75, 118, 2.5, 0, Math.PI * 2); ctx.fill();
+
+  // Head — pale chubby oval
+  ctx.fillStyle = '#e8b88a';
+  ctx.beginPath();
+  ctx.ellipse(75, 70, 34, 40, 0, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(80,110,140,0.9)';
+  // Chubby double chin
+  ctx.beginPath();
+  ctx.ellipse(75, 100, 28, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Fringe of stringy black hair under the hat brim
+  ctx.fillStyle = '#0e0e14';
+  ctx.beginPath();
+  ctx.moveTo(42, 48); ctx.lineTo(46, 68); ctx.lineTo(50, 50); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(108, 48); ctx.lineTo(104, 68); ctx.lineTo(100, 50); ctx.closePath(); ctx.fill();
+
+  // Top hat — black crown + gray band + wide brim
+  ctx.fillStyle = '#0e0e14';
+  ctx.fillRect(38, 8, 74, 32);
+  ctx.fillStyle = '#4a4a5a';
+  ctx.fillRect(38, 32, 74, 4);
+  ctx.fillStyle = '#1a1a24';
+  ctx.beginPath();
+  ctx.ellipse(75, 42, 46, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Hat sheen
+  ctx.fillStyle = '#2a2a34';
+  ctx.fillRect(44, 12, 6, 22);
+
+  // Long pointy nose — red/orange, beak-like
+  ctx.fillStyle = '#c95a3a';
+  ctx.beginPath();
+  ctx.moveTo(72, 68); ctx.lineTo(56, 86); ctx.lineTo(74, 82); ctx.closePath();
+  ctx.fill();
+  // Nose highlight
+  ctx.fillStyle = '#e07a52';
+  ctx.beginPath();
+  ctx.moveTo(72, 68); ctx.lineTo(64, 78); ctx.lineTo(73, 76); ctx.closePath();
+  ctx.fill();
+
+  // Eyes — small mean eyes
+  ctx.fillStyle = '#0a0a10';
+  ctx.beginPath(); ctx.arc(62, 64, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(88, 64, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(60.5, 62, 1.5, 1.5);
+  ctx.fillRect(86.5, 62, 1.5, 1.5);
+
+  // Monocle around the right eye + chain
+  ctx.strokeStyle = '#b8b090';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(88, 64, 10, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(88, 64, 8, Math.PI * 1.1, Math.PI * 1.55); ctx.stroke();
+  ctx.strokeStyle = '#b8b090';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(98, 64); ctx.quadraticCurveTo(104, 78, 112, 90); ctx.stroke();
+
+  // Cigarette holder — thin black stick with a yellow ember
+  ctx.fillStyle = '#0a0a10';
+  ctx.fillRect(78, 90, 22, 2);
+  ctx.fillStyle = '#f6d743';
+  ctx.fillRect(98, 89, 4, 3);
+  // Smoke wisp
+  ctx.strokeStyle = 'rgba(220,220,240,0.55)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(103, 88); ctx.quadraticCurveTo(108, 78, 108, 68); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(105, 74); ctx.quadraticCurveTo(112, 68, 114, 60); ctx.stroke();
+
+  // Snarl of a tiny mouth under the nose
+  ctx.strokeStyle = '#7a2a1a';
   ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(38, 24); ctx.lineTo(112, 24); ctx.stroke();
-  ctx.fillStyle = '#8a99ac';
-  for (let i = 0; i < 5; i++) {
-    ctx.beginPath(); ctx.arc(46 + i * 14, 20, 1.6, 0, Math.PI * 2); ctx.fill();
-  }
-  // frost patches along the cheeks + brow
-  ctx.strokeStyle = 'rgba(240,250,255,0.75)';
+  ctx.beginPath();
+  ctx.moveTo(66, 92); ctx.lineTo(78, 90); ctx.stroke();
+
+  // Umbrella — tucked over left shoulder, pointed spike + purple canopy
+  // Canopy
+  ctx.fillStyle = '#3d1f5c';
+  ctx.beginPath();
+  ctx.moveTo(28, 130); ctx.lineTo(4, 146); ctx.lineTo(4, 156); ctx.lineTo(26, 148);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#7a4cb2';
+  ctx.beginPath();
+  ctx.moveTo(28, 130); ctx.lineTo(12, 142); ctx.lineTo(18, 146); ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#a97fd8';
   ctx.lineWidth = 1;
-  for (let i = 0; i < 6; i++) {
-    const cxp = 42 + hash01(i * 3.1) * 66, cyp = 40 + hash01(i * 5.7) * 50;
+  for (let i = 0; i < 3; i++) {
     ctx.beginPath();
-    for (let k = 0; k < 6; k++) {
-      const ang = k * Math.PI / 3;
-      ctx.moveTo(cxp, cyp);
-      ctx.lineTo(cxp + Math.cos(ang) * 4, cyp + Math.sin(ang) * 4);
-    }
+    ctx.moveTo(28 - i * 4, 132);
+    ctx.lineTo(10 - i * 3, 148);
     ctx.stroke();
   }
-  // cryo goggles — orange glow behind a dark strap
-  ctx.fillStyle = '#0e1420'; ctx.fillRect(34, 52, 84, 16);
-  ctx.fillStyle = '#ff6b1a'; ctx.fillRect(40, 55, 30, 10);
-  ctx.fillStyle = '#ff6b1a'; ctx.fillRect(80, 55, 30, 10);
-  ctx.fillStyle = '#ffd166'; ctx.fillRect(48, 57, 12, 6);
-  ctx.fillStyle = '#ffd166'; ctx.fillRect(88, 57, 12, 6);
-  // stern mouth
-  ctx.fillStyle = '#4a637a'; ctx.fillRect(58, 92, 34, 4);
-  // life-support neck ring with tubes
-  ctx.fillStyle = '#8a99ac'; ctx.fillRect(52, 100, 46, 12);
-  ctx.strokeStyle = '#1a222e'; ctx.lineWidth = 1;
-  for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(52 + i * 7.5, 100); ctx.lineTo(52 + i * 7.5, 112); ctx.stroke(); }
-  // chest cryo canister with frost
-  ctx.fillStyle = '#243244'; ctx.fillRect(56, 120, 38, 44);
-  ctx.fillStyle = '#3a4c68'; ctx.fillRect(56, 120, 38, 6);
-  ctx.fillStyle = '#7fb5c8'; ctx.fillRect(60, 130, 30, 24);
-  ctx.strokeStyle = 'rgba(220,240,255,0.65)';
+  // Sharpened spike tip
+  ctx.fillStyle = '#c9dff0';
+  ctx.beginPath();
+  ctx.moveTo(4, 148); ctx.lineTo(-6, 152); ctx.lineTo(4, 156);
+  ctx.closePath(); ctx.fill();
+  // Handle (crook)
+  ctx.strokeStyle = '#0e0e14';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(28, 130); ctx.quadraticCurveTo(38, 138, 34, 152);
+  ctx.stroke();
+  ctx.strokeStyle = '#3a3a44';
   ctx.lineWidth = 1;
-  for (let i = 0; i < 4; i++) {
-    ctx.beginPath();
-    ctx.moveTo(60, 132 + i * 6);
-    ctx.lineTo(90, 132 + i * 6);
-    ctx.stroke();
-  }
-  ctx.fillStyle = '#ff5e5e';
-  ctx.beginPath(); ctx.arc(75, 152, 3, 0, Math.PI * 2); ctx.fill();
-  // hairline crack across the dome for character
-  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-  ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(50, 8); ctx.lineTo(58, 20); ctx.lineTo(66, 14); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(29, 131); ctx.quadraticCurveTo(37, 138, 33, 151);
+  ctx.stroke();
+
 }
+// Back-compat alias so existing callers ("drawFreezePortrait") keep
+// working while we swap the villain text; will be renamed everywhere
+// in a follow-up.
+const drawFreezePortrait = drawPenguinPortrait;
 
 function drawCaveComputer(cx, plateauScreenY) {
   const scrW = 230, scrH = 138;
@@ -4045,20 +4132,20 @@ function drawCaveComputer(cx, plateauScreenY) {
   const tx = x + 118;
   ctx.textAlign = 'left';
   if (postTwoFaceReturn) {
-    // Post-2-4: the desktop switches to the current villain — Mr.
-    // Freeze — with the frozen-Gotham file next to his mug shot.
+    // Post-2-4: the desktop switches to the current villain — El
+    // Pingüino — with the Iceberg Lounge file next to his mug shot.
     ctx.save();
     ctx.translate(x + 16, y + 16); ctx.scale(0.6, 0.6);
-    drawFreezePortrait(ctx);
+    drawPenguinPortrait(ctx);
     ctx.restore();
-    ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 10px monospace'; ctx.fillText('VICTOR FRIES', tx, y + 30);
+    ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 10px monospace'; ctx.fillText('O. COBBLEPOT', tx, y + 30);
     ctx.font = '9px monospace';
-    ctx.fillStyle = '#ff5e5e'; ctx.fillText('ALIAS: Mr. FREEZE', tx, y + 46);
+    ctx.fillStyle = '#ff5e5e'; ctx.fillText('ALIAS: PINGÜINO', tx, y + 46);
     ctx.fillStyle = '#ffd166'; ctx.fillText('GOTHAM: -40°C', tx, y + 62);
-    ctx.fillStyle = '#29d985'; ctx.fillText('IR A: CENTRO', tx, y + 78);
-    ctx.fillStyle = '#7fb5c8'; ctx.fillRect(tx, y + 92, 62, 16);
-    ctx.fillStyle = '#0b2438'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
-    ctx.fillText('CONGELADO', tx + 31, y + 103);
+    ctx.fillStyle = '#29d985'; ctx.fillText('IR A: ICEBERG', tx, y + 78);
+    ctx.fillStyle = '#7a4cb2'; ctx.fillRect(tx, y + 92, 62, 16);
+    ctx.fillStyle = '#e8e8e8'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('SE BUSCA', tx + 31, y + 103);
     ctx.textAlign = 'left';
     return;
   }
@@ -4211,7 +4298,7 @@ function drawFrozenNewsFeed(sx, sy, sw, sh, now) {
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 14px monospace';
   ctx.textAlign = 'left';
-  const crawl = 'ALERTA — GOTHAM CONGELADA — Mr. FREEZE avanza sobre la ciudad — temperatura -40°C — POLICÍA COLAPSADA — ';
+  const crawl = 'ALERTA — GOTHAM BAJO HIELO — EL PINGÜINO tomó el ICEBERG LOUNGE — paraguas-cañón a -40°C — POLICÍA COLAPSADA — ';
   const gw = 9, cyc = crawl.length * gw;
   const off = (now / 30) % cyc;
   ctx.fillText(crawl + crawl, sx + 8 - off, barY + 18);
@@ -4230,7 +4317,8 @@ function drawFrozenNewsFeed(sx, sy, sw, sh, now) {
   ctx.strokeRect(sx, sy, sw, sh);
 }
 
-// State 'freezeExpediente' — the Mr. Freeze mug-shot + info page shown
+// State 'freezeExpediente' — kept for internal compatibility; now
+// renders the Penguin mug-shot + info page shown
 // AFTER the news screen when Batman opens the Batcomputer post-2-4.
 function drawFreezeExpedienteScreen(now) {
   ctx.fillStyle = 'rgba(2,4,10,0.72)';
@@ -4243,21 +4331,21 @@ function drawFreezeExpedienteScreen(now) {
   ctx.fillStyle = '#061826'; ctx.fillRect(x + 8, y + 8, w - 16, h - 16);
   ctx.fillStyle = '#0a2438'; ctx.fillRect(x + 8, y + 8, w - 16, 24);
   ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'left';
-  ctx.fillText('BATCOMPUTADORA — EXPEDIENTE: Mr. FREEZE', x + 18, y + 25);
+  ctx.fillText('BATCOMPUTADORA — EXPEDIENTE: PINGÜINO', x + 18, y + 25);
 
-  // Mr. Freeze portrait
+  // Penguin portrait
   ctx.save();
   ctx.translate(x + 30, y + 54); ctx.scale(0.86, 0.86);
-  drawFreezePortrait(ctx);
+  drawPenguinPortrait(ctx);
   ctx.restore();
 
   const lines = [
-    ['> IDENTIDAD: DR. VICTOR FRIES — CIENTÍFICO', '#bfe3ff'],
-    ['> ALIAS: Mr. FREEZE — TRAJE CRIOGÉNICO', '#bfe3ff'],
-    ['> M.O.: CAÑÓN QUE CONGELA TODO A -40°C', '#ff5e5e'],
-    ['> DEBILIDAD: NECESITA FRÍO PARA VIVIR', '#bfe3ff'],
+    ['> IDENTIDAD: OSWALD COBBLEPOT — GÁNSTER', '#bfe3ff'],
+    ['> ALIAS: PINGÜINO — PARAGUAS ARMADO', '#bfe3ff'],
+    ['> M.O.: PARAGUAS-CAÑÓN QUE CONGELA GOTHAM', '#ff5e5e'],
+    ['> BASE: ICEBERG LOUNGE — BÓVEDA A -40°C', '#bfe3ff'],
     ['> COMPAÑERO: ROBIN — DÚO EN GOTHAM', '#ffd166'],
-    ['► RUTA: BATICUEVA → GOTHAM · ACTO 3', '#29d985'],
+    ['► RUTA: BATICUEVA → ICEBERG · ACTO 3', '#29d985'],
   ];
   ctx.font = '12px monospace'; ctx.textAlign = 'left';
   lines.forEach(([txt, col], i) => { ctx.fillStyle = col; ctx.fillText(txt, x + 190, y + 66 + i * 26); });
@@ -7480,7 +7568,7 @@ function drawAlfredNewsScene(now) {
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 12px monospace';
   ctx.textAlign = 'left';
-  const crawl = 'ALERTA — GOTHAM CONGELADA — Mr. FREEZE avanza sobre la ciudad — temperatura -40°C — ';
+  const crawl = 'ALERTA — GOTHAM BAJO HIELO — EL PINGÜINO tomó el ICEBERG LOUNGE — temperatura -40°C — ';
   const glyphW = 8;
   const cycleW = crawl.length * glyphW;
   const offset = (t / 30) % cycleW;
@@ -7527,7 +7615,7 @@ function drawAlfredNewsScene(now) {
   ctx.font = '12px monospace';
   const line = t < 3200
     ? '—¿Han visto las noticias, señores?'
-    : '—Gotham se congela. Mr. Freeze está sembrando el pánico.';
+    : '—Gotham se congela. El Pingüino tomó el Iceberg Lounge.';
   ctx.fillText(line, CANVAS_W / 2, boxY2 + 46);
   ctx.textAlign = 'left';
 }
@@ -7540,7 +7628,7 @@ function drawAlfredDialog(now) {
   const lines = [
     ['ALFRED', '—¿Han visto las noticias, señores?'],
     ['ALFRED', '—Gotham amaneció bajo un manto de hielo.'],
-    ['ALFRED', '—Mr. Freeze salió del Arkham y congela lo que toca.'],
+    ['ALFRED', '—El Pingüino se atrincheró en el Iceberg Lounge.'],
     ['ALFRED', '—A la Batcomputadora — habrá que preparar la respuesta.'],
   ];
   const [who, text] = lines[Math.min(page, lines.length - 1)];

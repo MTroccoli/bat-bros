@@ -69,8 +69,59 @@ doc.**
   an ARMOR upgrade (`armored = true`, spawn always big).
 - Act 3 exit from CUEVA jumps to `3-1` (NOT the next LEVEL_SPECS index,
   because CUEVA is stored between Acts 1 and 2 in the array).
-- Act 3 boss: **Mr. Freeze** (not implemented yet; frozen levels
-  and TV/expediente/portrait are hooked to him).
+- Act 3 boss: **El Pingüino** (Oswald Cobblepot). Not implemented yet
+  in a level; the frozen-Gotham theme is reframed as HIS work — he
+  stole cryo-tech and mounted it on umbrella-cannons (the existing
+  `snowCannons`) plus armed his henchmen (frozen thugs). Batcomputer
+  portrait, expediente, TV crawl, and Alfred dialogs already point at
+  him.
+
+### Penguin fight — planned mechanics (level `3-4`, indoor Iceberg Lounge)
+Arena: gilded ballroom of the Iceberg Lounge with mirrored columns,
+a checkered dance floor with icy patches (slippery physics), and two
+side plateaus. 5 HP. Attacks refuse to overlap; only the current
+phase's moveset is active.
+
+- **Phase 1 (HP 5–4) — Umbrella gunslinger**
+  - Waddles left/right at half Bane's speed along the ground.
+  - Every ~1.8 s fires a 3-shot spread from the umbrella (short-range
+    horizontal projectiles that arc slightly, purple with a spark).
+  - Every ~4 s lobs a "bomb-egg" (arced projectile that explodes on
+    impact, ground-only shockwave 40 px).
+  - Damaged by a dive-stomp from above (`player.vy > 0` and feet
+    within `STOMP_TOLERANCE` of his top). Umbrella spread cannot be
+    stomped mid-flight.
+
+- **Phase 2 (HP 3–2) — Helicopter umbrella**
+  - Opens the umbrella and lifts to ceiling level. Glides left/right
+    at ~1.7 px/frame.
+  - Every ~2.5 s drops a **waddling penguin minion** (16×18 sprite,
+    walks toward Batman on the ground, explodes after 3 s with a
+    small radial shockwave). Batman clears them with a stomp,
+    batarang, or by putting distance between them before the fuse.
+  - Damaged by a batarang while he's mid-glide, OR by dive-stomping
+    when he descends briefly (~1 s every 6 s) to reload.
+
+- **Phase 3 (HP 1) — Umbrella-blade rage**
+  - Deploys a bladed umbrella-spike and spins across the arena for
+    ~3 s (invulnerable, moves at ~4.5 px/frame). Contact damages.
+  - After the spin, he's dizzy for ~1 s (staggered, no attacks).
+    Batman lands the killing dive-stomp during the stagger window.
+  - If Batman doesn't finish in the stagger, the spin repeats until
+    someone lands the hit or Batman falls.
+
+- **Minions (bomb-penguins)**: small (16×18) waddling sprites — thin
+  black body, white belly, small orange feet, bomb strapped to the
+  back with a lit sparky wick. Speed 1.4 px/frame. Fuse 3 s, explosion
+  radius 40 px, one-hit kill on any character in the radius. Stompable,
+  batarangable, and shattered by a snowball from a friendly cannon (yes
+  — Batman can bait one of Penguin's own snowballs into a minion).
+
+- **Skin (portrait): drawPenguinPortrait**. Body sprite for the
+  boss level should follow Bane's proportions — pear-shaped 32×46,
+  black tuxedo, white shirt triangle, purple bowtie, long red nose,
+  monocle, top hat, umbrella held either as a shotgun (phase 1),
+  helicopter blade (phase 2), or bladed spike (phase 3).
 
 ### Co-op (Act 3)
 - Batman + Robin co-exist. Only ONE is on screen at a time
