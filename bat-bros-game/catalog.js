@@ -122,6 +122,19 @@ const TWOFACE_BULLET_COUNT = 3;
 const TWOFACE_BULLET_INTERVAL = 900;
 const TWOFACE_BULLET_SPEED = 3.4;
 
+// --- Mr. Freeze (Act 3 boss) ---
+// The fight is about BREAKING THE MACHINE, not killing Freeze. He's frozen
+// inside a gothic cryo-reactor and is invulnerable. The reactor vents
+// through cooling valves; jam every valve (dive-stomp while it's exposed)
+// and the core overheats — the ice melts and Freeze drops, defeated.
+const FREEZE_VENT_INTERVAL = 3600;   // gap between valve-venting cycles
+const FREEZE_VENT_WINDOW = 3200;     // how long a valve stays exposed / jammable
+const FREEZE_BEAM_TELEGRAPH = 700;   // cold-gun charge-up before firing
+const FREEZE_BEAM_GAP = 420;         // between the balls of one cold-gun burst
+const FREEZE_HIT_FLASH_MS = 600;     // valve flash after a jam
+const FREEZE_MELT_MS = 2400;         // overload -> melt animation before the level completes
+const FREEZE_DEFAULT_VALVES = 3;
+
 // ---------------------------------------------------------------
 // Deterministic hash: sin-based, returns 0..1
 // ---------------------------------------------------------------
@@ -137,7 +150,7 @@ function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
           boats = [], cranes = [], snowCannons = [], spawn, name, indoor = false, dock = false, frozen = false,
-          bane = null, cave = null, twoface = null } = spec;
+          bane = null, cave = null, twoface = null, mrfreeze = null } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
 
@@ -341,6 +354,37 @@ function buildLevel(spec) {
           hitUntil: 0,
           drowned: false,
         },
+      };
+    })() : null,
+    // Mr. Freeze reactor. Freeze is frozen inside the core and invulnerable;
+    // the fight targets the cooling VALVES. Each valve sits just above the
+    // reactor's top face so a dive-stomp from a perch above registers, like
+    // Bane's head. Jam them all to overheat the core.
+    mrfreeze: mrfreeze ? (() => {
+      const reactor = mrfreeze.reactor || { x: 9, w: 14, topRow: 8 };
+      const topY = reactor.topRow * TILE;
+      const cols = mrfreeze.valveCols || [
+        reactor.x + 1, reactor.x + reactor.w / 2 - 0.5, reactor.x + reactor.w - 2,
+      ];
+      const valveW = 42, valveH = 26;
+      const valves = cols.map(c => ({
+        cx: c * TILE + TILE / 2,
+        x: c * TILE + TILE / 2 - valveW / 2,
+        y: topY - valveH + 4,          // pokes just above the reactor top
+        w: valveW, h: valveH,
+        jammed: false, hitUntil: 0,
+      }));
+      return {
+        reactorX: reactor.x * TILE, reactorY: topY,
+        reactorW: reactor.w * TILE, reactorH: (groundY - reactor.topRow) * TILE,
+        coreX: (reactor.x + reactor.w / 2) * TILE,
+        coreY: topY + (groundY - reactor.topRow) * TILE * 0.45,
+        valves,
+        maxValves: valves.length,
+        state: 'idle',               // idle | fight | overload | dead
+        exposedIdx: -1, exposedUntil: 0, nextVentAt: 0,
+        beamUntil: 0, beamIdx: 0, nextBeamAt: 0,
+        temp: 0, deadAt: 0, meltStart: 0,
       };
     })() : null,
     // gargoyle perches are only meaningful in the Bane warehouse fight

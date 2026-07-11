@@ -662,4 +662,47 @@ LEVEL_SPECS.push({
   spawn: { x: 2, y: 17 },
 });
 
+// 3-4 — MR. FREEZE: EL NÚCLEO. Sala gótica congelada. Freeze está
+// suspendido dentro de un reactor criogénico en el centro, invulnerable.
+// El reactor ventila por 3 válvulas de refrigeración: Batman trepa a una
+// cornisa y cae en picada sobre la válvula EXPUESTA (la que brilla) para
+// trabarla. Trabadas las 3, el núcleo se sobrecalienta y Freeze se
+// derrite. Dos cañones de hielo en el piso y el rayo frío de Freeze
+// castigan a quien se queda abajo. Piso resbaladizo (frozen).
+//
+// Geometría (mirror de la arena de Bane): reactor sólido cols 9-22
+// (rows 8-12), su cara superior (row 8) es caminable; 3 cornisas a row 5
+// justo ENCIMA de cada válvula (cols 10, 16, 22) para el picado vertical.
+LEVEL_SPECS.push({
+  name: '3-4',
+  indoor: true,
+  frozen: true,
+  width: 32, height: 15, groundY: 13,
+  pits: [],
+  // reactor block (drawn by drawMrFreeze; its brick is suppressed)
+  walls: [{ x: 9, w: 14, topRow: 8 }],
+  // dive cornices, each directly above a valve
+  platforms: [
+    { x: 9, y: 5, w: 2 },
+    { x: 15, y: 5, w: 2 },
+    { x: 21, y: 5, w: 2 },
+  ],
+  // anchors: climb from each floor side onto the reactor top (row 8)
+  swingPoints: [[8, 6], [23, 6]],
+  coins: [],
+  thugs: [],
+  birds: [],
+  bats: [],
+  // arena ice cannons on the floor, flanking the reactor
+  snowCannons: [
+    { x: 4, y: 13, interval: 3000 },
+    { x: 27, y: 13, interval: 3000 },
+  ],
+  mrfreeze: {
+    reactor: { x: 9, w: 14, topRow: 8 },
+    valveCols: [10, 16, 22],
+  },
+  spawn: { x: 2, y: 11 },
+});
+
 const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);

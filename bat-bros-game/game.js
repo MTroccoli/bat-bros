@@ -2064,6 +2064,103 @@ function updateTwoFace(dt, now) {
   }
 }
 
+// ---------------------------------------------------------------
+// Mr. Freeze fight (level 3-4)
+//
+// You don't kill Freeze — you break his machine. He's frozen inside the
+// reactor core, invulnerable and unreachable. The reactor vents through 3
+// cooling valves; every FREEZE_VENT_INTERVAL one valve OPENS (glows) for a
+// window and Freeze fires his cold gun. Dive-stomp the exposed valve to JAM
+// it (temp rises). Jam all three -> the core overheats, the ice melts and
+// Freeze drops. Arena ice cannons + his cold-gun bursts reuse the snowball
+// system (freeze-on-contact, batarang-shatterable).
+// ---------------------------------------------------------------
+function spawnFreezeColdGun(now) {
+  const mf = level.mrfreeze;
+  const ox = mf.coreX, oy = mf.coreY - 6;
+  const sign = (player.x + player.w / 2) >= ox ? 1 : -1;
+  const jammed = mf.valves.filter(v => v.jammed).length;
+  const speed = 5.5 + jammed * 0.9;               // angrier as the core heats up
+  const lean = [-0.5, 0, 0.5][mf.beamIdx % 3];    // 3-shot fan biased at Batman
+  level.snowballs = level.snowballs || [];
+  level.snowballs.push({
+    x: ox - SNOWBALL_SIZE / 2, y: oy - SNOWBALL_SIZE / 2,
+    w: SNOWBALL_SIZE, h: SNOWBALL_SIZE,
+    vx: sign * speed + lean * 2.2, vy: -3 + lean * 1.6,
+    rot: 0, alive: true, born: now,
+  });
+  mf.beamIdx++;
+}
+
+function updateMrFreeze(dt, now) {
+  const mf = level.mrfreeze;
+
+  // Overload -> melt -> the level completes
+  if (mf.state === 'overload') {
+    if (mf.deadAt && now - mf.deadAt > FREEZE_MELT_MS && state === 'playing') completeLevel();
+    return;
+  }
+
+  // Freeze wakes up once Batman steps into the arena
+  if (mf.state === 'idle') {
+    if (player.x > 4 * TILE) {
+      mf.state = 'fight';
+      mf.nextVentAt = now + 1200;
+    }
+    return;
+  }
+
+  // open a valve to vent + charge the cold gun
+  if (mf.exposedIdx < 0 && now >= mf.nextVentAt) {
+    const free = mf.valves.map((v, i) => i).filter(i => !mf.valves[i].jammed);
+    if (free.length) {
+      mf.exposedIdx = free[Math.floor(Math.random() * free.length)];
+      mf.exposedUntil = now + FREEZE_VENT_WINDOW;
+      mf.beamUntil = now + FREEZE_VENT_WINDOW;
+      mf.nextBeamAt = now + FREEZE_BEAM_TELEGRAPH; // telegraph before the first shot
+      mf.beamIdx = 0;
+    }
+  }
+  // valve re-seals if the window closes without a jam
+  if (mf.exposedIdx >= 0 && now >= mf.exposedUntil) {
+    mf.exposedIdx = -1;
+    mf.nextVentAt = now + FREEZE_VENT_INTERVAL;
+    mf.beamUntil = 0;
+  }
+  // cold-gun burst during the vent
+  if (mf.beamUntil > now && now >= mf.nextBeamAt) {
+    spawnFreezeColdGun(now);
+    mf.nextBeamAt = now + FREEZE_BEAM_GAP;
+  }
+
+  // dive-stomp the exposed valve to jam it
+  if (mf.exposedIdx >= 0) {
+    const v = mf.valves[mf.exposedIdx];
+    const diving = !player.swinging && player.vy > 1.5 &&
+      aabbOverlap(player, { x: v.x, y: v.y, w: v.w, h: v.h }) &&
+      (player.y + player.h - v.y) < 24;
+    if (diving && now > v.hitUntil) {
+      v.jammed = true;
+      v.hitUntil = now + FREEZE_HIT_FLASH_MS;
+      mf.exposedIdx = -1;
+      mf.beamUntil = 0;
+      player.vy = STOMP_BOUNCE;
+      const jammed = mf.valves.filter(x => x.jammed).length;
+      mf.temp = jammed / mf.maxValves;
+      mf.nextVentAt = now + Math.max(1400, FREEZE_VENT_INTERVAL - jammed * 500);
+      score += 600; hud.score.textContent = score;
+      triggerScreenShake(now, 5, 200);
+      if (mf.valves.every(x => x.jammed)) {
+        mf.state = 'overload';
+        mf.deadAt = now;
+        mf.meltStart = now;
+        score += 6000; hud.score.textContent = score;
+        triggerScreenShake(now, 9, 700);
+      }
+    }
+  }
+}
+
 function updatePlaying(dt) {
   const now = performance.now();
 
@@ -2400,6 +2497,12 @@ function updatePlaying(dt) {
   // Two-Face boss fight (carguero)
   if (level.twoface) {
     updateTwoFace(dt, now);
+    if (state !== 'playing') return;
+  }
+
+  // Mr. Freeze boss fight (cryo-reactor)
+  if (level.mrfreeze) {
+    updateMrFreeze(dt, now);
     if (state !== 'playing') return;
   }
 
@@ -3140,6 +3243,11 @@ function update(dt) {
       if (levelIndex + 1 < LEVEL_SPECS.length) {
         loadLevel(levelIndex + 1);
         state = 'playing';
+      } else if (level.mrfreeze) {
+        state = 'win';
+        showOverlay('EL NÚCLEO ESTALLÓ',
+          `Batman no combatió a Mr. Freeze: reventó su reactor. El núcleo se sobrecalentó, el hielo se derritió y Victor Fries cayó, vencido y a salvo. Entre los restos, un detalle fuera de lugar: un paraguas violeta y un monóculo. Freeze no actuaba solo... alguien le pagaba. Puntaje: ${score} con ${coinsCollected} monedas. El ACTO 4 continúa...`,
+          'VOLVER AL MENÚ');
       } else {
         state = 'win';
         const arma = currentGadget === 'batigarra' ? 'batigarra' : 'batarang';
@@ -4966,6 +5074,7 @@ function handleCaveUIInput(now) {
 function drawBackground(t) {
   if (level.cave) { drawCaveBackground(t); return; }
   if (level.twoface) { drawCargueroBackground(t); return; }
+  if (level.mrfreeze) { drawFreezeArenaBackground(t); return; }
   if (level.indoor) { drawWarehouseBackground(t); return; }
   const alt = levelAltitude();
   // vertical parallax: the whole skyline sinks as Batman climbs above it
@@ -5459,6 +5568,7 @@ function drawContainerTower(w, x0, wpx, roofY, groundPx) {
 
 function drawWalls(t) {
   if (level.cave) return; // cave terraces are plain rock, painted in drawTiles()
+  if (level.mrfreeze) return; // the reactor block is painted by drawMrFreeze()
   const groundPx = level.groundY * TILE - camera.y;
   for (const w of level.walls) {
     const x0 = w.x * TILE - camera.x;
@@ -6693,6 +6803,174 @@ function drawGargoyles() {
     ctx.fillRect(x0 + 8, topY + 74, 10, 8);
     ctx.fillRect(x0 + wpx - 18, topY + 74, 10, 8);
   }
+}
+
+// ---------------------------------------------------------------
+// Mr. Freeze reactor rendering
+// ---------------------------------------------------------------
+function drawFreezeArenaBackground(t) {
+  const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
+  g.addColorStop(0, '#0a1626'); g.addColorStop(0.6, '#0e2036'); g.addColorStop(1, '#08131f');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  // gothic pointed arches along the back wall
+  ctx.fillStyle = 'rgba(40,70,110,0.22)';
+  const archW = 120;
+  for (let i = 0; i <= CANVAS_W / archW + 1; i++) {
+    const ax = i * archW + 20;
+    ctx.beginPath();
+    ctx.moveTo(ax, CANVAS_H); ctx.lineTo(ax, 190);
+    ctx.quadraticCurveTo(ax + archW / 2, 60, ax + archW - 24, 190);
+    ctx.lineTo(ax + archW - 24, CANVAS_H); ctx.closePath(); ctx.fill();
+  }
+  // frozen mist near the floor
+  ctx.fillStyle = 'rgba(150,200,240,0.06)';
+  ctx.fillRect(0, CANVAS_H - 120, CANVAS_W, 120);
+  // ceiling frost + hanging icicles
+  ctx.fillStyle = 'rgba(150,200,240,0.15)'; ctx.fillRect(0, 0, CANVAS_W, 10);
+  ctx.fillStyle = 'rgba(180,220,255,0.32)';
+  for (let i = 0; i < CANVAS_W; i += 44) {
+    const h = 10 + hash01(i * 1.7) * 26;
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 8, 0); ctx.lineTo(i + 4, h); ctx.closePath(); ctx.fill();
+  }
+}
+
+function drawMrFreeze(t) {
+  const mf = level.mrfreeze;
+  if (!mf) return;
+  const now = performance.now();
+  const melting = mf.state === 'overload';
+  const meltT = melting ? Math.min(1, (now - mf.meltStart) / FREEZE_MELT_MS) : 0;
+  const heat = melting ? 1 : mf.temp;               // 0 = frozen blue, 1 = overheated
+
+  const x0 = mf.reactorX - camera.x;
+  const y0 = mf.reactorY - camera.y;                // reactor top face
+  const w = mf.reactorW, h = mf.reactorH;
+  const cx = mf.coreX - camera.x, cy = mf.coreY - camera.y;
+
+  // --- reactor housing: iron + ice ---
+  const bg = ctx.createLinearGradient(x0, y0, x0, y0 + h);
+  bg.addColorStop(0, '#2a3d55'); bg.addColorStop(1, '#131f2b');
+  ctx.fillStyle = bg; ctx.fillRect(x0, y0, w, h);
+  // iron ribs
+  ctx.strokeStyle = 'rgba(8,14,20,0.7)'; ctx.lineWidth = 3;
+  for (let gx = x0 + 22; gx < x0 + w; gx += 40) { ctx.beginPath(); ctx.moveTo(gx, y0); ctx.lineTo(gx, y0 + h); ctx.stroke(); }
+  // ice sheath (recedes as the core melts)
+  ctx.fillStyle = `rgba(150,210,240,${0.30 - meltT * 0.26})`;
+  ctx.fillRect(x0, y0, w, h);
+  // top parapet (the walkable face) + gothic spikes
+  ctx.fillStyle = '#3a4f68'; ctx.fillRect(x0, y0, w, 6);
+  ctx.fillStyle = '#516986'; ctx.fillRect(x0, y0, w, 2);
+  ctx.fillStyle = '#22303f';
+  for (let sx = x0 + 8; sx < x0 + w - 6; sx += 30) {
+    ctx.beginPath(); ctx.moveTo(sx, y0); ctx.lineTo(sx + 10, y0); ctx.lineTo(sx + 5, y0 - 12); ctx.closePath(); ctx.fill();
+  }
+
+  // --- core chamber with Freeze frozen inside ---
+  const coreR = 40;
+  const glow = ctx.createRadialGradient(cx, cy, 4, cx, cy, coreR * 2);
+  const gc = melting ? `rgba(255,140,60,${0.5})` : `rgba(90,180,255,${0.45 + heat * 0.2})`;
+  glow.addColorStop(0, gc); glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(cx, cy, coreR * 2, 0, Math.PI * 2); ctx.fill();
+  // chamber ring
+  ctx.fillStyle = melting ? '#3a2418' : '#123049';
+  ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = melting ? '#c8703a' : '#2f6f9f'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, Math.PI * 2); ctx.stroke();
+  // Freeze silhouette inside the core: domed helmet + goggle glow
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, coreR - 5, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = '#cfe6f2';
+  ctx.beginPath(); ctx.arc(cx, cy + 10, 22, Math.PI, 0); ctx.fill();          // shoulders
+  ctx.beginPath(); ctx.arc(cx, cy - 4, 14, 0, Math.PI * 2); ctx.fill();       // helmet dome
+  ctx.fillStyle = melting ? '#ff5a3a' : '#37e0ff';                            // goggles
+  ctx.fillRect(cx - 9, cy - 6, 6, 5); ctx.fillRect(cx + 3, cy - 6, 6, 5);
+  if (melting) {                                                              // sagging as he melts
+    ctx.fillStyle = 'rgba(120,180,210,0.5)';
+    ctx.fillRect(cx - 20, cy + meltT * 14, 40, 10);
+  }
+  ctx.restore();
+  // frost crust on the chamber that cracks off while melting
+  if (meltT < 0.7) {
+    ctx.strokeStyle = `rgba(200,235,255,${0.5 - meltT * 0.5})`; ctx.lineWidth = 2;
+    for (let a = 0; a < 5; a++) {
+      const ang = a * 1.3 + 0.3;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(ang) * (coreR - 8), cy + Math.sin(ang) * (coreR - 8));
+      ctx.lineTo(cx + Math.cos(ang + 0.4) * coreR, cy + Math.sin(ang + 0.4) * coreR);
+      ctx.stroke();
+    }
+  }
+
+  // --- cooling valves on the top face ---
+  mf.valves.forEach((v, i) => {
+    const vx = v.cx - camera.x, vy = v.y - camera.y + v.h;    // base sits on the top face
+    const exposed = i === mf.exposedIdx && !v.jammed;
+    // valve stack (pipe rising from the reactor top)
+    ctx.fillStyle = v.jammed ? '#243444' : '#33506a';
+    ctx.fillRect(vx - 12, vy - v.h, 24, v.h);
+    ctx.fillStyle = v.jammed ? '#1a2836' : '#41627f';
+    ctx.fillRect(vx - 15, vy - v.h - 6, 30, 8);              // cap flange
+    if (v.jammed) {
+      // sealed + frosted over, a red "jammed" bolt
+      ctx.fillStyle = 'rgba(200,235,255,0.5)';
+      ctx.fillRect(vx - 15, vy - v.h - 6, 30, 4);
+      ctx.fillStyle = '#ff5a5a';
+      ctx.beginPath(); ctx.arc(vx, vy - v.h + 2, 4, 0, Math.PI * 2); ctx.fill();
+    } else if (exposed) {
+      // venting: pulsing orange glow + steam + a dive chevron above
+      const pulse = 0.55 + 0.45 * Math.sin(now / 120);
+      const eg = ctx.createRadialGradient(vx, vy - v.h, 2, vx, vy - v.h, 30);
+      eg.addColorStop(0, `rgba(255,180,90,${pulse})`); eg.addColorStop(1, 'rgba(255,120,60,0)');
+      ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(vx, vy - v.h, 30, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = `rgba(255,210,120,${pulse})`;
+      ctx.fillRect(vx - 8, vy - v.h - 2, 16, 6);
+      // steam plume
+      ctx.fillStyle = 'rgba(220,240,255,0.35)';
+      for (let s = 0; s < 3; s++) {
+        const sy = vy - v.h - 10 - ((now / 6 + s * 40) % 60);
+        ctx.beginPath(); ctx.arc(vx + Math.sin(now / 200 + s) * 6, sy, 5 + s, 0, Math.PI * 2); ctx.fill();
+      }
+      // dive chevron
+      ctx.fillStyle = `rgba(255,209,102,${pulse})`;
+      const chy = vy - v.h - 30 - Math.sin(now / 200) * 3;
+      ctx.beginPath(); ctx.moveTo(vx - 9, chy); ctx.lineTo(vx + 9, chy); ctx.lineTo(vx, chy + 11); ctx.closePath(); ctx.fill();
+    } else {
+      // closed, cold cap
+      ctx.fillStyle = '#7fd0ec';
+      ctx.beginPath(); ctx.arc(vx, vy - v.h + 1, 3, 0, Math.PI * 2); ctx.fill();
+    }
+  });
+
+  // --- cold-gun muzzle flash while venting ---
+  if (mf.beamUntil > now) {
+    const mg = ctx.createRadialGradient(cx, cy, 2, cx, cy, 22);
+    mg.addColorStop(0, 'rgba(160,230,255,0.7)'); mg.addColorStop(1, 'rgba(160,230,255,0)');
+    ctx.fillStyle = mg; ctx.beginPath(); ctx.arc(cx, cy - 6, 22, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // --- melt: steam gushes and the core cracks open ---
+  if (melting) {
+    ctx.fillStyle = 'rgba(240,250,255,0.4)';
+    for (let s = 0; s < 8; s++) {
+      const sy = cy - ((now / 4 + s * 30) % 140);
+      ctx.beginPath(); ctx.arc(cx + Math.sin(now / 150 + s) * 26, sy, 8 + s, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // --- TEMP gauge (top-center HUD) ---
+  const gw = 220, gx = (CANVAS_W - gw) / 2, gy = 30;
+  ctx.fillStyle = 'rgba(8,16,26,0.8)'; ctx.fillRect(gx - 4, gy - 4, gw + 8, 24);
+  ctx.strokeStyle = '#3a5470'; ctx.lineWidth = 2; ctx.strokeRect(gx - 4, gy - 4, gw + 8, 24);
+  const tg = ctx.createLinearGradient(gx, 0, gx + gw, 0);
+  tg.addColorStop(0, '#4aa8ff'); tg.addColorStop(0.5, '#c8d64a'); tg.addColorStop(1, '#ff5a3a');
+  ctx.fillStyle = '#10202e'; ctx.fillRect(gx, gy, gw, 16);
+  ctx.fillStyle = tg; ctx.fillRect(gx, gy, gw * (melting ? 1 : mf.temp), 16);
+  // valve ticks
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  for (let i = 1; i < mf.maxValves; i++) { const tx = gx + gw * (i / mf.maxValves); ctx.beginPath(); ctx.moveTo(tx, gy); ctx.lineTo(tx, gy + 16); ctx.stroke(); }
+  ctx.fillStyle = '#cfe0ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+  ctx.fillText(`NÚCLEO — ${mf.valves.filter(v => v.jammed).length}/${mf.maxValves} VÁLVULAS TRABADAS`, CANVAS_W / 2, gy + 34);
+  ctx.textAlign = 'left';
 }
 
 // ---------------------------------------------------------------
@@ -7983,6 +8261,7 @@ function render(t) {
   drawSwingRope();
   drawThugs();
   drawBirds(t);
+  if (level.mrfreeze) drawMrFreeze(t);
   drawSnowCannons(t);
   drawSnowballs(t);
   drawVillain();
