@@ -432,9 +432,10 @@ LEVEL_SPECS.push({
   // is stompable stairs.
   walls: [{ x: 30, w: 3, topRow: 18 }],
   houses: [],
-  // Anchor over the tall wall (like 1-1's [31,16]) plus two low
-  // lamps that let Batman swing across the pits at a moderate height.
-  swingPoints: [[31, 15], [54, 17], [67, 17]],
+  // Only the tall-wall anchor (like 1-1's [31,16]) — the two low
+  // lamps over the pits were dropped to keep 3-1 grounded in
+  // Act-1 platforming.
+  swingPoints: [[31, 15]],
   coins: [
     [9, 19], [10, 19], [11, 19],
     [30, 17], [31, 17], [32, 17],

@@ -397,7 +397,10 @@ function setGadget(g) {
   if (player) player.gadget = g;
   currentGadget = g;
   updateWeaponButton();
-  if (playerName) saveGadgetChoice(playerName, g);
+  if (playerName) {
+    saveGadgetChoice(playerName, g);
+    saveBeltState(playerName);
+  }
 }
 function playerCanUse(gadget) {
   if (activeChar === 'robin') return gadget === 'batarang';
@@ -627,7 +630,10 @@ function updateSwing(dt, now) {
   // feet just above a rooftop that sits 2 tiles below its lamppost, so a
   // release near the top of the reel lands ON the roof instead of under it.
   // Trapezes (swingMinR set) keep their fixed rope length instead.
-  const isGarra = player.gadget === 'batigarra' && !player.swingMinR;
+  // Batigarra CONTROL is tied to ownership, not `player.gadget` — the
+  // last-fired weapon flips gadget between batarang / batigarra, but any
+  // Batman who owns the batigarra should get its enhanced swing feel.
+  const isGarra = ownedGadgets.batigarra && activeChar === 'batman' && !player.swingMinR;
   if (isGarra) {
     // The batigarra gives Batman full rope control instead of the automatic
     // reel: UP (or the grapple trigger) contracts the rope, DOWN extends it.
@@ -740,6 +746,11 @@ function loadLevel(idx) {
   const isAct3 = level.name && level.name.startsWith('3-');
   const isCaveHub = level.cave && postTwoFaceReturn;
   if (isAct3 || isCaveHub) {
+    // Every Act-3 level starts with BATMAN in the driver's seat so
+    // his weapon choice (batarang / batigarra) sticks. Player object
+    // was built above as Batman-shaped with currentGadget; force
+    // activeChar and Robin the companion to match.
+    activeChar = 'batman';
     // Robin always matches Batman's current size — armored Batman is
     // big (h=40) so Robin is big too. Without armor both are small.
     const buddy = SIZES[armored ? 'big' : 'small'];
@@ -752,7 +763,7 @@ function loadLevel(idx) {
         powerState: armored ? 'big' : 'small',
         gadget: 'batarang',
         isCompanion: true,
-        isRobin: activeChar === 'batman',
+        isRobin: true, // activeChar is now batman, so companion is robin
         jumpsUsed: 0,
         walkPhase: 0,
       };
@@ -765,10 +776,11 @@ function loadLevel(idx) {
       companion.w = buddy.w;
       companion.h = buddy.h;
       companion.powerState = armored ? 'big' : 'small';
-      // Robin (as companion) always carries the batarang, never
-      // batigarra — enforced on every level load in case the swap
-      // history left it stale.
-      if (companion.isRobin) companion.gadget = 'batarang';
+      // Batman is active this level, so companion is Robin — force
+      // the flag and his gadget so the swap history can't leak a
+      // stale batigarra onto him.
+      companion.isRobin = true;
+      companion.gadget = 'batarang';
     }
   } else {
     companion = null;
@@ -837,6 +849,18 @@ function startGame() {
   currentPowerState = 'small';
   currentGadget = startLevelIndex > 0 ? savedGadget : null;
   if (currentGadget) ownedGadgets[currentGadget] = true;
+  // Continue: rehydrate the FULL belt from localStorage so Batman
+  // walks in with both accessories he had last time, not just the
+  // gadget stored in Supabase's single-item column.
+  if (startLevelIndex > 0 && playerName) {
+    const belt = loadBeltState(playerName);
+    if (belt) {
+      ownedGadgets.batarang = belt.batarang;
+      ownedGadgets.batigarra = belt.batigarra;
+      armored = belt.armored;
+      if (armored) currentPowerState = 'big';
+    }
+  }
   // If continuing past the Batcave without a weapon, send back to pick one
   const caveIdx = LEVEL_SPECS.findIndex(s => s.cave);
   if (startLevelIndex > caveIdx && caveIdx >= 0 && !currentGadget) {
@@ -966,6 +990,36 @@ function saveGadgetChoice(name, gadget) {
   } catch (e) {}
 }
 
+// --- Full belt state per player: BOTH weapons + armor persist in
+// localStorage so a returning player keeps everything they equipped
+// last session, not just the last-picked gadget. Supabase only knows
+// the "current" gadget column, so we don't try to push here (the two
+// booleans are cheap to keep on the device).
+function localBeltKey(name) { return 'bitbros:belt:' + name.trim().toLowerCase(); }
+function saveBeltState(name) {
+  if (!name) return;
+  try {
+    localStorage.setItem(localBeltKey(name), JSON.stringify({
+      batarang: !!ownedGadgets.batarang,
+      batigarra: !!ownedGadgets.batigarra,
+      armored: !!armored,
+    }));
+  } catch (e) {}
+}
+function loadBeltState(name) {
+  if (!name) return null;
+  try {
+    const raw = localStorage.getItem(localBeltKey(name));
+    if (!raw) return null;
+    const obj = JSON.parse(raw);
+    return {
+      batarang: !!obj.batarang,
+      batigarra: !!obj.batigarra,
+      armored: !!obj.armored,
+    };
+  } catch (e) { return null; }
+}
+
 // --- Game-over tally per player (shown only on the Batcave computer) ---
 // Stored in the same bitbros_players row via a `game_overs` column. The
 // column must exist in Supabase (see the SQL in ACT2_PLAN.md); if it isn't
@@ -1056,6 +1110,15 @@ async function submitName() {
     }
     savedGadget = savedGadget || 'batarang';
     try { localStorage.setItem('bitbros:act2beaten', '1'); } catch (e) {}
+  }
+  // Restore the full belt state persisted last session (both weapons
+  // + armor). If nothing is stored, keep the current defaults — first
+  // Batcave visit will fill them in.
+  const belt = loadBeltState(name);
+  if (belt) {
+    ownedGadgets.batarang = belt.batarang;
+    ownedGadgets.batigarra = belt.batigarra;
+    armored = belt.armored;
   }
   btnNameOk.disabled = false;
   btnNameOk.textContent = 'ACEPTAR';
@@ -1217,12 +1280,13 @@ function updateCranes(dt, now) {
 // Act-3 hazard. A chunky ice cannon fires a BURST of upward snowballs
 // on a cadence (3 pops ~450 ms apart in a left / center / right fan,
 // then a long pause). The balls arc up, fall with gravity, and freeze
-// Batman on contact for 5 s. The cannon itself is indestructible —
-// walking onto its muzzle from above is an ice trap that also freezes
-// Batman.
+// Batman on contact for FREEZE_MS. The cannon itself is
+// indestructible — walking onto its muzzle from above is an ice trap
+// that also freezes Batman.
 const SNOWBALL_SIZE = 20;
 const SNOWBALL_LAUNCH = -11.0;
 const SNOW_BURST_GAP_MS = 450;
+const FREEZE_MS = 4000;
 // The 3-ball fan: which way each shot leans. Index 0 goes left, 1 up,
 // 2 right — with a matching horizontal push so the balls spread out
 // across the sky instead of overlapping each other.
@@ -1260,7 +1324,7 @@ function updateSnowCannons(dt, now) {
     const invuln = (player.invulnUntil || 0) > now;
     if (!invuln && !player.swinging &&
         aabbOverlap({ x: player.x, y: player.y, w: player.w, h: player.h }, c)) {
-      player.frozenUntil = now + 5000;
+      player.frozenUntil = now + FREEZE_MS;
       player.vx *= 0.3;
       // Give a tiny upward bump if he landed on top so he doesn't get
       // stuck INSIDE the muzzle — freeze-then-fall, not freeze-then-glitch.
@@ -1311,7 +1375,7 @@ function updateSnowCannons(dt, now) {
     if (!b.alive) continue;
     // Hit test against the player (skip during i-frames from a hurt)
     if (!invuln && !player.swinging && aabbOverlap(b, { x: player.x, y: player.y, w: player.w, h: player.h })) {
-      player.frozenUntil = now + 5000;
+      player.frozenUntil = now + FREEZE_MS;
       player.vx *= 0.3;
       b.alive = false;
       continue;
@@ -4567,6 +4631,9 @@ function applyAccessoryToSlot(kind) {
     setGadget(kind);
   }
   updateWeaponButton();
+  // Persist the whole belt after any pick or swap so the next
+  // Continue restores every accessory instead of just the last one.
+  if (playerName) saveBeltState(playerName);
 }
 
 // Legacy alias — the sub-menu used to be called the "weapon" step so
@@ -5914,7 +5981,7 @@ function drawFrozenOverlay(px, py, w, h) {
   ctx.fillRect(px + w - 5, py + 8, 3, 3);
   ctx.fillRect(px + 4, py + h - 8, 3, 3);
   ctx.fillRect(px + w - 7, py + h - 5, 3, 3);
-  const left = (player.frozenUntil - now) / 5000;
+  const left = (player.frozenUntil - now) / FREEZE_MS;
   ctx.fillStyle = 'rgba(0,0,0,0.5)';
   ctx.fillRect(px - 2, py - 10, w + 4, 5);
   ctx.fillStyle = '#7fd4ff';
