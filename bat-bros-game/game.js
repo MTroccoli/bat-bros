@@ -57,6 +57,17 @@ function switchCharacter() {
   // holding, force it on when Robin takes over. Batman keeps whatever
   // he last chose (batarang / batigarra / armor).
   if (activeChar === 'robin') player.gadget = 'batarang';
+  // Robin and Batman are always the SAME visible size — tied to the
+  // armor pick. Without this, Robin's h could stay at the small (30)
+  // he was born with while Batman was big (40), and he'd look shrunk.
+  const size = SIZES[armored ? 'big' : 'small'];
+  const oldH = player.h;
+  player.w = size.w; player.h = size.h;
+  player.powerState = armored ? 'big' : 'small';
+  companion.w = size.w; companion.h = size.h;
+  companion.powerState = armored ? 'big' : 'small';
+  // Keep feet on the same tile after a resize (h change would sink them)
+  player.y += oldH - size.h;
   currentGadget = player.gadget;
   currentPowerState = player.powerState;
   updateWeaponButton();
@@ -88,15 +99,12 @@ window.addEventListener('keydown', e => {
     const cv = level.cave;
     const step = cv.pickStep || 'slot';
     if (step === 'slot') {
-      const empties = emptyBeltSlots();
-      if (empties.length) {
-        const idx = Math.max(0, empties.indexOf(cv.slotSel));
-        if (['ArrowLeft', 'KeyA'].includes(e.code)) cv.slotSel = empties[Math.max(0, idx - 1)];
-        else if (['ArrowRight', 'KeyD'].includes(e.code)) cv.slotSel = empties[Math.min(empties.length - 1, idx + 1)];
-      }
+      // All slots are pickable — filled ones can be modified.
+      if (['ArrowLeft', 'KeyA'].includes(e.code)) cv.slotSel = Math.max(0, cv.slotSel - 1);
+      else if (['ArrowRight', 'KeyD'].includes(e.code)) cv.slotSel = Math.min(BELT_SLOTS - 1, cv.slotSel + 1);
       if (confirmCode) chooseCaveWeapon();
     } else {
-      const opts = availableAccessories();
+      const opts = accessoriesForSubMenu(cv.editingKind);
       if (['ArrowLeft', 'KeyA'].includes(e.code)) cv.weaponSel = Math.max(0, cv.weaponSel - 1);
       else if (['ArrowRight', 'KeyD'].includes(e.code)) cv.weaponSel = Math.min(opts.length - 1, cv.weaponSel + 1);
       if (confirmCode) chooseCaveWeapon();
@@ -727,13 +735,16 @@ function loadLevel(idx) {
   const isAct3 = level.name && level.name.startsWith('3-');
   const isCaveHub = level.cave && postTwoFaceReturn;
   if (isAct3 || isCaveHub) {
+    // Robin always matches Batman's current size — armored Batman is
+    // big (h=40) so Robin is big too. Without armor both are small.
+    const buddy = SIZES[armored ? 'big' : 'small'];
     if (!companion) {
       companion = {
         x: player.x - 34, y: player.y,
-        w: 22, h: 30,
+        w: buddy.w, h: buddy.h,
         vx: 0, vy: 0, facing: 1,
         onGround: true,
-        powerState: 'small',
+        powerState: armored ? 'big' : 'small',
         gadget: 'batarang',
         isCompanion: true,
         isRobin: activeChar === 'batman',
@@ -744,6 +755,11 @@ function loadLevel(idx) {
       companion.x = player.x - 34;
       companion.y = player.y;
       companion.onGround = true;
+      // Match Batman's size on every level load — otherwise a swap
+      // history from before the armor pick would leave Robin small.
+      companion.w = buddy.w;
+      companion.h = buddy.h;
+      companion.powerState = armored ? 'big' : 'small';
       // Robin (as companion) always carries the batarang, never
       // batigarra — enforced on every level load in case the swap
       // history left it stale.
@@ -1012,10 +1028,27 @@ async function submitName() {
   btnNameOk.textContent = 'CARGANDO…';
   [savedMaxLevel, gameOverCount, savedGadget] = await Promise.all([loadProgress(name), loadGameOvers(name), loadGadget(name)]);
   // Dev shortcut: the tester account "Troco" always starts Continue on
-  // level 3-1 so the full Act-3 loop is one click away.
+  // level 3-1 so the full Act-3 loop is one click away. We FORCE
+  // savedMaxLevel to 3-1 (not Math.max) even if Supabase already stored
+  // a later level, and push the reset back to Supabase + localStorage
+  // so the next load lands on 3-1 too.
   if (name.trim().toLowerCase() === 'troco') {
     const idx31 = LEVEL_SPECS.findIndex(s => s.name === '3-1');
-    if (idx31 >= 0) savedMaxLevel = Math.max(savedMaxLevel, idx31);
+    if (idx31 >= 0) {
+      savedMaxLevel = idx31;
+      try { localStorage.setItem(localKey(name), String(idx31)); } catch (e) {}
+      try {
+        fetch(`${SUPA_PLAYERS}?on_conflict=name`, {
+          method: 'POST',
+          headers: {
+            apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+            'Content-Type': 'application/json',
+            Prefer: 'resolution=merge-duplicates',
+          },
+          body: JSON.stringify({ name: name.trim(), last_level: idx31, updated_at: new Date().toISOString() }),
+        }).catch(() => {});
+      } catch (e) {}
+    }
     savedGadget = savedGadget || 'batarang';
     try { localStorage.setItem('bitbros:act2beaten', '1'); } catch (e) {}
   }
@@ -1177,13 +1210,18 @@ function updateCranes(dt, now) {
 }
 
 // Act-3 hazard. A chunky ice cannon fires a BURST of upward snowballs
-// on a cadence (3 pops ~130 ms apart, then a long pause). The balls
-// arc up, fall with gravity, and freeze Batman on contact for 5 s.
-// The cannon itself is indestructible — walking onto its muzzle from
-// above is an ice trap that also freezes Batman.
+// on a cadence (3 pops ~450 ms apart in a left / center / right fan,
+// then a long pause). The balls arc up, fall with gravity, and freeze
+// Batman on contact for 5 s. The cannon itself is indestructible —
+// walking onto its muzzle from above is an ice trap that also freezes
+// Batman.
 const SNOWBALL_SIZE = 20;
-const SNOWBALL_LAUNCH = -9.6;
-const SNOW_BURST_GAP_MS = 130;
+const SNOWBALL_LAUNCH = -11.0;
+const SNOW_BURST_GAP_MS = 450;
+// The 3-ball fan: which way each shot leans. Index 0 goes left, 1 up,
+// 2 right — with a matching horizontal push so the balls spread out
+// across the sky instead of overlapping each other.
+const SNOW_BURST_VX = [-2.4, 0, 2.4];
 function updateSnowCannons(dt, now) {
   const cannons = level.snowCannons || [];
   level.snowballs = level.snowballs || [];
@@ -1192,17 +1230,19 @@ function updateSnowCannons(dt, now) {
     // First shot lands ~1 s after the level starts so a fresh spawn
     // doesn't eat a snowball before Batman can even see the cannon.
     if (!c.nextFireAt) c.nextFireAt = now + 1000;
-    const burstTotal = c.burstCount || 3;
+    const burstTotal = c.burstCount || SNOW_BURST_VX.length;
     if (now >= c.nextFireAt) {
-      // Fire one ball of the burst; schedule the next one closely, or
-      // reset to the long interval when the burst is done.
+      // Fire one ball of the burst; each ball leans a different
+      // direction so they fan out (left → center → right).
+      const bi = c.burstIndex || 0;
+      const vx = SNOW_BURST_VX[bi % SNOW_BURST_VX.length];
       level.snowballs.push({
         x: c.x + c.w / 2 - SNOWBALL_SIZE / 2, y: c.y - SNOWBALL_SIZE,
         w: SNOWBALL_SIZE, h: SNOWBALL_SIZE,
-        vx: 0, vy: SNOWBALL_LAUNCH,
+        vx, vy: SNOWBALL_LAUNCH,
         rot: 0, alive: true, born: now,
       });
-      c.burstIndex = (c.burstIndex || 0) + 1;
+      c.burstIndex = bi + 1;
       if (c.burstIndex >= burstTotal) {
         c.burstIndex = 0;
         c.nextFireAt = now + c.fireInterval;
@@ -1992,13 +2032,16 @@ function updatePlaying(dt) {
       player.vx = 0;
       cv.openedAt = now;
       cv.computerDone = true;
-      // Belt UI: cursor starts on the first empty slot. Batman's belt
-      // has 2 generic accessory positions; `pickStep` alternates between
-      // slot selection and the accessory sub-menu inside 'choice'.
+      // Belt UI: cursor starts on the first empty slot (or slot 0 if
+      // everything is already equipped). Batman's belt has 2 generic
+      // accessory positions; `pickStep` alternates between slot
+      // selection and the accessory sub-menu inside 'choice'. Filled
+      // slots are pickable too (the player can swap them).
       cv.pickStep = 'slot';
       const empties = emptyBeltSlots();
       cv.slotSel = empties[0] ?? 0;
       cv.weaponSel = 0;
+      cv.editingKind = null;
       // Hub visits from Act 3+ open straight into the current-act
       // expediente (Mr. Freeze). Fresh post-2-4 visits still start with
       // the news feed. Act 1 always shows the Two-Face expediente.
@@ -4162,6 +4205,16 @@ function availableAccessories() {
   return out;
 }
 
+// When the player is MODIFYING a filled slot, the accessory currently
+// in that slot is offered as a pick too (letting them cancel by
+// choosing it again). Used by the accessory sub-menu — see
+// chooseCaveWeapon's `editingKind` handoff.
+function accessoriesForSubMenu(editingKind) {
+  const out = availableAccessories();
+  if (editingKind && !out.includes(editingKind)) out.unshift(editingKind);
+  return out;
+}
+
 // Legacy alias kept so any callers still asking "which weapons?" keep
 // working. Weapons are the subset of accessories that aren't armor.
 function availableWeapons() {
@@ -4342,15 +4395,27 @@ function drawAccessoryPickerScreen(cv) {
   ctx.fillStyle = '#ffd166'; ctx.font = 'bold 22px monospace'; ctx.textAlign = 'center';
   ctx.fillText(`SLOT ${cv.slotSel + 1} — elegí un accesorio`, CANVAS_W / 2, 48);
   ctx.fillStyle = '#9fb4d8'; ctx.font = '12px monospace';
-  ctx.fillText('Cada accesorio se equipa una sola vez', CANVAS_W / 2, 72);
+  ctx.fillText(cv.editingKind
+    ? 'Elegir otro accesorio DESEQUIPA el actual.'
+    : 'Cada accesorio se equipa una sola vez.', CANVAS_W / 2, 72);
 
-  const opts = availableAccessories();
+  const opts = accessoriesForSubMenu(cv.editingKind);
   const W = 240, gap = 20;
   const totalW = opts.length * W + (opts.length - 1) * gap;
   const startX = (CANVAS_W - totalW) / 2;
   const cardY = 96;
   opts.forEach((kind, k) => {
     drawAccessoryCard(kind, startX + k * (W + gap), cardY, cv.weaponSel === k);
+    // Small badge on the card for the accessory currently in the slot
+    // so the player knows re-picking it cancels the swap.
+    if (kind === cv.editingKind) {
+      ctx.fillStyle = 'rgba(20,25,45,0.85)';
+      ctx.fillRect(startX + k * (W + gap) + 12, cardY + 12, 88, 20);
+      ctx.strokeStyle = '#9bffcf'; ctx.lineWidth = 1;
+      ctx.strokeRect(startX + k * (W + gap) + 12, cardY + 12, 88, 20);
+      ctx.fillStyle = '#9bffcf'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('ACTUAL', startX + k * (W + gap) + 56, cardY + 26);
+    }
   });
 
   ctx.fillStyle = '#9fb4d8'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
@@ -4389,44 +4454,45 @@ function drawChoiceScreen(now) {
 
   // Hint line at the bottom
   ctx.fillStyle = '#9fb4d8'; ctx.font = '13px monospace'; ctx.textAlign = 'center';
-  if (empties.length === 0) {
-    ctx.fillStyle = '#9bffcf'; ctx.font = 'bold 14px monospace';
-    ctx.fillText('CINTURÓN COMPLETO — pulsá SALTO para cerrar', CANVAS_W / 2, 360);
-  } else {
-    ctx.fillText('◄ ►  elegir slot vacío      SALTO  cargarlo', CANVAS_W / 2, 360);
-    ctx.fillStyle = '#8fa3d9'; ctx.font = '11px monospace';
-    ctx.fillText('Los slots equipados no pueden cambiarse.', CANVAS_W / 2, 380);
-  }
+  ctx.fillText('◄ ►  elegir slot      SALTO  modificar', CANVAS_W / 2, 360);
+  ctx.fillStyle = '#8fa3d9'; ctx.font = '11px monospace';
+  ctx.fillText('Podés cambiar cualquier slot equipado.', CANVAS_W / 2, 380);
 }
 
-// Two-step belt pick. Step 1 selects an empty belt slot; step 2 shows
-// every unowned accessory (batarang / batigarra / armor) and the player
-// picks which one loads into that slot. If only one accessory is still
-// unowned the sub-menu is skipped and the slot auto-fills.
+// Two-step belt pick. Step 1 selects ANY belt slot (empty or filled);
+// step 2 shows the accessories that could go into it — every unowned
+// item plus the one currently there (so the player can also cancel by
+// re-picking it). If only one candidate exists the sub-menu is skipped.
 function chooseCaveWeapon() {
   const cv = level.cave;
   const step = cv.pickStep || 'slot';
-  const empties = emptyBeltSlots();
-  if (empties.length === 0) {
-    // Nothing to pick; SALTO just closes the menu so Batman can leave.
-    cv.weaponChosen = cv.weaponChosen || currentGadget || 'batarang';
-    state = 'playing';
-    return;
-  }
 
   if (step === 'slot') {
-    if (!empties.includes(cv.slotSel)) cv.slotSel = empties[0];
-    const opts = availableAccessories();
+    // Clamp the cursor to a valid slot; ALL slots are pickable now so
+    // empty ones aren't the only choice.
+    if (cv.slotSel < 0 || cv.slotSel >= BELT_SLOTS) cv.slotSel = 0;
+    // Remember what's currently in the slot so the sub-menu can offer
+    // it back and the "cancel" case is a no-op.
+    const contents = beltContents();
+    cv.editingKind = contents[cv.slotSel] || null;
+    const opts = accessoriesForSubMenu(cv.editingKind);
+    if (opts.length === 0) {
+      // Nothing to pick and nothing here — just close so Batman can leave.
+      cv.weaponChosen = cv.weaponChosen || currentGadget || 'batarang';
+      state = 'playing';
+      return;
+    }
     if (opts.length === 1) {
-      // Only one accessory left: skip the sub-menu.
+      // Only one candidate: skip the sub-menu (this is the common flow
+      // when there's nothing new to swap in either).
       applyAccessoryToSlot(opts[0]);
     } else {
       cv.pickStep = 'accessory';
-      cv.weaponSel = 0;
+      cv.weaponSel = Math.max(0, opts.indexOf(cv.editingKind));
       return;
     }
   } else {
-    const opts = availableAccessories();
+    const opts = accessoriesForSubMenu(cv.editingKind);
     if (!opts.length) { cv.pickStep = 'slot'; return; }
     const pick = opts[cv.weaponSel] || opts[0];
     applyAccessoryToSlot(pick);
@@ -4439,16 +4505,36 @@ function chooseCaveWeapon() {
 }
 
 // Load an accessory (batarang / batigarra / armor) into the currently
-// selected belt slot. Armor toggles a passive body upgrade; weapons
-// route through setGadget so both fire buttons stay in sync.
+// selected belt slot. If the slot was already holding a DIFFERENT
+// accessory (cv.editingKind), that one is unequipped first — this is
+// the swap path when the player modifies a filled slot. Armor toggles
+// a passive body upgrade; weapons route through setGadget so both fire
+// buttons stay in sync.
 function applyAccessoryToSlot(kind) {
   const cv = level.cave;
+  const previous = cv.editingKind || null;
+  cv.editingKind = null;
+  if (previous && previous !== kind) {
+    if (previous === 'armor') armored = false;
+    else if (previous === 'batarang') ownedGadgets.batarang = false;
+    else if (previous === 'batigarra') ownedGadgets.batigarra = false;
+    // If Batman was actively using the tool we just removed, fall back
+    // to whatever else he still owns so the on-screen controls sync.
+    if (previous !== 'armor' && currentGadget === previous) {
+      const fallback = ownedGadgets.batarang ? 'batarang'
+                     : ownedGadgets.batigarra ? 'batigarra'
+                     : null;
+      currentGadget = fallback;
+      if (player) player.gadget = fallback;
+    }
+  }
   cv.weaponChosen = kind;
   if (kind === 'armor') {
     armored = true;
   } else {
     setGadget(kind);
   }
+  updateWeaponButton();
 }
 
 // Legacy alias — the sub-menu used to be called the "weapon" step so
@@ -4573,15 +4659,11 @@ function handleCaveUIInput(now) {
   } else if (state === 'choice') {
     const step = cv.pickStep || 'slot';
     if (step === 'slot') {
-      const empties = emptyBeltSlots();
-      if (empties.length) {
-        const idx = Math.max(0, empties.indexOf(cv.slotSel));
-        if (keys.left && !keys.right && !cv._navHeld) { cv.slotSel = empties[Math.max(0, idx - 1)]; cv._navHeld = true; }
-        else if (keys.right && !keys.left && !cv._navHeld) { cv.slotSel = empties[Math.min(empties.length - 1, idx + 1)]; cv._navHeld = true; }
-        else if (!keys.left && !keys.right) cv._navHeld = false;
-      }
+      if (keys.left && !keys.right && !cv._navHeld) { cv.slotSel = Math.max(0, cv.slotSel - 1); cv._navHeld = true; }
+      else if (keys.right && !keys.left && !cv._navHeld) { cv.slotSel = Math.min(BELT_SLOTS - 1, cv.slotSel + 1); cv._navHeld = true; }
+      else if (!keys.left && !keys.right) cv._navHeld = false;
     } else {
-      const opts = availableAccessories();
+      const opts = accessoriesForSubMenu(cv.editingKind);
       if (keys.left && !keys.right && !cv._navHeld) { cv.weaponSel = Math.max(0, cv.weaponSel - 1); cv._navHeld = true; }
       else if (keys.right && !keys.left && !cv._navHeld) { cv.weaponSel = Math.min(opts.length - 1, cv.weaponSel + 1); cv._navHeld = true; }
       else if (!keys.left && !keys.right) cv._navHeld = false;

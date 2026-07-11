@@ -488,10 +488,12 @@ LEVEL_SPECS.push({
     // warm-up pyramid before the first pit
     { x: 8, y: 26, w: 2 },
     { x: 10, y: 24, w: 3 },
-    // stepped rooftop past pit #1
-    { x: 20, y: 25, w: 2 },
-    { x: 22, y: 23, w: 4 },
-    { x: 26, y: 25, w: 2 },
+    // stepped rooftop past pit #1 — pushed right so big Batman has
+    // room to squeeze between the first snow cannon (x=18) and the
+    // first step. Was x=20/22/26; now x=22/24/28.
+    { x: 22, y: 25, w: 2 },
+    { x: 24, y: 23, w: 4 },
+    { x: 28, y: 25, w: 2 },
     // twin-gable stepped roof (mid-air)
     { x: 42, y: 25, w: 2 },
     { x: 44, y: 23, w: 3 },
@@ -521,7 +523,7 @@ LEVEL_SPECS.push({
   swingPoints: [[33, 17], [46, 18], [66, 18]],
   coins: [
     [5, 27], [18, 27], [56, 27], [68, 27],
-    [10, 23], [22, 22],
+    [10, 23], [24, 22],
     [45, 22], [47, 20], [48, 20], [50, 22],
     [62, 24], [63, 24],
     [80, 24], [84, 22], [88, 20],
@@ -529,7 +531,7 @@ LEVEL_SPECS.push({
   ],
   thugs: [
     { x: 6, y: 28, range: [3, 10], frozen: true },
-    { x: 22, y: 23, range: [22, 25], helmet: true, frozen: true },
+    { x: 24, y: 23, range: [24, 27], helmet: true, frozen: true },
     { x: 26, y: 28, range: [22, 30], frozen: true },
     { x: 38, y: 28, range: [36, 42], frozen: true },
     { x: 47, y: 21, range: [47, 49], helmet: true, frozen: true },
