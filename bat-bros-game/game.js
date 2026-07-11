@@ -4107,10 +4107,79 @@ function drawPenguinPortrait(ctx) {
   ctx.stroke();
 
 }
-// Back-compat alias so existing callers ("drawFreezePortrait") keep
-// working while we swap the villain text; will be renamed everywhere
-// in a follow-up.
-const drawFreezePortrait = drawPenguinPortrait;
+
+// Mr. Freeze mug-shot — the visible face of the Act-3 attack. He is
+// the executor; the mecenas (Penguin) is the Act-4 reveal. Chrome
+// dome, blue-tinted skin, orange cryo goggles, ridged neck coupling,
+// chest cryo canister. Same 150 x 170 canvas as drawTwoFacePortrait
+// so the expediente layout doesn't need to change.
+function drawFreezePortrait(ctx) {
+  // suit/backplate
+  ctx.fillStyle = '#4a5b78'; ctx.fillRect(0, 20, 150, 150);
+  ctx.fillStyle = '#2c3a52'; ctx.fillRect(0, 20, 150, 10);
+  // shoulder pauldrons
+  ctx.fillStyle = '#38495f';
+  ctx.beginPath();
+  ctx.moveTo(4, 128); ctx.lineTo(28, 96); ctx.lineTo(62, 108); ctx.lineTo(62, 170); ctx.lineTo(4, 170); ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(146, 128); ctx.lineTo(122, 96); ctx.lineTo(88, 108); ctx.lineTo(88, 170); ctx.lineTo(146, 170); ctx.closePath(); ctx.fill();
+  // pale ice-blue face
+  ctx.fillStyle = '#c9dff0'; ctx.fillRect(38, 22, 74, 82);
+  ctx.beginPath();
+  ctx.moveTo(38, 90); ctx.lineTo(38, 104); ctx.quadraticCurveTo(75, 118, 112, 104); ctx.lineTo(112, 90); ctx.closePath();
+  ctx.fill();
+  // chrome dome + rivets
+  ctx.fillStyle = '#dbe4f0';
+  ctx.beginPath();
+  ctx.ellipse(75, 24, 40, 24, 0, Math.PI, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(80,110,140,0.9)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(38, 24); ctx.lineTo(112, 24); ctx.stroke();
+  ctx.fillStyle = '#8a99ac';
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath(); ctx.arc(46 + i * 14, 20, 1.6, 0, Math.PI * 2); ctx.fill();
+  }
+  // frost patches
+  ctx.strokeStyle = 'rgba(240,250,255,0.75)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 6; i++) {
+    const cxp = 42 + hash01(i * 3.1) * 66, cyp = 40 + hash01(i * 5.7) * 50;
+    ctx.beginPath();
+    for (let k = 0; k < 6; k++) {
+      const ang = k * Math.PI / 3;
+      ctx.moveTo(cxp, cyp);
+      ctx.lineTo(cxp + Math.cos(ang) * 4, cyp + Math.sin(ang) * 4);
+    }
+    ctx.stroke();
+  }
+  // cryo goggles
+  ctx.fillStyle = '#0e1420'; ctx.fillRect(34, 52, 84, 16);
+  ctx.fillStyle = '#ff6b1a'; ctx.fillRect(40, 55, 30, 10);
+  ctx.fillStyle = '#ff6b1a'; ctx.fillRect(80, 55, 30, 10);
+  ctx.fillStyle = '#ffd166'; ctx.fillRect(48, 57, 12, 6);
+  ctx.fillStyle = '#ffd166'; ctx.fillRect(88, 57, 12, 6);
+  // stern mouth
+  ctx.fillStyle = '#4a637a'; ctx.fillRect(58, 92, 34, 4);
+  // life-support neck ring with tubes
+  ctx.fillStyle = '#8a99ac'; ctx.fillRect(52, 100, 46, 12);
+  ctx.strokeStyle = '#1a222e'; ctx.lineWidth = 1;
+  for (let i = 1; i < 6; i++) { ctx.beginPath(); ctx.moveTo(52 + i * 7.5, 100); ctx.lineTo(52 + i * 7.5, 112); ctx.stroke(); }
+  // chest cryo canister with frost
+  ctx.fillStyle = '#243244'; ctx.fillRect(56, 120, 38, 44);
+  ctx.fillStyle = '#3a4c68'; ctx.fillRect(56, 120, 38, 6);
+  ctx.fillStyle = '#7fb5c8'; ctx.fillRect(60, 130, 30, 24);
+  ctx.strokeStyle = 'rgba(220,240,255,0.65)';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath();
+    ctx.moveTo(60, 132 + i * 6);
+    ctx.lineTo(90, 132 + i * 6);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#ff5e5e';
+  ctx.beginPath(); ctx.arc(75, 152, 3, 0, Math.PI * 2); ctx.fill();
+}
 
 function drawCaveComputer(cx, plateauScreenY) {
   const scrW = 230, scrH = 138;
@@ -4132,21 +4201,34 @@ function drawCaveComputer(cx, plateauScreenY) {
   const tx = x + 118;
   ctx.textAlign = 'left';
   if (postTwoFaceReturn) {
-    // Post-2-4: the desktop switches to the current villain — El
-    // Pingüino — with the Iceberg Lounge file next to his mug shot.
+    // Post-2-4: the desktop switches to the current villain — Mr.
+    // Freeze — the visible face of the freeze. A "MECENAS: ?"
+    // tag plants the mystery: someone is bankrolling him. (Act 4
+    // will reveal it's Cobblepot.)
     ctx.save();
     ctx.translate(x + 16, y + 16); ctx.scale(0.6, 0.6);
-    drawPenguinPortrait(ctx);
+    drawFreezePortrait(ctx);
     ctx.restore();
-    ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 10px monospace'; ctx.fillText('O. COBBLEPOT', tx, y + 30);
+    ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 10px monospace'; ctx.fillText('VICTOR FRIES', tx, y + 30);
     ctx.font = '9px monospace';
-    ctx.fillStyle = '#ff5e5e'; ctx.fillText('ALIAS: PINGÜINO', tx, y + 46);
+    ctx.fillStyle = '#ff5e5e'; ctx.fillText('ALIAS: Mr. FREEZE', tx, y + 46);
     ctx.fillStyle = '#ffd166'; ctx.fillText('GOTHAM: -40°C', tx, y + 62);
-    ctx.fillStyle = '#29d985'; ctx.fillText('IR A: ICEBERG', tx, y + 78);
-    ctx.fillStyle = '#7a4cb2'; ctx.fillRect(tx, y + 92, 62, 16);
-    ctx.fillStyle = '#e8e8e8'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
-    ctx.fillText('SE BUSCA', tx + 31, y + 103);
+    ctx.fillStyle = '#29d985'; ctx.fillText('IR A: CENTRO', tx, y + 78);
+    ctx.fillStyle = '#7fb5c8'; ctx.fillRect(tx, y + 92, 62, 16);
+    ctx.fillStyle = '#0b2438'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('CONGELADO', tx + 31, y + 103);
+    // Mystery hint — the mecenas the Batcomputer can't yet identify.
+    // Drawn as a blinking dotted line under the main file so the
+    // player sees the plot thread from the first cave visit.
     ctx.textAlign = 'left';
+    const nowMs = performance.now();
+    const blinkMe = Math.floor(nowMs / 500) % 2 === 0;
+    ctx.fillStyle = blinkMe ? '#c95a3a' : '#7a2f22';
+    ctx.font = 'bold 8px monospace';
+    ctx.fillText('MECENAS: ???', tx, y + 122);
+    ctx.font = '7px monospace';
+    ctx.fillStyle = '#a97fd8';
+    ctx.fillText('rastro púrpura — investigar', tx, y + 132);
     return;
   }
   // Pre-2-4: Two-Face wanted file
@@ -4298,7 +4380,7 @@ function drawFrozenNewsFeed(sx, sy, sw, sh, now) {
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 14px monospace';
   ctx.textAlign = 'left';
-  const crawl = 'ALERTA — GOTHAM BAJO HIELO — EL PINGÜINO tomó el ICEBERG LOUNGE — paraguas-cañón a -40°C — POLICÍA COLAPSADA — ';
+  const crawl = 'ALERTA — GOTHAM CONGELADA — Mr. FREEZE avanza sobre la ciudad a -40°C — POLICÍA COLAPSADA — ¿Quién financia al hombre-hielo? — ';
   const gw = 9, cyc = crawl.length * gw;
   const off = (now / 30) % cyc;
   ctx.fillText(crawl + crawl, sx + 8 - off, barY + 18);
@@ -4331,21 +4413,22 @@ function drawFreezeExpedienteScreen(now) {
   ctx.fillStyle = '#061826'; ctx.fillRect(x + 8, y + 8, w - 16, h - 16);
   ctx.fillStyle = '#0a2438'; ctx.fillRect(x + 8, y + 8, w - 16, 24);
   ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 12px monospace'; ctx.textAlign = 'left';
-  ctx.fillText('BATCOMPUTADORA — EXPEDIENTE: PINGÜINO', x + 18, y + 25);
+  ctx.fillText('BATCOMPUTADORA — EXPEDIENTE: Mr. FREEZE', x + 18, y + 25);
 
-  // Penguin portrait
+  // Mr. Freeze portrait — the executor
   ctx.save();
   ctx.translate(x + 30, y + 54); ctx.scale(0.86, 0.86);
-  drawPenguinPortrait(ctx);
+  drawFreezePortrait(ctx);
   ctx.restore();
 
   const lines = [
-    ['> IDENTIDAD: OSWALD COBBLEPOT — GÁNSTER', '#bfe3ff'],
-    ['> ALIAS: PINGÜINO — PARAGUAS ARMADO', '#bfe3ff'],
-    ['> M.O.: PARAGUAS-CAÑÓN QUE CONGELA GOTHAM', '#ff5e5e'],
-    ['> BASE: ICEBERG LOUNGE — BÓVEDA A -40°C', '#bfe3ff'],
+    ['> IDENTIDAD: DR. VICTOR FRIES — CIENTÍFICO', '#bfe3ff'],
+    ['> ALIAS: Mr. FREEZE — TRAJE CRIOGÉNICO', '#bfe3ff'],
+    ['> M.O.: CAÑÓN QUE CONGELA TODO A -40°C', '#ff5e5e'],
+    ['> DEBILIDAD: NECESITA FRÍO PARA VIVIR', '#bfe3ff'],
+    ['> MECENAS: ??? — hilo púrpura, investigando', '#c95a3a'],
     ['> COMPAÑERO: ROBIN — DÚO EN GOTHAM', '#ffd166'],
-    ['► RUTA: BATICUEVA → ICEBERG · ACTO 3', '#29d985'],
+    ['► RUTA: BATICUEVA → CENTRO · ACTO 3', '#29d985'],
   ];
   ctx.font = '12px monospace'; ctx.textAlign = 'left';
   lines.forEach(([txt, col], i) => { ctx.fillStyle = col; ctx.fillText(txt, x + 190, y + 66 + i * 26); });
@@ -7568,7 +7651,7 @@ function drawAlfredNewsScene(now) {
   ctx.fillStyle = '#fff';
   ctx.font = 'bold 12px monospace';
   ctx.textAlign = 'left';
-  const crawl = 'ALERTA — GOTHAM BAJO HIELO — EL PINGÜINO tomó el ICEBERG LOUNGE — temperatura -40°C — ';
+  const crawl = 'ALERTA — GOTHAM CONGELADA — Mr. FREEZE avanza sobre la ciudad — temperatura -40°C — ¿quién le paga? — ';
   const glyphW = 8;
   const cycleW = crawl.length * glyphW;
   const offset = (t / 30) % cycleW;
@@ -7615,7 +7698,7 @@ function drawAlfredNewsScene(now) {
   ctx.font = '12px monospace';
   const line = t < 3200
     ? '—¿Han visto las noticias, señores?'
-    : '—Gotham se congela. El Pingüino tomó el Iceberg Lounge.';
+    : '—Gotham se congela. Freeze es la cara — pero alguien lo mueve.';
   ctx.fillText(line, CANVAS_W / 2, boxY2 + 46);
   ctx.textAlign = 'left';
 }
@@ -7628,8 +7711,10 @@ function drawAlfredDialog(now) {
   const lines = [
     ['ALFRED', '—¿Han visto las noticias, señores?'],
     ['ALFRED', '—Gotham amaneció bajo un manto de hielo.'],
-    ['ALFRED', '—El Pingüino se atrincheró en el Iceberg Lounge.'],
-    ['ALFRED', '—A la Batcomputadora — habrá que preparar la respuesta.'],
+    ['ALFRED', '—Mr. Freeze salió del Arkham y congela lo que toca.'],
+    ['ALFRED', '—Pero algo no cierra. Freeze no busca dinero, busca a Nora.'],
+    ['ALFRED', '—Alguien le paga con promesas... y con paraguas.'],
+    ['ALFRED', '—A la Batcomputadora — averigüemos quién mueve los hilos.'],
   ];
   const [who, text] = lines[Math.min(page, lines.length - 1)];
 
@@ -7967,7 +8052,7 @@ function loop(now) {
       jumpBufferUntil = 0; shootBufferUntil = 0;
       const cv = level.cave;
       cv.alfred.dialogPage++;
-      if (cv.alfred.dialogPage >= 4) {
+      if (cv.alfred.dialogPage >= 6) {
         cv.tvOn = true;
         state = 'playing';
       }

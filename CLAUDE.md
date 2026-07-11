@@ -69,14 +69,25 @@ doc.**
   an ARMOR upgrade (`armored = true`, spawn always big).
 - Act 3 exit from CUEVA jumps to `3-1` (NOT the next LEVEL_SPECS index,
   because CUEVA is stored between Acts 1 and 2 in the array).
-- Act 3 boss: **El Pingüino** (Oswald Cobblepot). Not implemented yet
-  in a level; the frozen-Gotham theme is reframed as HIS work — he
-  stole cryo-tech and mounted it on umbrella-cannons (the existing
-  `snowCannons`) plus armed his henchmen (frozen thugs). Batcomputer
-  portrait, expediente, TV crawl, and Alfred dialogs already point at
-  him.
+- Act 3 boss: **Mr. Freeze** (Victor Fries). The visible face of the
+  attack — he's the one on Alfred's TV, on the Batcomputer expediente,
+  and behind the boss battle in the frozen city. The existing
+  `snowCannons`, frozen thugs and icy physics are his tech.
+- **STORY TWIST (planted in Act 3, revealed in Act 4)**: Freeze isn't
+  the mastermind. He was hired. The Alfred cave dialog seeds it (page
+  4-5: "Freeze no busca dinero, busca a Nora. Alguien le paga con
+  promesas... y con paraguas."), the Batcomputer file adds a
+  `MECENAS: ???` line in a red-orange blinking tag, the news crawl
+  asks "¿quién le paga?", and the desktop file card shows a purple
+  scent trail — all pointing at Cobblepot without naming him yet.
+- Act 4 boss: **El Pingüino** (Oswald Cobblepot). Not implemented
+  yet. After Freeze falls at end-of-Act-3, a cutscene should reveal
+  a purple umbrella + monocle at the crime scene → Batcomputer
+  swaps to the Penguin expediente (skin already exists,
+  `drawPenguinPortrait`). Act 4 plays out inside the Iceberg
+  Lounge — see "Penguin fight" section below.
 
-### Penguin fight — planned mechanics (level `3-4`, indoor Iceberg Lounge)
+### Penguin fight — planned mechanics (level `4-4`, indoor Iceberg Lounge)
 Arena: gilded ballroom of the Iceberg Lounge with mirrored columns,
 a checkered dance floor with icy patches (slippery physics), and two
 side plateaus. 5 HP. Attacks refuse to overlap; only the current
