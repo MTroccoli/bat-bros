@@ -34,6 +34,10 @@ function switchCharacter() {
     onGround: player.onGround,
     powerState: player.powerState,
     gadget: player.gadget,
+    // Freeze status stays with whoever was hit — hitting Batman with a
+    // snowball freezes ONLY Batman; swapping in Robin doesn't share it,
+    // and swapping back to Batman restores whatever was left of his timer.
+    frozenUntil: player.frozenUntil || 0,
     isCompanion: true,
     isRobin: activeChar === 'batman' ? false : true, // now this one is the one you left
     jumpsUsed: 0, walkPhase: 0,
@@ -46,6 +50,7 @@ function switchCharacter() {
     onGround: swap.onGround,
     powerState: swap.powerState,
     gadget: swap.gadget,
+    frozenUntil: swap.frozenUntil || 0,
     swinging: false, swingAnchor: null, swingRadius: 0, swingAngle: 0, swingAngularVel: 0,
     swingMinR: null,
     climbing: false,
@@ -2171,14 +2176,16 @@ function updatePlaying(dt) {
   // Two independent fire buttons so a player who owns both tools can
   // use each one from its own key: X = batarang throw, Z = batigarra
   // grapple. The batigarra never fires mid-swing (that press is
-  // already consumed by the rope release).
-  if (now < shootBufferUntil && playerCanUse('batarang') && now - lastShotAt > SHOOT_COOLDOWN_MS) {
+  // already consumed by the rope release). Frozen characters (any
+  // active char hit by a snowball / cannon) can't throw either.
+  const frozenLocked = (player.frozenUntil || 0) > now;
+  if (!frozenLocked && now < shootBufferUntil && playerCanUse('batarang') && now - lastShotAt > SHOOT_COOLDOWN_MS) {
     player.gadget = 'batarang';
     spawnBatarang();
     lastShotAt = now;
     shootBufferUntil = 0;
   }
-  if (now < grappleBufferUntil && playerCanUse('batigarra') && !player.swinging &&
+  if (!frozenLocked && now < grappleBufferUntil && playerCanUse('batigarra') && !player.swinging &&
       now - lastGrappleShotAt > SHOOT_COOLDOWN_MS) {
     player.gadget = 'batigarra';
     spawnBatarang();
@@ -2231,23 +2238,22 @@ function updatePlaying(dt) {
     patrolWallBounce(g);
 
     if (aabbOverlap(player, g)) {
-      // a spiked helmet blocks the stomp entirely — knock it off first
-      // (batarang or batigarra) before diving on his head is safe
-      const stomped = !g.helmet && player.vy > 0 && (player.y + player.h - g.y) < STOMP_TOLERANCE;
-      if (stomped) {
-        if (g.frozen) {
-          // 1st stomp only thaws him — he's now fast + dangerous
-          g.frozen = false;
-          g.vx = (g.vx < 0 ? -1 : 1) * 1.2;
-          player.vy = STOMP_BOUNCE;
-          score += 50;
-          hud.score.textContent = score;
-        } else {
-          g.alive = false;
-          player.vy = STOMP_BOUNCE;
-          score += 100;
-          hud.score.textContent = score;
-        }
+      // Land vertically to count as a stomp. A helmet normally blocks
+      // the killing stomp — but a FROZEN enemy always thaws first
+      // (Batman lands on the snow cap, not the spikes), so the helmet
+      // gate only matters for warm enemies.
+      const landing = player.vy > 0 && (player.y + player.h - g.y) < STOMP_TOLERANCE;
+      if (landing && g.frozen) {
+        g.frozen = false;
+        g.vx = (g.vx < 0 ? -1 : 1) * 1.2;
+        player.vy = STOMP_BOUNCE;
+        score += 50;
+        hud.score.textContent = score;
+      } else if (landing && !g.helmet) {
+        g.alive = false;
+        player.vy = STOMP_BOUNCE;
+        score += 100;
+        hud.score.textContent = score;
       } else {
         hurtPlayer();
         return;
@@ -5887,6 +5893,33 @@ function drawPlayerRobin(t) {
   ctx.translate(-12, -player.h / 2);
   drawRobinSprite(0, 0, player.h / 55, false, 0);
   ctx.restore();
+
+  drawFrozenOverlay(px, py, player.w, player.h);
+}
+
+// Shared: draw the icy wash + countdown bar over an active player.
+// Both Batman and Robin call this after their sprite render so the
+// player can SEE that a snowball hit them.
+function drawFrozenOverlay(px, py, w, h) {
+  const now = performance.now();
+  if ((player.frozenUntil || 0) <= now) return;
+  ctx.save();
+  ctx.fillStyle = 'rgba(140,200,240,0.45)';
+  ctx.fillRect(px - 2, py - 2, w + 4, h + 4);
+  ctx.strokeStyle = 'rgba(230,245,255,0.7)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(px - 2, py - 2, w + 4, h + 4);
+  ctx.fillStyle = '#e6f6ff';
+  ctx.fillRect(px + 2, py + 3, 3, 3);
+  ctx.fillRect(px + w - 5, py + 8, 3, 3);
+  ctx.fillRect(px + 4, py + h - 8, 3, 3);
+  ctx.fillRect(px + w - 7, py + h - 5, 3, 3);
+  const left = (player.frozenUntil - now) / 5000;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(px - 2, py - 10, w + 4, 5);
+  ctx.fillStyle = '#7fd4ff';
+  ctx.fillRect(px - 1, py - 9, (w + 2) * Math.max(0, Math.min(1, left)), 3);
+  ctx.restore();
 }
 
 function drawPlayer() {
@@ -5993,33 +6026,9 @@ function drawPlayer() {
 
   ctx.restore();
 
-  // Frozen overlay: cool blue wash + crystalline flecks over the body
-  // while a snowball hit is still ticking down. Drawn AFTER the sprite
-  // restore so it hangs above the shadow, not inside it.
-  const now = performance.now();
-  if ((player.frozenUntil || 0) > now) {
-    const px2 = player.x - camera.x;
-    const py2 = player.y - camera.y;
-    ctx.save();
-    ctx.fillStyle = 'rgba(140,200,240,0.45)';
-    ctx.fillRect(px2 - 2, py2 - 2, w + 4, h + 4);
-    ctx.strokeStyle = 'rgba(230,245,255,0.7)';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(px2 - 2, py2 - 2, w + 4, h + 4);
-    // ice shards
-    ctx.fillStyle = '#e6f6ff';
-    ctx.fillRect(px2 + 2, py2 + 3, 3, 3);
-    ctx.fillRect(px2 + w - 5, py2 + 8, 3, 3);
-    ctx.fillRect(px2 + 4, py2 + h - 8, 3, 3);
-    ctx.fillRect(px2 + w - 7, py2 + h - 5, 3, 3);
-    // timer bar above the head
-    const left = (player.frozenUntil - now) / 5000;
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(px2 - 2, py2 - 10, w + 4, 5);
-    ctx.fillStyle = '#7fd4ff';
-    ctx.fillRect(px2 - 1, py2 - 9, (w + 2) * Math.max(0, Math.min(1, left)), 3);
-    ctx.restore();
-  }
+  // Shared frozen wash so Robin and Batman both show it — see
+  // drawFrozenOverlay above drawPlayerRobin.
+  drawFrozenOverlay(player.x - camera.x, player.y - camera.y, w, h);
 }
 
 function drawPlayerClimbing(px, w, h, cowlH, faceH, bodyTop, suitH, shoesH) {

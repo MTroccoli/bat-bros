@@ -466,7 +466,9 @@ LEVEL_SPECS.push({
     { x: 52, interval: 2200 },
   ],
   birds: [
-    { x: 22, y: 20, range: [16, 28], frozen: true },
+    // First bird patrols only from the snow cannon (x=20) leftward,
+    // so it doesn't overlap the airspace above the pit + swing point.
+    { x: 18, y: 20, range: [14, 20], frozen: true },
     { x: 68, y: 20, range: [62, 74], frozen: true },
   ],
   bats: [[45, 19]],
