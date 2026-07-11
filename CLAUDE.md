@@ -43,6 +43,15 @@ doc.**
   (`if (lives < target) lives = target`), so a player who hoarded
   lives keeps them. Implemented in `loadLevel` via `actStart` map.
 
+### Power-up bats are checkpoints (GENERAL RULE, all acts)
+- Every bat power-up (`level.bats` entry) IS a checkpoint. Picking
+  one up sets `level.checkpoint = { x: bat.x, y: bat.y }`, so the
+  next `hurtPlayer` / `killPlayer` respawn falls through to that
+  spot instead of the level's `spawn`. This applies to Act 1, Act 2
+  AND Act 3 — do not gate it on `level.name.startsWith('2-')`.
+- The upgrade side-effects still stand: `setPowerState('big')`,
+  `batarangAmmo = BATARANG_MAX_AMMO`, `score += BAT_SCORE`.
+
 ### Story arcs, bosses and interstitials
 - Act 1 boss: **Bane** in a warehouse (level `1-4`, indoor).
 - Between Act 1 and Act 2: **Baticueva** (level `CUEVA`). Player picks

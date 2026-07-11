@@ -422,7 +422,8 @@ LEVEL_SPECS.push({
     { x: 47, y: 22, w: 2 },
     // ledge past the second pit
     { x: 64, y: 21, w: 3 },
-    // gable-house stair on the right
+    // final flat rooftop (was a gable-house stair; the diagonal
+    // roof was dropped for a cleaner endgame silhouette)
     { x: 72, y: 22, w: 2 },
     { x: 74, y: 20, w: 5 },
     { x: 79, y: 22, w: 2 },
@@ -430,9 +431,7 @@ LEVEL_SPECS.push({
   // Only one grapple-required wall (Act-1 vocabulary). Everything else
   // is stompable stairs.
   walls: [{ x: 30, w: 3, topRow: 18 }],
-  houses: [
-    { x: 74, w: 5, topRow: 17, baseRow: 20, style: 'gable' },
-  ],
+  houses: [],
   // Anchor over the tall wall (like 1-1's [31,16]) plus two low
   // lamps that let Batman swing across the pits at a moderate height.
   swingPoints: [[31, 15], [54, 17], [67, 17]],
@@ -443,18 +442,20 @@ LEVEL_SPECS.push({
     [45, 19],
     [64, 20], [65, 20],
     [75, 19], [76, 19],
-    [4, 23], [17, 23], [42, 23], [55, 23], [70, 23], [82, 23],
+    // ground-level coins between platforms; skip tile 42 because
+    // the step at (42, 22) would trap it under a floor big Batman
+    // can't reach.
+    [4, 23], [17, 23], [55, 23], [70, 23], [82, 23],
   ],
+  // Trimmed enemy count — the level was too crowded. Kept the
+  // key encounters: opener, mid-street, one rooftop helmet, one
+  // guard before the second pit, one post-pit helmet, one end.
   thugs: [
     { x: 4, y: 24, range: [3, 6], frozen: true },
-    { x: 15, y: 24, range: [13, 18], frozen: true },
-    { x: 10, y: 20, range: [8, 11], frozen: true },
     { x: 22, y: 24, range: [20, 25], frozen: true },
     { x: 38, y: 21, range: [36, 40], helmet: true, frozen: true },
-    { x: 45, y: 20, range: [44, 46], frozen: true },
     { x: 50, y: 24, range: [48, 55], helmet: true, frozen: true },
     { x: 64, y: 21, range: [64, 66], helmet: true, frozen: true },
-    { x: 68, y: 24, range: [63, 71], frozen: true },
     { x: 76, y: 20, range: [74, 78], frozen: true },
     { x: 82, y: 24, range: [80, 83], frozen: true },
   ],
@@ -466,7 +467,6 @@ LEVEL_SPECS.push({
   ],
   birds: [
     { x: 22, y: 20, range: [16, 28], frozen: true },
-    { x: 50, y: 18, range: [44, 58], frozen: true },
     { x: 68, y: 20, range: [62, 74], frozen: true },
   ],
   bats: [[45, 19]],

@@ -1274,7 +1274,6 @@ function updateSnowCannons(dt, now) {
     b.x += b.vx * dt;
     b.y += b.vy * dt;
     b.rot = (b.rot || 0) + 0.2 * dt;
-    if (rectHitsSolid(b.x, b.y, b.w, b.h)) { b.alive = false; continue; }
     if (b.y > (level.pixelHeight || level.height * TILE) + 60) { b.alive = false; continue; }
     // Batarangs shatter snowballs mid-flight (batman's counter-play)
     for (const g of batarangs) {
@@ -1282,12 +1281,39 @@ function updateSnowCannons(dt, now) {
       if (Math.hypot((g.x - b.x), (g.y - b.y)) < 26) { b.alive = false; break; }
     }
     if (!b.alive) continue;
+    // Enemy hit tests come BEFORE the solid-tile check so a ball that
+    // clips a ground-level thug on its way down still freezes him
+    // before the tile eats it. One ball, one enemy.
+    for (const g of level.thugs) {
+      if (!g.alive || g.frozen) continue;
+      if (aabbOverlap(b, g)) {
+        g.frozen = true;
+        g.vx = Math.sign(g.vx || 1) * 0.35; // match the level-frozen thug speed
+        b.alive = false;
+        break;
+      }
+    }
+    if (!b.alive) continue;
+    for (const bd of level.birds) {
+      if (!bd.alive || bd.frozen) continue;
+      if (aabbOverlap(b, bd)) {
+        bd.frozen = true;
+        bd.vx = Math.sign(bd.vx || 1) * 0.5;
+        b.alive = false;
+        break;
+      }
+    }
+    if (!b.alive) continue;
     // Hit test against the player (skip during i-frames from a hurt)
     if (!invuln && !player.swinging && aabbOverlap(b, { x: player.x, y: player.y, w: player.w, h: player.h })) {
       player.frozenUntil = now + 5000;
       player.vx *= 0.3;
       b.alive = false;
+      continue;
     }
+    // Finally: bury the ball in a solid tile so it doesn't punch through
+    // rooftops after the enemy/player passes.
+    if (rectHitsSolid(b.x, b.y, b.w, b.h)) { b.alive = false; continue; }
   }
   // Prune every so often so the array doesn't bloat during long levels
   if (balls.length > 60) level.snowballs = balls.filter(b => b.alive);
@@ -2188,9 +2214,9 @@ function updatePlaying(dt) {
       if (player.gadget === 'batarang') { batarangAmmo = BATARANG_MAX_AMMO; updateAmmoHud(); }
       score += BAT_SCORE;
       hud.score.textContent = score;
-      if (level.name.startsWith('2-')) {
-        level.checkpoint = { x: bat.x, y: bat.y };
-      }
+      // GENERAL RULE: every bat power-up is a checkpoint, in every
+      // act. Respawn falls through to this spot on the next hit.
+      level.checkpoint = { x: bat.x, y: bat.y };
     }
   }
 
