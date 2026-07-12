@@ -124,23 +124,33 @@ const TWOFACE_BULLET_SPEED = 3.4;
 
 // --- Mr. Freeze (Act 3 boss) ---
 // The fight is about BREAKING THE MACHINE, not killing Freeze. He's frozen
-// inside a gothic cryo-reactor and is invulnerable. The reactor vents
-// through cooling valves; jam every valve (dive-stomp while it's exposed)
-// and the core overheats — the ice melts and Freeze drops, defeated.
+// inside a gothic cryo-reactor and is invulnerable. Each button needs
+// FREEZE_BUTTON_HITS dive-stomps / batarangs to break down (iced → orange
+// → RED → active). When all buttons activate the core overheats and
+// Freeze falls.
 const FREEZE_HIT_FLASH_MS = 600;     // button flash after a hit (crack or activate)
 const FREEZE_MELT_MS = 2400;         // overload -> melt animation before the level completes
-// Mr. Freeze wanders the arena floor and keeps firing his cold gun.
+const FREEZE_BUTTON_HITS = 3;        // stomps required per button (crack → red → active)
+// Mr. Freeze wanders the arena floor and keeps firing his cold gun. The
+// gun was a short-range popgun before; it now travels straight (no
+// gravity) and reaches farther so mid-arena positions aren't safe.
 const FREEZE_PATROL_SPEED = 1.25;    // floor wander speed
-const FREEZE_SHOT_INTERVAL = 1600;   // ms between cold-gun shots (0 buttons active)
-const FREEZE_SHOT_INTERVAL_MIN = 900;// fastest cadence once buttons start going down
+const FREEZE_SHOT_INTERVAL = 1400;   // ms between cold-gun shots (0 buttons active)
+const FREEZE_SHOT_INTERVAL_MIN = 650;// fastest cadence once buttons start going down
 const FREEZE_SHOT_PAUSE = 420;       // he plants his feet to aim this long before a shot
 const FREEZE_MUZZLE_MS = 180;        // muzzle-flash duration per shot
-// Falling ceiling stalactites (one hangs over each button). They fall more
-// often as the machine destabilizes (more buttons activated).
-const FREEZE_STAL_INTERVAL = 2600;   // ms between drops at 0 buttons active
-const FREEZE_STAL_MIN = 900;         // fastest drop cadence once all buttons are near down
+const FREEZE_BEAM_SPEED = 11;        // straight-line projectile speed (was ~7)
+const FREEZE_BEAM_LIFESPAN_MS = 2200;// how long a beam flies before dying off-screen
+// Falling ceiling stalactites. In addition to the columns over each
+// button they now also drop from between the buttons and both extremes
+// of the arena, so there's nowhere to just stand and wait.
+const FREEZE_STAL_INTERVAL = 2000;   // ms between drops at 0 progress
+const FREEZE_STAL_MIN = 550;         // fastest drop cadence once fully heated
 const FREEZE_STAL_WARN_MS = 650;     // it shakes at the ceiling this long before dropping
 const FREEZE_STAL_SPEED = 12;        // terminal fall speed
+// Two boss-only goons patrol over the buttons and push Batman off his
+// dive line.
+const FREEZE_BIRD_SPEED = 1.6;
 
 // ---------------------------------------------------------------
 // Deterministic hash: sin-based, returns 0..1
@@ -372,17 +382,47 @@ function buildLevel(spec) {
       const topRow = mrfreeze.buttonTopRow ?? 10;
       const topY = topRow * TILE;
       const bw = 58, colBottom = groundY * TILE;
+      // Each button carries a `hits` counter (0..FREEZE_BUTTON_HITS).
+      //   0 → iced (cyan shell)
+      //   1 → cracked orange
+      //   2 → RED (about to blow)
+      //   FREEZE_BUTTON_HITS → active (machine core is done)
       const buttons = btnCols.map(c => ({
         cx: c * TILE,                        // column center (px)
         topY,                                // dive lands here
         x: c * TILE - bw / 2, y: topY - 10,  // hitbox: from just above the top
         w: bw, h: (colBottom - topY) + 10,   // ...down the column (so a ranged shot connects too)
-        iced: true, active: false, hitUntil: 0,
+        hits: 0, active: false, hitUntil: 0,
       }));
       const fr = mrfreeze.freeze?.range ?? [2, width - 3];
       const fh = 62;
+      // Ceiling stalactite spawn columns — the buttons themselves PLUS a
+      // pair of extras between each button and both extremes of the room.
+      // Prevents Batman from standing safely off to a side while he waits
+      // for a specific button to expose.
+      const stalCols = [];
+      stalCols.push(2 * TILE, 4 * TILE);                  // left extremes
+      for (let i = 0; i < btnCols.length; i++) {
+        stalCols.push(btnCols[i] * TILE);                 // right on the button
+        if (i < btnCols.length - 1) {
+          const mid = (btnCols[i] + btnCols[i + 1]) / 2;
+          stalCols.push(mid * TILE);                       // between the next button
+        }
+      }
+      stalCols.push((width - 4) * TILE, (width - 2) * TILE); // right extremes
+      // Two flying boss goons patrolling above the buttons.
+      const birdY = (topRow - 2) * TILE;
+      const birds = mrfreeze.birds || [
+        { x: btnCols[0] * TILE, y: birdY, w: 26, h: 20,
+          minX: (btnCols[0] - 2) * TILE, maxX: (btnCols[btnCols.length - 1] + 2) * TILE,
+          vx: FREEZE_BIRD_SPEED, alive: true, frozen: false },
+        { x: btnCols[btnCols.length - 1] * TILE, y: birdY + TILE, w: 26, h: 20,
+          minX: (btnCols[0] - 2) * TILE, maxX: (btnCols[btnCols.length - 1] + 2) * TILE,
+          vx: -FREEZE_BIRD_SPEED, alive: true, frozen: false },
+      ];
       return {
         buttons, maxButtons: buttons.length, activeCount: 0, temp: 0,
+        hitsPerButton: FREEZE_BUTTON_HITS,
         state: 'idle',                       // idle | fight | overload | dead
         deadAt: 0, meltStart: 0,
         // Mr. Freeze, the wandering character
@@ -391,9 +431,12 @@ function buildLevel(spec) {
         fvx: FREEZE_PATROL_SPEED, facing: 1, walkPhase: 0,
         fminX: fr[0] * TILE, fmaxX: (fr[1] + 1) * TILE,
         nextShotAt: 0, muzzleUntil: 0, aimUntil: 0, gunAngle: -0.15,
-        // falling ceiling stalactites — one hangs over each button column
-        stalCols: btnCols.map(c => c * TILE),
+        // falling ceiling stalactites — buttons + gaps + extremes
+        stalCols,
         stalDrops: [], nextStalAt: 0,
+        // patrol goons — same shape as regular birds so the batarang loop
+        // can hit them via the merged pool in game.js
+        birds,
         // decorative gothic organ on the back wall
         organTopY: 1 * TILE, organBotY: 7 * TILE,
       };

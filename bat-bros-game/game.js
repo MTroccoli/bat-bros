@@ -154,10 +154,13 @@ window.addEventListener('keydown', e => {
   }
   if (['ArrowLeft', 'KeyA'].includes(e.code)) keys.left = true;
   if (['ArrowRight', 'KeyD'].includes(e.code)) keys.right = true;
-  if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) { keys.jump = true; requestJump(); }
-  // ArrowUp/W double as "climb up" next to a ladder; harmless elsewhere since
-  // a queued jump is cleared the instant a ladder grab consumes it (see
-  // tryGrabLadder), so it never causes a stray hop.
+  // Jump is Space ONLY on keyboard. ArrowUp / W used to trigger it too,
+  // but that made climbing a ladder unusable: browser autorepeat kept
+  // re-arming the jump buffer while UP was held, and updateClimb
+  // consumed the buffer to launch Batman sideways off the ladder
+  // mid-climb. Now UP is only the "climb up" key — jump lives on Space
+  // (keyboard) and the on-screen jump button (touch).
+  if (e.code === 'Space') { keys.jump = true; requestJump(); }
   if (['ArrowUp', 'KeyW'].includes(e.code)) keys.up = true;
   if (['KeyX', 'ShiftLeft', 'ShiftRight'].includes(e.code)) { keys.shoot = true; requestShoot(); }
   if (['KeyZ', 'KeyC'].includes(e.code)) { keys.grapple = true; requestGrapple(); }
@@ -170,7 +173,7 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => {
   if (['ArrowLeft', 'KeyA'].includes(e.code)) keys.left = false;
   if (['ArrowRight', 'KeyD'].includes(e.code)) keys.right = false;
-  if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) keys.jump = false;
+  if (e.code === 'Space') keys.jump = false;
   if (['ArrowUp', 'KeyW'].includes(e.code)) keys.up = false;
   if (['KeyX', 'ShiftLeft', 'ShiftRight'].includes(e.code)) keys.shoot = false;
   if (['KeyZ', 'KeyC'].includes(e.code)) keys.grapple = false;
@@ -500,7 +503,11 @@ function updateBatarangs(dt) {
     }
     if (b.phase !== 'out') continue;
     if (b.type !== 'batigarra') {
-      for (const bd of level.birds) {
+      // Level birds + Mr Freeze's boss goons (mf.birds) share the batarang
+      // collision, so a batarang thrown in the Freeze arena hits either.
+      const birdPool = level.birds.slice();
+      if (level.mrfreeze && level.mrfreeze.birds) birdPool.push(...level.mrfreeze.birds);
+      for (const bd of birdPool) {
         if (!bd.alive) continue;
         if (b.x + 8 > bd.x && b.x - 8 < bd.x + bd.w && b.y + 8 > bd.y && b.y - 8 < bd.y + bd.h) {
           if (bd.frozen) {
@@ -1418,12 +1425,18 @@ function updateSnowCannons(dt, now) {
   const balls = level.snowballs;
   for (const b of balls) {
     if (!b.alive) continue;
-    b.vy += GRAVITY * dt;
-    if (b.vy > MAX_FALL) b.vy = MAX_FALL;
+    // Freeze's cold-gun beam flies straight — no gravity, longer range.
+    // Regular snowballs still arc as normal.
+    if (!b.fromFreeze) {
+      b.vy += GRAVITY * dt;
+      if (b.vy > MAX_FALL) b.vy = MAX_FALL;
+    }
     b.x += b.vx * dt;
     b.y += b.vy * dt;
     b.rot = (b.rot || 0) + 0.2 * dt;
     if (b.y > (level.pixelHeight || level.height * TILE) + 60) { b.alive = false; continue; }
+    if (b.fromFreeze && (typeof FREEZE_BEAM_LIFESPAN_MS !== 'undefined') &&
+        now - b.born > FREEZE_BEAM_LIFESPAN_MS) { b.alive = false; continue; }
     // Batarangs shatter snowballs mid-flight (batman's counter-play)
     for (const g of batarangs) {
       if (!g.alive) continue;
@@ -2139,9 +2152,19 @@ function updateTwoFace(dt, now) {
 // dive-stomp on the column top OR a ranged batarang/batigarra. Activate all
 // three and the machine overloads — the ice melts and Freeze drops.
 // ---------------------------------------------------------------
+// Progress across the whole boss fight — sum of hits landed on any
+// button vs the maximum possible. Used to ramp stalactite cadence and
+// beam intensity.
+function freezeProgress(mf) {
+  const total = mf.buttons.reduce((s, b) => s + b.hits, 0);
+  const max = mf.maxButtons * mf.hitsPerButton;
+  return max > 0 ? total / max : 0;
+}
+
 function spawnFreezeColdGun(now) {
   const mf = level.mrfreeze;
-  const speed = 6.5 + mf.activeCount;              // a touch faster per button lost
+  const heat = freezeProgress(mf);
+  const speed = FREEZE_BEAM_SPEED + heat * 3; // 11 → 14 as the fight heats up
   mf._shotN = (mf._shotN || 0) + 1;
   const spread = [-0.1, 0, 0.1][mf._shotN % 3];    // tight 3-shot spread around the aim
   const ang = (mf.gunAngle || 0) + spread;
@@ -2153,32 +2176,37 @@ function spawnFreezeColdGun(now) {
     w: SNOWBALL_SIZE, h: SNOWBALL_SIZE,
     vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
     rot: 0, alive: true, born: now,
+    // Straight-line beam: no gravity, ranged. See the snowball loop.
+    fromFreeze: true,
   });
 }
 
-// A button takes two hits: 1st shatters its ice shield, 2nd activates it.
-// Works from a dive-stomp on the column top OR a ranged batarang/batigarra.
+// A button takes FREEZE_BUTTON_HITS (3) hits: crack → orange → RED →
+// active. Works from a dive-stomp on the column top OR a ranged
+// batarang/batigarra.
 function hitFreezeButton(mf, i, now, viaDive) {
   const b = mf.buttons[i];
   if (b.active || now < b.hitUntil) return false;
+  b.hits = Math.min(mf.hitsPerButton, b.hits + 1);
   b.hitUntil = now + FREEZE_HIT_FLASH_MS;
   if (viaDive) player.vy = STOMP_BOUNCE;
-  if (b.iced) {                       // 1st hit: crack the ice shield
-    b.iced = false;
+  const activated = b.hits >= mf.hitsPerButton;
+  // Temperature bar fills on TOTAL hits, not just fully-activated buttons.
+  mf.temp = freezeProgress(mf);
+  if (activated) {
+    b.active = true;
+    mf.activeCount = mf.buttons.filter(x => x.active).length;
+    score += 700; hud.score.textContent = score;
+    triggerScreenShake(now, 5, 220);
+    if (mf.buttons.every(x => x.active)) {
+      mf.state = 'overload'; mf.deadAt = now; mf.meltStart = now;
+      score += 6000; hud.score.textContent = score;
+      triggerScreenShake(now, 9, 700);
+    }
+  } else {
+    // Chip hit: shake + smaller score gain
     score += 250; hud.score.textContent = score;
     triggerScreenShake(now, 3, 140);
-    return true;
-  }
-  // 2nd hit: activate
-  b.active = true;
-  mf.activeCount = mf.buttons.filter(x => x.active).length;
-  mf.temp = mf.activeCount / mf.maxButtons;
-  score += 700; hud.score.textContent = score;
-  triggerScreenShake(now, 5, 220);
-  if (mf.buttons.every(x => x.active)) {
-    mf.state = 'overload'; mf.deadAt = now; mf.meltStart = now;
-    score += 6000; hud.score.textContent = score;
-    triggerScreenShake(now, 9, 700);
   }
   return true;
 }
@@ -2216,7 +2244,14 @@ function updateMrFreeze(dt, now) {
     spawnFreezeColdGun(now);
     mf.muzzleUntil = now + FREEZE_MUZZLE_MS;
     mf.aimUntil = now + 120;
-    mf.nextShotAt = now + Math.max(FREEZE_SHOT_INTERVAL_MIN, FREEZE_SHOT_INTERVAL - mf.activeCount * 220);
+    // Cadence now ramps on TOTAL hits (0..hitsPerButton per button),
+    // not just fully-activated ones. So the pace climbs after each
+    // stomp, not only after every 3rd stomp.
+    const heat = freezeProgress(mf);
+    mf.nextShotAt = now + Math.max(
+      FREEZE_SHOT_INTERVAL_MIN,
+      FREEZE_SHOT_INTERVAL - heat * (FREEZE_SHOT_INTERVAL - FREEZE_SHOT_INTERVAL_MIN)
+    );
   }
   // contact hurts Batman; Freeze himself is invulnerable (a stomp just bounces)
   const fbox = { x: mf.fx, y: mf.fy, w: mf.fw, h: mf.fh };
@@ -2244,14 +2279,25 @@ function updateMrFreeze(dt, now) {
     }
   });
 
-  // --- falling stalactites (one hangs over each button); they fall more
-  // often as the machine destabilizes (more buttons activated) ---
+  // --- falling stalactites (columns cover buttons + gaps + extremes) ---
   const floorPx = level.groundY * TILE;
   if (!mf.nextStalAt) mf.nextStalAt = now + 1400;
+  const heat = freezeProgress(mf);
   if (now >= mf.nextStalAt) {
-    const sx = mf.stalCols[Math.floor(Math.random() * mf.stalCols.length)];
-    mf.stalDrops.push({ x: sx, y: 1.4 * TILE, vy: 0, warnUntil: now + FREEZE_STAL_WARN_MS, alive: true });
-    const interval = Math.max(FREEZE_STAL_MIN, FREEZE_STAL_INTERVAL - mf.activeCount * 560);
+    // At 0 progress we drop ONE spike per tick; at max progress we drop
+    // up to THREE at once to hammer the arena.
+    const dropCount = 1 + Math.floor(heat * 2 + 0.5);
+    for (let d = 0; d < dropCount; d++) {
+      const sx = mf.stalCols[Math.floor(Math.random() * mf.stalCols.length)];
+      mf.stalDrops.push({
+        x: sx, y: 1.4 * TILE, vy: 0,
+        warnUntil: now + FREEZE_STAL_WARN_MS, alive: true,
+      });
+    }
+    const interval = Math.max(
+      FREEZE_STAL_MIN,
+      FREEZE_STAL_INTERVAL - heat * (FREEZE_STAL_INTERVAL - FREEZE_STAL_MIN)
+    );
     mf.nextStalAt = now + interval;
   }
   for (const s of mf.stalDrops) {
@@ -2268,6 +2314,27 @@ function updateMrFreeze(dt, now) {
     if (s.y > floorPx + 6) s.alive = false; // shattered on the ice
   }
   mf.stalDrops = mf.stalDrops.filter(s => s.alive);
+
+  // --- Two flying boss goons patrol above the buttons ---
+  for (const b of (mf.birds || [])) {
+    if (!b.alive) continue;
+    b.x += b.vx * dt;
+    if (b.x < b.minX) { b.x = b.minX; b.vx = Math.abs(b.vx); }
+    if (b.x + b.w > b.maxX) { b.x = b.maxX - b.w; b.vx = -Math.abs(b.vx); }
+    // touch → hurt (or stomp them out)
+    if (aabbOverlap(b, { x: player.x, y: player.y, w: player.w, h: player.h })) {
+      const landing = player.vy > 0 && (player.y + player.h - b.y) < STOMP_TOLERANCE;
+      if (landing) {
+        b.alive = false;
+        player.vy = STOMP_BOUNCE;
+        score += 100;
+        hud.score.textContent = score;
+      } else if (Date.now() >= invulnUntil) {
+        hurtPlayer();
+        if (state !== 'playing') return;
+      }
+    }
+  }
 }
 
 function updatePlaying(dt) {
@@ -7113,8 +7180,8 @@ function drawMrFreeze(t) {
       const gg = ctx.createRadialGradient(bx, topY - 9, 1, bx, topY - 9, 16); gg.addColorStop(0, 'rgba(90,255,160,0.8)'); gg.addColorStop(1, 'rgba(90,255,160,0)');
       ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(bx, topY - 9, 16, 0, 7); ctx.fill();
       ctx.fillStyle = '#5affa0'; ctx.beginPath(); ctx.arc(bx, topY - 9, 7, 0, 7); ctx.fill();
-    } else if (b.iced) {
-      // ice shield over the button (crack it first)
+    } else if (b.hits === 0) {
+      // Hit 0 — iced. Crack the ice shell first.
       ctx.fillStyle = flash ? '#ffffff' : '#7fb8d8'; ctx.beginPath(); ctx.arc(bx, topY - 9, 6, 0, 7); ctx.fill();
       ctx.fillStyle = 'rgba(230,248,255,0.85)';
       ctx.beginPath();
@@ -7124,16 +7191,59 @@ function drawMrFreeze(t) {
       ctx.beginPath(); ctx.moveTo(bx - 6, topY - 14); ctx.lineTo(bx + 1, topY - 9); ctx.lineTo(bx + 5, topY - 13); ctx.stroke();
       ctx.fillStyle = '#8fd0ec'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.fillText('❄', bx, topY - 22);
     } else {
-      // shield cracked -> ARMED (pulsing orange), hit again to activate
-      const pulse = 0.55 + 0.45 * Math.sin(now / 120);
-      const gg = ctx.createRadialGradient(bx, topY - 9, 1, bx, topY - 9, 18); gg.addColorStop(0, `rgba(255,180,90,${pulse})`); gg.addColorStop(1, 'rgba(255,120,60,0)');
+      // Hit 1 → orange armed, Hit 2 → RED (the 2nd hit visualization
+      // the user asked for). Hit >= mf.hitsPerButton would be handled
+      // by the active branch above.
+      const isRed = b.hits >= 2;
+      const pulse = 0.55 + 0.45 * Math.sin(now / (isRed ? 90 : 120));
+      const inner = isRed ? `rgba(255,80,60,${pulse})` : `rgba(255,180,90,${pulse})`;
+      const outer = isRed ? 'rgba(255,50,40,0)' : 'rgba(255,120,60,0)';
+      const gg = ctx.createRadialGradient(bx, topY - 9, 1, bx, topY - 9, 18);
+      gg.addColorStop(0, inner); gg.addColorStop(1, outer);
       ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(bx, topY - 9, 18, 0, 7); ctx.fill();
-      ctx.fillStyle = flash ? '#fff' : '#ffcf6b'; ctx.beginPath(); ctx.arc(bx, topY - 9, 7, 0, 7); ctx.fill();
-      ctx.fillStyle = `rgba(255,209,102,${pulse})`;
+      ctx.fillStyle = flash ? '#fff' : (isRed ? '#ff5a5a' : '#ffcf6b');
+      ctx.beginPath(); ctx.arc(bx, topY - 9, 7, 0, 7); ctx.fill();
+      // dive chevron above — matches the colour so red screams "hit me"
+      ctx.fillStyle = isRed ? `rgba(255,90,80,${pulse})` : `rgba(255,209,102,${pulse})`;
       const chy = topY - 32 - Math.sin(now / 200) * 3;
       ctx.beginPath(); ctx.moveTo(bx - 8, chy); ctx.lineTo(bx + 8, chy); ctx.lineTo(bx, chy + 10); ctx.closePath(); ctx.fill();
     }
+    // Hit pips under the housing — how many stomps remain per button.
+    const pipY = topY - 24;
+    for (let p = 0; p < mf.hitsPerButton; p++) {
+      const px = bx - (mf.hitsPerButton - 1) * 4 + p * 8;
+      ctx.fillStyle = p < b.hits
+        ? (b.active ? '#9bffcf' : b.hits >= 2 ? '#ff5a5a' : '#ffa64a')
+        : 'rgba(255,255,255,0.28)';
+      ctx.beginPath(); ctx.arc(px, pipY, 2.4, 0, 7); ctx.fill();
+    }
   });
+
+  // ===== boss patrol goons =====
+  for (const b of (mf.birds || [])) {
+    if (!b.alive) continue;
+    const bx = b.x - camera.x, by = b.y - camera.y;
+    const flap = Math.sin(now / 90 + b.x) * 9;
+    ctx.fillStyle = '#4a5170';
+    ctx.beginPath();
+    ctx.moveTo(bx + b.w / 2, by + b.h / 2);
+    ctx.lineTo(bx - 6, by + b.h / 2 - flap);
+    ctx.lineTo(bx + b.w * 0.35, by + b.h / 2 + 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(bx + b.w / 2, by + b.h / 2);
+    ctx.lineTo(bx + b.w + 6, by + b.h / 2 - flap);
+    ctx.lineTo(bx + b.w * 0.65, by + b.h / 2 + 3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#2a3040';
+    ctx.beginPath();
+    ctx.ellipse(bx + b.w / 2, by + b.h / 2, b.w * 0.28, b.h * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#ff5a5a';
+    ctx.beginPath(); ctx.arc(bx + (b.vx > 0 ? b.w * 0.7 : b.w * 0.3), by + b.h * 0.4, 1.8, 0, 7); ctx.fill();
+  }
 
   // ===== ceiling stalactites over each button (+ the falling ones) =====
   for (const cxw of mf.stalCols) {
@@ -7170,7 +7280,7 @@ function drawMrFreeze(t) {
   ctx.strokeStyle = 'rgba(255,255,255,0.4)';
   for (let i = 1; i < mf.maxButtons; i++) { const tx = gx + gw * (i / mf.maxButtons); ctx.beginPath(); ctx.moveTo(tx, gy); ctx.lineTo(tx, gy + 16); ctx.stroke(); }
   ctx.fillStyle = '#cfe0ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
-  ctx.fillText(`MÁQUINA — ${mf.activeCount}/${mf.maxButtons} BOTONES ACTIVADOS`, CANVAS_W / 2, gy + 34);
+  ctx.fillText(`MÁQUINA — ${mf.activeCount}/${mf.maxButtons} BOTONES · ${mf.hitsPerButton} GOLPES C/U`, CANVAS_W / 2, gy + 34);
   ctx.textAlign = 'left';
 }
 
