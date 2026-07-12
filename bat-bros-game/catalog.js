@@ -127,16 +127,14 @@ const TWOFACE_BULLET_SPEED = 3.4;
 // inside a gothic cryo-reactor and is invulnerable. The reactor vents
 // through cooling valves; jam every valve (dive-stomp while it's exposed)
 // and the core overheats — the ice melts and Freeze drops, defeated.
-const FREEZE_VENT_INTERVAL = 3600;   // gap between valve-venting cycles
-const FREEZE_VENT_WINDOW = 3200;     // how long a valve stays exposed / jammable
-const FREEZE_HIT_FLASH_MS = 600;     // valve flash after a jam
+const FREEZE_HIT_FLASH_MS = 600;     // button flash after a hit (crack or activate)
 const FREEZE_MELT_MS = 2400;         // overload -> melt animation before the level completes
-const FREEZE_DEFAULT_VALVES = 3;
-// Freeze is ALWAYS firing his cold gun while the fight is on — a steady
-// aimed shot that speeds up as the core heats (valves get jammed).
-const FREEZE_SHOT_INTERVAL = 820;    // ms between cold-gun shots at 0 valves jammed
-const FREEZE_SHOT_INTERVAL_MIN = 360;// fastest cadence once the core is hot
-const FREEZE_MUZZLE_MS = 160;        // muzzle-flash duration per shot
+// Mr. Freeze wanders the arena floor and keeps firing his cold gun.
+const FREEZE_PATROL_SPEED = 1.25;    // floor wander speed
+const FREEZE_SHOT_INTERVAL = 1600;   // ms between cold-gun shots (0 buttons active)
+const FREEZE_SHOT_INTERVAL_MIN = 900;// fastest cadence once buttons start going down
+const FREEZE_SHOT_PAUSE = 420;       // he plants his feet to aim this long before a shot
+const FREEZE_MUZZLE_MS = 180;        // muzzle-flash duration per shot
 
 // ---------------------------------------------------------------
 // Deterministic hash: sin-based, returns 0..1
@@ -359,35 +357,36 @@ function buildLevel(spec) {
         },
       };
     })() : null,
-    // Mr. Freeze reactor. Freeze is frozen inside the core and invulnerable;
-    // the fight targets the cooling VALVES. Each valve sits just above the
-    // reactor's top face so a dive-stomp from a perch above registers, like
-    // Bane's head. Jam them all to overheat the core.
+    // Mr. Freeze fight. Freeze is a WANDERING character (invulnerable) who
+    // fires his cold gun. The target is the MACHINE: 3 control-column buttons,
+    // each ice-shielded (1st hit cracks the ice, 2nd activates). Activate all
+    // three -> the machine overloads and Freeze melts.
     mrfreeze: mrfreeze ? (() => {
-      const reactor = mrfreeze.reactor || { x: 9, w: 14, topRow: 8 };
-      const topY = reactor.topRow * TILE;
-      const cols = mrfreeze.valveCols || [
-        reactor.x + 1, reactor.x + reactor.w / 2 - 0.5, reactor.x + reactor.w - 2,
-      ];
-      const valveW = 42, valveH = 26;
-      const valves = cols.map(c => ({
-        cx: c * TILE + TILE / 2,
-        x: c * TILE + TILE / 2 - valveW / 2,
-        y: topY - valveH + 4,          // pokes just above the reactor top
-        w: valveW, h: valveH,
-        jammed: false, hitUntil: 0,
+      const btnCols = mrfreeze.buttonCols || [8, 15, 22];
+      const topRow = mrfreeze.buttonTopRow ?? 10;
+      const topY = topRow * TILE;
+      const bw = 58, colBottom = groundY * TILE;
+      const buttons = btnCols.map(c => ({
+        cx: c * TILE,                        // column center (px)
+        topY,                                // dive lands here
+        x: c * TILE - bw / 2, y: topY - 10,  // hitbox: from just above the top
+        w: bw, h: (colBottom - topY) + 10,   // ...down the column (so a ranged shot connects too)
+        iced: true, active: false, hitUntil: 0,
       }));
+      const fr = mrfreeze.freeze?.range ?? [2, width - 3];
+      const fh = 62;
       return {
-        reactorX: reactor.x * TILE, reactorY: topY,
-        reactorW: reactor.w * TILE, reactorH: (groundY - reactor.topRow) * TILE,
-        coreX: (reactor.x + reactor.w / 2) * TILE,
-        coreY: topY + (groundY - reactor.topRow) * TILE * 0.45,
-        valves,
-        maxValves: valves.length,
-        state: 'idle',               // idle | fight | overload | dead
-        exposedIdx: -1, exposedUntil: 0, nextVentAt: 0,
-        beamIdx: 0, nextShotAt: 0, muzzleUntil: 0, gunAngle: -0.5,
-        temp: 0, deadAt: 0, meltStart: 0,
+        buttons, maxButtons: buttons.length, activeCount: 0, temp: 0,
+        state: 'idle',                       // idle | fight | overload | dead
+        deadAt: 0, meltStart: 0,
+        // Mr. Freeze, the wandering character
+        fw: 40, fh,
+        fx: (mrfreeze.freeze?.x ?? 6) * TILE, fy: groundY * TILE - fh,
+        fvx: FREEZE_PATROL_SPEED, facing: 1, walkPhase: 0,
+        fminX: fr[0] * TILE, fmaxX: (fr[1] + 1) * TILE,
+        nextShotAt: 0, muzzleUntil: 0, aimUntil: 0, gunAngle: -0.15,
+        // decorative gothic organ on the back wall
+        organTopY: 1 * TILE, organBotY: 7 * TILE,
       };
     })() : null,
     // gargoyle perches are only meaningful in the Bane warehouse fight

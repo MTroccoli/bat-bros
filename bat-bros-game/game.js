@@ -2135,31 +2135,55 @@ function updateTwoFace(dt, now) {
 // ---------------------------------------------------------------
 // Mr. Freeze fight (level 3-4)
 //
-// You don't kill Freeze — you break his machine. He's frozen inside the
-// reactor core, invulnerable and unreachable. The reactor vents through 3
-// cooling valves; every FREEZE_VENT_INTERVAL one valve OPENS (glows) for a
-// window and Freeze fires his cold gun. Dive-stomp the exposed valve to JAM
-// it (temp rises). Jam all three -> the core overheats, the ice melts and
-// Freeze drops. Arena ice cannons + his cold-gun bursts reuse the snowball
-// system (freeze-on-contact, batarang-shatterable).
+// You don't kill Freeze — you break his machine. Freeze is a WANDERING
+// character on the floor (invulnerable) who keeps firing his cold gun. The
+// gothic organ machine feeds 3 control-column buttons, each ice-shielded:
+// the 1st hit shatters the ice, the 2nd activates it. Hit them with a
+// dive-stomp on the column top OR a ranged batarang/batigarra. Activate all
+// three and the machine overloads — the ice melts and Freeze drops.
 // ---------------------------------------------------------------
 function spawnFreezeColdGun(now) {
   const mf = level.mrfreeze;
-  const jammed = mf.valves.filter(v => v.jammed).length;
-  const speed = 7 + jammed;                        // faster/flatter as the core heats up
-  const spread = [-0.13, 0, 0.13][mf.beamIdx % 3]; // tight 3-shot spread around the aim
-  const ang = (mf.gunAngle || -0.5) + spread;
-  const muzzle = 32;                               // spawn from the gun tip
-  const ox = mf.coreX + Math.cos(ang) * muzzle;
-  const oy = mf.coreY + Math.sin(ang) * muzzle;
+  const speed = 6.5 + mf.activeCount;              // a touch faster per button lost
+  mf._shotN = (mf._shotN || 0) + 1;
+  const spread = [-0.1, 0, 0.1][mf._shotN % 3];    // tight 3-shot spread around the aim
+  const ang = (mf.gunAngle || 0) + spread;
+  const gx = mf.fx + mf.fw / 2 + mf.facing * (mf.fw / 2 + 8); // gun muzzle
+  const gy = mf.fy + mf.fh * 0.42;
   level.snowballs = level.snowballs || [];
   level.snowballs.push({
-    x: ox - SNOWBALL_SIZE / 2, y: oy - SNOWBALL_SIZE / 2,
+    x: gx - SNOWBALL_SIZE / 2, y: gy - SNOWBALL_SIZE / 2,
     w: SNOWBALL_SIZE, h: SNOWBALL_SIZE,
     vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
     rot: 0, alive: true, born: now,
   });
-  mf.beamIdx++;
+}
+
+// A button takes two hits: 1st shatters its ice shield, 2nd activates it.
+// Works from a dive-stomp on the column top OR a ranged batarang/batigarra.
+function hitFreezeButton(mf, i, now, viaDive) {
+  const b = mf.buttons[i];
+  if (b.active || now < b.hitUntil) return false;
+  b.hitUntil = now + FREEZE_HIT_FLASH_MS;
+  if (viaDive) player.vy = STOMP_BOUNCE;
+  if (b.iced) {                       // 1st hit: crack the ice shield
+    b.iced = false;
+    score += 250; hud.score.textContent = score;
+    triggerScreenShake(now, 3, 140);
+    return true;
+  }
+  // 2nd hit: activate
+  b.active = true;
+  mf.activeCount = mf.buttons.filter(x => x.active).length;
+  mf.temp = mf.activeCount / mf.maxButtons;
+  score += 700; hud.score.textContent = score;
+  triggerScreenShake(now, 5, 220);
+  if (mf.buttons.every(x => x.active)) {
+    mf.state = 'overload'; mf.deadAt = now; mf.meltStart = now;
+    score += 6000; hud.score.textContent = score;
+    triggerScreenShake(now, 9, 700);
+  }
+  return true;
 }
 
 function updateMrFreeze(dt, now) {
@@ -2171,66 +2195,57 @@ function updateMrFreeze(dt, now) {
     return;
   }
 
-  // Freeze wakes up once Batman steps into the arena
+  // wake up once Batman steps into the arena
   if (mf.state === 'idle') {
-    if (player.x > 4 * TILE) {
-      mf.state = 'fight';
-      mf.nextVentAt = now + 1200;
-    }
+    if (player.x > 4 * TILE) { mf.state = 'fight'; mf.nextShotAt = now + 900; }
     return;
   }
 
-  // open a valve to vent (the reactor's only vulnerable window)
-  if (mf.exposedIdx < 0 && now >= mf.nextVentAt) {
-    const free = mf.valves.map((v, i) => i).filter(i => !mf.valves[i].jammed);
-    if (free.length) {
-      mf.exposedIdx = free[Math.floor(Math.random() * free.length)];
-      mf.exposedUntil = now + FREEZE_VENT_WINDOW;
-    }
-  }
-  // valve re-seals if the window closes without a jam
-  if (mf.exposedIdx >= 0 && now >= mf.exposedUntil) {
-    mf.exposedIdx = -1;
-    mf.nextVentAt = now + FREEZE_VENT_INTERVAL;
-  }
-
-  // Freeze is ACTIVE the whole fight: he tracks Batman and keeps firing his
-  // cold gun, faster and faster as the core heats up (valves get jammed).
-  const jammedNow = mf.valves.filter(v => v.jammed).length;
+  // --- Mr. Freeze wanders the floor and fires his cold gun at Batman ---
   const pcx = player.x + player.w / 2, pcy = player.y + player.h / 2;
-  mf.gunAngle = Math.atan2(pcy - mf.coreY, pcx - mf.coreX);
-  if (!mf.nextShotAt) mf.nextShotAt = now + 600;
+  const gy = mf.fy + mf.fh * 0.42;
+  mf.gunAngle = Math.atan2(pcy - gy, pcx - (mf.fx + mf.fw / 2));
+  mf.facing = pcx >= (mf.fx + mf.fw / 2) ? 1 : -1;
+  const aiming = now < mf.aimUntil;
+  if (!aiming) {                       // he plants his feet while aiming
+    mf.fx += mf.fvx * dt;
+    if (mf.fx < mf.fminX) { mf.fx = mf.fminX; mf.fvx = Math.abs(mf.fvx); }
+    if (mf.fx + mf.fw > mf.fmaxX) { mf.fx = mf.fmaxX - mf.fw; mf.fvx = -Math.abs(mf.fvx); }
+    mf.walkPhase += Math.abs(mf.fvx) * dt * 0.12;
+  }
+  if (!mf.nextShotAt) mf.nextShotAt = now + 900;
+  if (!aiming && now >= mf.nextShotAt - FREEZE_SHOT_PAUSE && now < mf.nextShotAt) mf.aimUntil = mf.nextShotAt;
   if (now >= mf.nextShotAt) {
     spawnFreezeColdGun(now);
     mf.muzzleUntil = now + FREEZE_MUZZLE_MS;
-    mf.nextShotAt = now + Math.max(FREEZE_SHOT_INTERVAL_MIN, FREEZE_SHOT_INTERVAL - jammedNow * 150);
+    mf.aimUntil = now + 120;
+    mf.nextShotAt = now + Math.max(FREEZE_SHOT_INTERVAL_MIN, FREEZE_SHOT_INTERVAL - mf.activeCount * 220);
+  }
+  // contact hurts Batman; Freeze himself is invulnerable (a stomp just bounces)
+  const fbox = { x: mf.fx, y: mf.fy, w: mf.fw, h: mf.fh };
+  if (!player.swinging && Date.now() >= invulnUntil && aabbOverlap(player, fbox)) {
+    if (player.vy > 1.5 && (player.y + player.h - mf.fy) < STOMP_TOLERANCE + 6) player.vy = STOMP_BOUNCE * 0.7;
+    else { hurtPlayer(); if (state !== 'playing') return; }
   }
 
-  // dive-stomp the exposed valve to jam it
-  if (mf.exposedIdx >= 0) {
-    const v = mf.valves[mf.exposedIdx];
+  // --- machine buttons: dive-stomp the column top OR hit it ranged ---
+  mf.buttons.forEach((b, i) => {
+    if (b.active) return;
+    // Dive zone reaches ABOVE the solid column top so the hit registers while
+    // Batman is still descending (a frame later the solid top zeroes his vy).
+    const feet = player.y + player.h;
     const diving = !player.swinging && player.vy > 1.5 &&
-      aabbOverlap(player, { x: v.x, y: v.y, w: v.w, h: v.h }) &&
-      (player.y + player.h - v.y) < 24;
-    if (diving && now > v.hitUntil) {
-      v.jammed = true;
-      v.hitUntil = now + FREEZE_HIT_FLASH_MS;
-      mf.exposedIdx = -1;
-      player.vy = STOMP_BOUNCE;
-      const jammed = mf.valves.filter(x => x.jammed).length;
-      mf.temp = jammed / mf.maxValves;
-      mf.nextVentAt = now + Math.max(1400, FREEZE_VENT_INTERVAL - jammed * 500);
-      score += 600; hud.score.textContent = score;
-      triggerScreenShake(now, 5, 200);
-      if (mf.valves.every(x => x.jammed)) {
-        mf.state = 'overload';
-        mf.deadAt = now;
-        mf.meltStart = now;
-        score += 6000; hud.score.textContent = score;
-        triggerScreenShake(now, 9, 700);
+      aabbOverlap(player, { x: b.x, y: b.topY - 28, w: b.w, h: 46 }) &&
+      feet > b.topY - 30 && feet < b.topY + 16;
+    if (diving) { hitFreezeButton(mf, i, now, true); return; }
+    for (const g of batarangs) {
+      if (g.phase !== 'out' || !g.alive) continue;
+      if (aabbOverlap({ x: g.x - 8, y: g.y - 8, w: 16, h: 16 }, b)) {
+        if (hitFreezeButton(mf, i, now, false)) g.phase = 'back';
+        break;
       }
     }
-  }
+  });
 }
 
 function updatePlaying(dt) {
@@ -3317,8 +3332,8 @@ function update(dt) {
         state = 'playing';
       } else if (level.mrfreeze) {
         state = 'win';
-        showOverlay('EL NÚCLEO ESTALLÓ',
-          `Batman no combatió a Mr. Freeze: reventó su reactor. El núcleo se sobrecalentó, el hielo se derritió y Victor Fries cayó, vencido y a salvo. Entre los restos, un detalle fuera de lugar: un paraguas violeta y un monóculo. Freeze no actuaba solo... alguien le pagaba. Puntaje: ${score} con ${coinsCollected} monedas. El ACTO 4 continúa...`,
+        showOverlay('LA MÁQUINA ESTALLÓ',
+          `Batman no combatió a Mr. Freeze: reventó su máquina. Activados los tres controles, el reactor se sobrecalentó, el hielo se derritió y Victor Fries cayó, vencido y a salvo. Entre los restos, un detalle fuera de lugar: un paraguas violeta y un monóculo. Freeze no actuaba solo... alguien le pagaba. Puntaje: ${score} con ${coinsCollected} monedas. El ACTO 4 continúa...`,
           'VOLVER AL MENÚ');
       } else {
         state = 'win';
@@ -5676,7 +5691,7 @@ function drawContainerTower(w, x0, wpx, roofY, groundPx) {
 
 function drawWalls(t) {
   if (level.cave) return; // cave terraces are plain rock, painted in drawTiles()
-  if (level.mrfreeze) return; // the reactor block is painted by drawMrFreeze()
+  if (level.mrfreeze) return; // the control columns are painted by drawMrFreeze()
   const groundPx = level.groundY * TILE - camera.y;
   for (const w of level.walls) {
     const x0 = w.x * TILE - camera.x;
@@ -6942,159 +6957,164 @@ function drawFreezeArenaBackground(t) {
   }
 }
 
+// Mr. Freeze as a walking character: bulky cryo-suit, domed helmet, backpack
+// tanks, cold gun. Pointed toward `facing`; melts (sinks + fades) on defeat.
+function drawFreezeCharacter(mf, now, meltT) {
+  const x = mf.fx + mf.fw / 2 - camera.x, footY = mf.fy + mf.fh - camera.y;
+  const facing = mf.facing, W = mf.fw, H = mf.fh;
+  const moving = now >= mf.aimUntil;
+  const bob = moving ? Math.abs(Math.sin(mf.walkPhase)) * 1.3 : 0;
+  const strideA = moving ? Math.sin(mf.walkPhase) * 4 : 0;
+  const strideB = moving ? Math.sin(mf.walkPhase + Math.PI) * 4 : 0;
+  ctx.save();
+  ctx.translate(x, footY - bob + meltT * 24);
+  ctx.globalAlpha = 1 - meltT * 0.35;
+  ctx.scale(facing, 1);
+  // backpack cryo tank + tube
+  ctx.fillStyle = '#2b6a86'; ctx.fillRect(-W / 2 - 7, -H + 16, 11, 28);
+  ctx.fillStyle = '#3a86a6'; ctx.fillRect(-W / 2 - 7, -H + 16, 11, 6);
+  ctx.strokeStyle = '#7fd0ec'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(-W / 2 - 2, -H + 24); ctx.quadraticCurveTo(-2, -H + 32, -3, -H + 42); ctx.stroke();
+  // legs
+  ctx.fillStyle = '#20323f'; ctx.fillRect(-12 + strideA, -20, 10, 20); ctx.fillRect(2 + strideB, -20, 10, 20);
+  ctx.fillStyle = '#12202a'; ctx.fillRect(-13 + strideA, -4, 12, 4); ctx.fillRect(1 + strideB, -4, 12, 4);
+  // torso
+  const bg = ctx.createLinearGradient(0, -H + 16, 0, -18); bg.addColorStop(0, '#5c8aa6'); bg.addColorStop(1, '#3a5f78');
+  ctx.fillStyle = bg; ctx.fillRect(-16, -H + 18, 32, H - 36);
+  // chest panel + blinking lights
+  ctx.fillStyle = '#12222e'; ctx.fillRect(-11, -H + 28, 22, 15);
+  const cols = ['#ff5a5a', '#ffd166', '#5affa0'];
+  for (let i = 0; i < 3; i++) { ctx.fillStyle = (Math.floor(now / 300) + i) % 2 ? cols[i] : '#25404f'; ctx.beginPath(); ctx.arc(-6 + i * 6, -H + 34, 2.2, 0, 7); ctx.fill(); }
+  // domed glass helmet + head + goggles
+  ctx.fillStyle = 'rgba(180,230,255,0.28)'; ctx.beginPath(); ctx.arc(0, -H + 12, 15, 0, 7); ctx.fill();
+  ctx.fillStyle = '#cfe0e8'; ctx.beginPath(); ctx.arc(0, -H + 13, 10, 0, 7); ctx.fill();
+  ctx.fillStyle = meltT > 0 ? '#ff5a3a' : '#37e0ff'; ctx.fillRect(-7, -H + 12, 5, 4); ctx.fillRect(2, -H + 12, 5, 4);
+  ctx.strokeStyle = 'rgba(230,250,255,0.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, -H + 12, 15, Math.PI * 1.1, Math.PI * 1.7); ctx.stroke();
+  if (meltT < 0.6) {
+    // cold gun held forward
+    ctx.fillStyle = '#3a5f78'; ctx.fillRect(6, -H + 30, 16, 7);
+    ctx.fillStyle = '#28414f'; ctx.fillRect(18, -H + 28, 20, 11);
+    ctx.fillStyle = '#1b2d38'; ctx.fillRect(20, -H + 24, 7, 6);
+    ctx.fillStyle = '#8ff0ff'; ctx.fillRect(38, -H + 31, 5, 5);
+  }
+  ctx.restore();
+  // muzzle flash (world space) at the gun tip
+  if (now < mf.muzzleUntil && meltT === 0) {
+    const gx = mf.fx + mf.fw / 2 + facing * (mf.fw / 2 + 12) - camera.x;
+    const gy = mf.fy + mf.fh * 0.42 - camera.y;
+    const fg = ctx.createRadialGradient(gx, gy, 1, gx, gy, 22);
+    fg.addColorStop(0, 'rgba(180,240,255,0.9)'); fg.addColorStop(1, 'rgba(180,240,255,0)');
+    ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(gx, gy, 18, 0, 7); ctx.fill();
+  }
+}
+
 function drawMrFreeze(t) {
   const mf = level.mrfreeze;
   if (!mf) return;
   const now = performance.now();
   const melting = mf.state === 'overload';
   const meltT = melting ? Math.min(1, (now - mf.meltStart) / FREEZE_MELT_MS) : 0;
-  const heat = melting ? 1 : mf.temp;               // 0 = frozen blue, 1 = overheated
+  const heat = melting ? 1 : mf.temp;
+  const floorY = level.groundY * TILE - camera.y;
 
-  const x0 = mf.reactorX - camera.x;
-  const y0 = mf.reactorY - camera.y;                // reactor top face
-  const w = mf.reactorW, h = mf.reactorH;
-  const cx = mf.coreX - camera.x, cy = mf.coreY - camera.y;
-
-  // --- reactor housing: iron + ice ---
-  const bg = ctx.createLinearGradient(x0, y0, x0, y0 + h);
-  bg.addColorStop(0, '#2a3d55'); bg.addColorStop(1, '#131f2b');
-  ctx.fillStyle = bg; ctx.fillRect(x0, y0, w, h);
-  // iron ribs
-  ctx.strokeStyle = 'rgba(8,14,20,0.7)'; ctx.lineWidth = 3;
-  for (let gx = x0 + 22; gx < x0 + w; gx += 40) { ctx.beginPath(); ctx.moveTo(gx, y0); ctx.lineTo(gx, y0 + h); ctx.stroke(); }
-  // ice sheath (recedes as the core melts)
-  ctx.fillStyle = `rgba(150,210,240,${0.30 - meltT * 0.26})`;
-  ctx.fillRect(x0, y0, w, h);
-  // top parapet (the walkable face) + gothic spikes
-  ctx.fillStyle = '#3a4f68'; ctx.fillRect(x0, y0, w, 6);
-  ctx.fillStyle = '#516986'; ctx.fillRect(x0, y0, w, 2);
-  ctx.fillStyle = '#22303f';
-  for (let sx = x0 + 8; sx < x0 + w - 6; sx += 30) {
-    ctx.beginPath(); ctx.moveTo(sx, y0); ctx.lineTo(sx + 10, y0); ctx.lineTo(sx + 5, y0 - 12); ctx.closePath(); ctx.fill();
+  // ===== gothic organ machine (decorative, on the back wall) =====
+  const oTop = mf.organTopY - camera.y, oBot = mf.organBotY - camera.y;
+  const oLeft = 4 * TILE - camera.x, oRight = (level.width - 4) * TILE - camera.x;
+  const oW = oRight - oLeft, ocx = (oLeft + oRight) / 2;
+  // buttresses to the floor
+  ctx.fillStyle = '#182636';
+  ctx.fillRect(oLeft - 6, oTop + 10, 14, floorY - oTop - 10);
+  ctx.fillRect(oRight - 8, oTop + 10, 14, floorY - oTop - 10);
+  // organ body
+  const bg = ctx.createLinearGradient(0, oTop, 0, oBot); bg.addColorStop(0, '#2c4661'); bg.addColorStop(1, '#16242f');
+  ctx.fillStyle = bg; ctx.fillRect(oLeft, oTop + 8, oW, oBot - oTop - 8);
+  ctx.fillStyle = 'rgba(150,210,240,0.18)'; ctx.fillRect(oLeft, oTop + 8, oW, oBot - oTop - 8);
+  // organ pipes (tall, varying heights)
+  const pipeN = 13;
+  for (let i = 0; i < pipeN; i++) {
+    const px = oLeft + 16 + i * (oW - 32) / (pipeN - 1);
+    const ph = 24 + ((i * 37) % 5) * 12 + (Math.abs(i - (pipeN - 1) / 2) < 2 ? 22 : 0);
+    ctx.fillStyle = i % 2 ? '#2b415a' : '#35526d';
+    ctx.fillRect(px - 6, oTop + 8 - ph, 12, ph + 8);
+    ctx.beginPath(); ctx.arc(px, oTop + 8 - ph, 6, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = 'rgba(180,220,255,0.22)'; ctx.fillRect(px - 6, oTop + 8 - ph, 3, ph);
+  }
+  // central core (glows, heats up, bursts on overload)
+  const ccx = ocx, ccy = (oTop + oBot) / 2, cr = 26;
+  const glow = ctx.createRadialGradient(ccx, ccy, 3, ccx, ccy, cr * 2.4);
+  glow.addColorStop(0, melting ? 'rgba(255,140,60,0.75)' : `rgba(90,180,255,${0.4 + heat * 0.3})`);
+  glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(ccx, ccy, cr * 2.4, 0, 7); ctx.fill();
+  ctx.fillStyle = melting ? '#3a2418' : '#0e2a40'; ctx.beginPath(); ctx.arc(ccx, ccy, cr, 0, 7); ctx.fill();
+  ctx.strokeStyle = melting ? '#c8703a' : '#2f6f9f'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(ccx, ccy, cr, 0, 7); ctx.stroke();
+  ctx.fillStyle = melting ? 'rgba(255,180,120,0.6)' : 'rgba(150,220,255,0.5)'; ctx.beginPath(); ctx.arc(ccx, ccy, cr * 0.45, 0, 7); ctx.fill();
+  // gothic finial cross above the organ
+  ctx.strokeStyle = '#7fbfe0'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(ccx, oTop - 58); ctx.lineTo(ccx, oTop - 34); ctx.moveTo(ccx - 7, oTop - 48); ctx.lineTo(ccx + 7, oTop - 48); ctx.stroke();
+  // overload steam
+  if (melting) {
+    ctx.fillStyle = 'rgba(240,250,255,0.4)';
+    for (let s = 0; s < 8; s++) { const sy = ccy - ((now / 4 + s * 30) % 150); ctx.beginPath(); ctx.arc(ccx + Math.sin(now / 150 + s) * 30, sy, 8 + s, 0, 7); ctx.fill(); }
   }
 
-  // --- core chamber with Freeze frozen inside ---
-  const coreR = 40;
-  const glow = ctx.createRadialGradient(cx, cy, 4, cx, cy, coreR * 2);
-  const gc = melting ? `rgba(255,140,60,${0.5})` : `rgba(90,180,255,${0.45 + heat * 0.2})`;
-  glow.addColorStop(0, gc); glow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(cx, cy, coreR * 2, 0, Math.PI * 2); ctx.fill();
-  // chamber ring
-  ctx.fillStyle = melting ? '#3a2418' : '#123049';
-  ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = melting ? '#c8703a' : '#2f6f9f'; ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, Math.PI * 2); ctx.stroke();
-  // Freeze silhouette inside the core: domed helmet + goggle glow
-  ctx.save();
-  ctx.beginPath(); ctx.arc(cx, cy, coreR - 5, 0, Math.PI * 2); ctx.clip();
-  ctx.fillStyle = '#cfe6f2';
-  ctx.beginPath(); ctx.arc(cx, cy + 10, 22, Math.PI, 0); ctx.fill();          // shoulders
-  ctx.beginPath(); ctx.arc(cx, cy - 4, 14, 0, Math.PI * 2); ctx.fill();       // helmet dome
-  ctx.fillStyle = melting ? '#ff5a3a' : '#37e0ff';                            // goggles
-  ctx.fillRect(cx - 9, cy - 6, 6, 5); ctx.fillRect(cx + 3, cy - 6, 6, 5);
-  if (melting) {                                                              // sagging as he melts
-    ctx.fillStyle = 'rgba(120,180,210,0.5)';
-    ctx.fillRect(cx - 20, cy + meltT * 14, 40, 10);
-  }
-  ctx.restore();
-
-  // --- cold gun: Freeze's arm tracks Batman and fires (not while melting) ---
-  if (!melting) {
-    const ang = mf.gunAngle || -0.5;
-    const ax = cx + Math.cos(ang) * (coreR - 6), ay = cy + Math.sin(ang) * (coreR - 6);
-    const gx = cx + Math.cos(ang) * (coreR + 22), gy = cy + Math.sin(ang) * (coreR + 22);
-    // arm
-    ctx.strokeStyle = '#9fb8c8'; ctx.lineWidth = 7; ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(gx, gy); ctx.stroke();
-    // gun body + emitter
-    ctx.save();
-    ctx.translate(gx, gy); ctx.rotate(ang);
-    ctx.fillStyle = '#3a5266'; ctx.fillRect(-6, -5, 18, 10);
-    ctx.fillStyle = '#8ff0ff'; ctx.fillRect(10, -3, 5, 6);        // emitter tip
-    ctx.restore();
-    ctx.lineCap = 'butt';
-    // muzzle flash: a cold burst cone right after a shot
-    if (now < mf.muzzleUntil) {
-      const fg = ctx.createRadialGradient(gx, gy, 1, gx, gy, 22);
-      fg.addColorStop(0, 'rgba(180,240,255,0.9)'); fg.addColorStop(1, 'rgba(180,240,255,0)');
-      ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(gx + Math.cos(ang) * 8, gy + Math.sin(ang) * 8, 16, 0, Math.PI * 2); ctx.fill();
-    }
-  }
-
-  // frost crust on the chamber that cracks off while melting
-  if (meltT < 0.7) {
-    ctx.strokeStyle = `rgba(200,235,255,${0.5 - meltT * 0.5})`; ctx.lineWidth = 2;
-    for (let a = 0; a < 5; a++) {
-      const ang = a * 1.3 + 0.3;
+  // ===== 3 control columns + buttons =====
+  mf.buttons.forEach((b) => {
+    const bx = b.cx - camera.x, topY = b.topY - camera.y;
+    // pipe linking the column to the organ
+    ctx.strokeStyle = 'rgba(120,170,210,0.3)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(bx, topY - 4); ctx.lineTo(bx, oBot); ctx.stroke();
+    // column body (organ-pipe style)
+    const cg = ctx.createLinearGradient(bx - 28, 0, bx + 28, 0);
+    cg.addColorStop(0, '#243a52'); cg.addColorStop(0.5, '#3d5c78'); cg.addColorStop(1, '#243a52');
+    ctx.fillStyle = cg; ctx.fillRect(bx - 28, topY, 56, floorY - topY);
+    ctx.fillStyle = 'rgba(150,210,240,0.16)'; ctx.fillRect(bx - 28, topY, 56, floorY - topY);
+    ctx.strokeStyle = 'rgba(8,14,20,0.5)'; ctx.lineWidth = 2; ctx.strokeRect(bx - 28, topY, 56, floorY - topY);
+    // frosted cap
+    ctx.fillStyle = '#e8f4ff'; ctx.fillRect(bx - 30, topY - 4, 60, 5);
+    // button housing on top
+    ctx.fillStyle = '#12222e'; ctx.fillRect(bx - 14, topY - 17, 28, 15);
+    const flash = now < b.hitUntil;
+    if (b.active) {
+      const gg = ctx.createRadialGradient(bx, topY - 9, 1, bx, topY - 9, 16); gg.addColorStop(0, 'rgba(90,255,160,0.8)'); gg.addColorStop(1, 'rgba(90,255,160,0)');
+      ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(bx, topY - 9, 16, 0, 7); ctx.fill();
+      ctx.fillStyle = '#5affa0'; ctx.beginPath(); ctx.arc(bx, topY - 9, 7, 0, 7); ctx.fill();
+    } else if (b.iced) {
+      // ice shield over the button (crack it first)
+      ctx.fillStyle = flash ? '#ffffff' : '#7fb8d8'; ctx.beginPath(); ctx.arc(bx, topY - 9, 6, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(230,248,255,0.85)';
       ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(ang) * (coreR - 8), cy + Math.sin(ang) * (coreR - 8));
-      ctx.lineTo(cx + Math.cos(ang + 0.4) * coreR, cy + Math.sin(ang + 0.4) * coreR);
-      ctx.stroke();
-    }
-  }
-
-  // --- cooling valves on the top face ---
-  mf.valves.forEach((v, i) => {
-    const vx = v.cx - camera.x, vy = v.y - camera.y + v.h;    // base sits on the top face
-    const exposed = i === mf.exposedIdx && !v.jammed;
-    // valve stack (pipe rising from the reactor top)
-    ctx.fillStyle = v.jammed ? '#243444' : '#33506a';
-    ctx.fillRect(vx - 12, vy - v.h, 24, v.h);
-    ctx.fillStyle = v.jammed ? '#1a2836' : '#41627f';
-    ctx.fillRect(vx - 15, vy - v.h - 6, 30, 8);              // cap flange
-    if (v.jammed) {
-      // sealed + frosted over, a red "jammed" bolt
-      ctx.fillStyle = 'rgba(200,235,255,0.5)';
-      ctx.fillRect(vx - 15, vy - v.h - 6, 30, 4);
-      ctx.fillStyle = '#ff5a5a';
-      ctx.beginPath(); ctx.arc(vx, vy - v.h + 2, 4, 0, Math.PI * 2); ctx.fill();
-    } else if (exposed) {
-      // venting: pulsing orange glow + steam + a dive chevron above
-      const pulse = 0.55 + 0.45 * Math.sin(now / 120);
-      const eg = ctx.createRadialGradient(vx, vy - v.h, 2, vx, vy - v.h, 30);
-      eg.addColorStop(0, `rgba(255,180,90,${pulse})`); eg.addColorStop(1, 'rgba(255,120,60,0)');
-      ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(vx, vy - v.h, 30, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = `rgba(255,210,120,${pulse})`;
-      ctx.fillRect(vx - 8, vy - v.h - 2, 16, 6);
-      // steam plume
-      ctx.fillStyle = 'rgba(220,240,255,0.35)';
-      for (let s = 0; s < 3; s++) {
-        const sy = vy - v.h - 10 - ((now / 6 + s * 40) % 60);
-        ctx.beginPath(); ctx.arc(vx + Math.sin(now / 200 + s) * 6, sy, 5 + s, 0, Math.PI * 2); ctx.fill();
-      }
-      // dive chevron
-      ctx.fillStyle = `rgba(255,209,102,${pulse})`;
-      const chy = vy - v.h - 30 - Math.sin(now / 200) * 3;
-      ctx.beginPath(); ctx.moveTo(vx - 9, chy); ctx.lineTo(vx + 9, chy); ctx.lineTo(vx, chy + 11); ctx.closePath(); ctx.fill();
+      ctx.moveTo(bx - 10, topY - 16); ctx.lineTo(bx - 3, topY - 18); ctx.lineTo(bx + 3, topY - 12); ctx.lineTo(bx + 10, topY - 16);
+      ctx.lineTo(bx + 7, topY - 3); ctx.lineTo(bx - 3, topY - 1); ctx.lineTo(bx - 11, topY - 5); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(90,140,180,0.7)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(bx - 6, topY - 14); ctx.lineTo(bx + 1, topY - 9); ctx.lineTo(bx + 5, topY - 13); ctx.stroke();
+      ctx.fillStyle = '#8fd0ec'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.fillText('❄', bx, topY - 22);
     } else {
-      // closed, cold cap
-      ctx.fillStyle = '#7fd0ec';
-      ctx.beginPath(); ctx.arc(vx, vy - v.h + 1, 3, 0, Math.PI * 2); ctx.fill();
+      // shield cracked -> ARMED (pulsing orange), hit again to activate
+      const pulse = 0.55 + 0.45 * Math.sin(now / 120);
+      const gg = ctx.createRadialGradient(bx, topY - 9, 1, bx, topY - 9, 18); gg.addColorStop(0, `rgba(255,180,90,${pulse})`); gg.addColorStop(1, 'rgba(255,120,60,0)');
+      ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(bx, topY - 9, 18, 0, 7); ctx.fill();
+      ctx.fillStyle = flash ? '#fff' : '#ffcf6b'; ctx.beginPath(); ctx.arc(bx, topY - 9, 7, 0, 7); ctx.fill();
+      ctx.fillStyle = `rgba(255,209,102,${pulse})`;
+      const chy = topY - 32 - Math.sin(now / 200) * 3;
+      ctx.beginPath(); ctx.moveTo(bx - 8, chy); ctx.lineTo(bx + 8, chy); ctx.lineTo(bx, chy + 10); ctx.closePath(); ctx.fill();
     }
   });
 
-  // --- melt: steam gushes and the core cracks open ---
-  if (melting) {
-    ctx.fillStyle = 'rgba(240,250,255,0.4)';
-    for (let s = 0; s < 8; s++) {
-      const sy = cy - ((now / 4 + s * 30) % 140);
-      ctx.beginPath(); ctx.arc(cx + Math.sin(now / 150 + s) * 26, sy, 8 + s, 0, Math.PI * 2); ctx.fill();
-    }
-  }
+  // ===== Mr. Freeze (character) =====
+  drawFreezeCharacter(mf, now, meltT);
 
-  // --- TEMP gauge (top-center HUD) ---
-  const gw = 220, gx = (CANVAS_W - gw) / 2, gy = 30;
+  // ===== progress gauge (top-center HUD) =====
+  const gw = 230, gx = (CANVAS_W - gw) / 2, gy = 30;
   ctx.fillStyle = 'rgba(8,16,26,0.8)'; ctx.fillRect(gx - 4, gy - 4, gw + 8, 24);
   ctx.strokeStyle = '#3a5470'; ctx.lineWidth = 2; ctx.strokeRect(gx - 4, gy - 4, gw + 8, 24);
   const tg = ctx.createLinearGradient(gx, 0, gx + gw, 0);
   tg.addColorStop(0, '#4aa8ff'); tg.addColorStop(0.5, '#c8d64a'); tg.addColorStop(1, '#ff5a3a');
   ctx.fillStyle = '#10202e'; ctx.fillRect(gx, gy, gw, 16);
   ctx.fillStyle = tg; ctx.fillRect(gx, gy, gw * (melting ? 1 : mf.temp), 16);
-  // valve ticks
   ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-  for (let i = 1; i < mf.maxValves; i++) { const tx = gx + gw * (i / mf.maxValves); ctx.beginPath(); ctx.moveTo(tx, gy); ctx.lineTo(tx, gy + 16); ctx.stroke(); }
+  for (let i = 1; i < mf.maxButtons; i++) { const tx = gx + gw * (i / mf.maxButtons); ctx.beginPath(); ctx.moveTo(tx, gy); ctx.lineTo(tx, gy + 16); ctx.stroke(); }
   ctx.fillStyle = '#cfe0ff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
-  ctx.fillText(`NÚCLEO — ${mf.valves.filter(v => v.jammed).length}/${mf.maxValves} VÁLVULAS TRABADAS`, CANVAS_W / 2, gy + 34);
+  ctx.fillText(`MÁQUINA — ${mf.activeCount}/${mf.maxButtons} BOTONES ACTIVADOS`, CANVAS_W / 2, gy + 34);
   ctx.textAlign = 'left';
 }
 

@@ -668,45 +668,43 @@ LEVEL_SPECS.push({
   spawn: { x: 2, y: 17 },
 });
 
-// 3-4 — MR. FREEZE: EL NÚCLEO. Sala gótica congelada. Freeze está
-// suspendido dentro de un reactor criogénico en el centro, invulnerable.
-// El reactor ventila por 3 válvulas de refrigeración: Batman trepa a una
-// cornisa y cae en picada sobre la válvula EXPUESTA (la que brilla) para
-// trabarla. Trabadas las 3, el núcleo se sobrecalienta y Freeze se
-// derrite. Dos cañones de hielo en el piso y el rayo frío de Freeze
-// castigan a quien se queda abajo. Piso resbaladizo (frozen).
+// 3-4 — MR. FREEZE: LA MÁQUINA. Sala gótica toda congelada (piso
+// resbaladizo). Freeze NO está dentro de la máquina: es un personaje que
+// DEAMBULA por el piso y dispara su pistola de frío cada tanto; es
+// invulnerable. En el fondo, un órgano gótico criogénico (decorativo)
+// alimenta 3 COLUMNAS DE CONTROL con un botón arriba de cada una. Cada
+// botón arranca ENCERRADO EN HIELO: el 1er golpe rompe el hielo, el 2do lo
+// activa. Vale golpearlos con PISOTÓN (caer sobre la columna) o con el arma
+// a DISTANCIA (batarang/batigarra). Los 3 activados -> la máquina se
+// sobrecarga y Freeze se derrite.
 //
-// Geometría (mirror de la arena de Bane): reactor sólido cols 9-22
-// (rows 8-12), su cara superior (row 8) es caminable; 3 cornisas a row 5
-// justo ENCIMA de cada válvula (cols 10, 16, 22) para el picado vertical.
+// Las 3 consolas de control (cols 8, 15, 22) son NO sólidas (como la cabeza
+// de Bane): el botón es un hitbox flotante a altura de salto Y de disparo,
+// así funciona tanto el pisotón (caés sobre la consola) como el arma a
+// distancia (le tirás el batarang/batigarra). El piso queda libre a lo ancho
+// para que Freeze deambule sin trabarse.
 LEVEL_SPECS.push({
   name: '3-4',
   indoor: true,
   frozen: true,
-  width: 32, height: 15, groundY: 13,
+  width: 30, height: 15, groundY: 13,
   pits: [],
-  // reactor block (drawn by drawMrFreeze; its brick is suppressed)
-  walls: [{ x: 9, w: 14, topRow: 8 }],
-  // dive cornices, each directly above a valve
-  platforms: [
-    { x: 9, y: 5, w: 2 },
-    { x: 15, y: 5, w: 2 },
-    { x: 21, y: 5, w: 2 },
-  ],
-  // anchors: climb from each floor side onto the reactor top (row 8)
-  swingPoints: [[8, 6], [23, 6]],
+  walls: [],
+  platforms: [],
+  swingPoints: [],
   coins: [],
   thugs: [],
   birds: [],
   bats: [],
-  // arena ice cannons on the floor, flanking the reactor
+  // ice cannons flanking the room (extra hazard alongside Freeze's gun)
   snowCannons: [
-    { x: 4, y: 13, interval: 3000 },
-    { x: 27, y: 13, interval: 3000 },
+    { x: 3, y: 13, interval: 3400 },
+    { x: 26, y: 13, interval: 3400 },
   ],
   mrfreeze: {
-    reactor: { x: 9, w: 14, topRow: 8 },
-    valveCols: [10, 16, 22],
+    buttonCols: [8, 15, 22],   // center column of each control console
+    buttonTopRow: 11,          // console top (2 tiles above the floor)
+    freeze: { x: 6, range: [2, 27] },   // Mr. Freeze wanders this floor range
   },
   spawn: { x: 2, y: 11 },
 });
