@@ -503,20 +503,26 @@ LEVEL_SPECS.push({
   // row 10 (the tallest tower, lowered from the old row 8 so Robin's
   // double-jump chain can actually reach it).
   walls: [
-    // Cluster 1 — climbs 24 → 20 → 14 → 18
+    // Cluster 1 — 3-tile staircase to the peak (24 → 21 → 18 → 15) so
+    // Batman can climb it without a double jump.
     { x: 22, w: 3, topRow: 24 },
-    { x: 25, w: 3, topRow: 20 },
-    { x: 28, w: 4, topRow: 14 },
+    { x: 25, w: 2, topRow: 21 },
+    { x: 27, w: 1, topRow: 18 },
+    { x: 28, w: 4, topRow: 15 },
     { x: 32, w: 3, topRow: 18 },
-    // Cluster 2 — packed staircase 22 → 16 → 10 → 16 → 22, and a
-    // terminal building at the end
+    // Cluster 2 — a clean 3-tile staircase up to the tallest spire
+    // (22 → 19 → 16 → 13 → 10) so BATMAN (no double jump) climbs it solo,
+    // then a symmetric drop down the far side.
     { x: 46, w: 3, topRow: 22 },
-    { x: 49, w: 3, topRow: 16 },
-    { x: 54, w: 4, topRow: 10 },   // TALLEST spire (was x=63, row 8)
+    { x: 49, w: 2, topRow: 19 },
+    { x: 51, w: 2, topRow: 16 },
+    { x: 53, w: 1, topRow: 13 },
+    { x: 54, w: 4, topRow: 10 },   // TALLEST spire
     { x: 58, w: 3, topRow: 16 },
     { x: 62, w: 3, topRow: 22 },
-    // Terminal building
-    { x: 82, w: 4, topRow: 22 },
+    // Terminal building — lowered to a 3-tile hop so Batman can climb over
+    // it to the exit without a grapple anchor he can't reach.
+    { x: 82, w: 4, topRow: 25 },
   ],
   // Ladders removed — they used to sit INSIDE their wall columns,
   // which the wall's solid tiles blocked, so neither character
@@ -537,25 +543,25 @@ LEVEL_SPECS.push({
   coins: [
     [4, 27], [6, 27], [14, 27],
     [9, 24], [10, 24],
-    [23, 23], [26, 19], [29, 13], [30, 13],
+    [23, 23], [26, 20], [29, 14], [30, 14],
     [40, 26], [42, 19], [43, 19],
-    [47, 21], [50, 15],
+    [47, 21], [50, 18], [52, 15],
     [54, 9], [55, 9], [56, 9],   // sitting on the tallest spire
     [58, 15], [62, 21],
-    [75, 23], [82, 21],
+    [75, 23], [83, 24],
     [90, 27], [92, 27],
   ],
   thugs: [
     // Opener pushed away from spawn (tile 2) per the general rule
     { x: 12, y: 28, range: [10, 14], frozen: true },
-    { x: 26, y: 20, range: [25, 27], helmet: true, frozen: true },
+    { x: 26, y: 21, range: [25, 26], helmet: true, frozen: true },
     // (the helmet thug that used to sit on the first tower top is now a
     //  flying enemy — see birds below)
     { x: 40, y: 28, range: [38, 44], frozen: true },
-    { x: 50, y: 16, range: [49, 51], frozen: true },
+    { x: 50, y: 19, range: [49, 50], frozen: true },
     { x: 55, y: 10, range: [54, 57], helmet: true, frozen: true },
     { x: 58, y: 16, range: [58, 60], frozen: true },
-    { x: 84, y: 22, range: [82, 85], frozen: true },
+    { x: 84, y: 25, range: [82, 85], frozen: true },
     { x: 90, y: 28, range: [88, 94], frozen: true },
   ],
   snowCannons: [
