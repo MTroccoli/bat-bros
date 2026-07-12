@@ -135,6 +135,12 @@ const FREEZE_SHOT_INTERVAL = 1600;   // ms between cold-gun shots (0 buttons act
 const FREEZE_SHOT_INTERVAL_MIN = 900;// fastest cadence once buttons start going down
 const FREEZE_SHOT_PAUSE = 420;       // he plants his feet to aim this long before a shot
 const FREEZE_MUZZLE_MS = 180;        // muzzle-flash duration per shot
+// Falling ceiling stalactites (one hangs over each button). They fall more
+// often as the machine destabilizes (more buttons activated).
+const FREEZE_STAL_INTERVAL = 2600;   // ms between drops at 0 buttons active
+const FREEZE_STAL_MIN = 900;         // fastest drop cadence once all buttons are near down
+const FREEZE_STAL_WARN_MS = 650;     // it shakes at the ceiling this long before dropping
+const FREEZE_STAL_SPEED = 12;        // terminal fall speed
 
 // ---------------------------------------------------------------
 // Deterministic hash: sin-based, returns 0..1
@@ -385,6 +391,9 @@ function buildLevel(spec) {
         fvx: FREEZE_PATROL_SPEED, facing: 1, walkPhase: 0,
         fminX: fr[0] * TILE, fmaxX: (fr[1] + 1) * TILE,
         nextShotAt: 0, muzzleUntil: 0, aimUntil: 0, gunAngle: -0.15,
+        // falling ceiling stalactites — one hangs over each button column
+        stalCols: btnCols.map(c => c * TILE),
+        stalDrops: [], nextStalAt: 0,
         // decorative gothic organ on the back wall
         organTopY: 1 * TILE, organBotY: 7 * TILE,
       };

@@ -342,6 +342,7 @@ let camera = { x: 0, y: 0 };
 let score = 0;
 let coinsCollected = 0;
 let lives = 3;
+let lastLoadedAct = null;  // act ('1'/'2'/'3'/'4') of the last level loaded — drives the per-act lives floor
 let timeLeft = LEVEL_TIME;
 let timeAccum = 0;
 let invulnUntil = 0;
@@ -756,14 +757,16 @@ function loadLevel(idx) {
   // Armor upgrade: force every fresh level spawn back up to big
   if (armored) currentPowerState = 'big';
   player = newPlayer(level.spawn, currentPowerState, currentGadget);
-  // Per-act starting lives. Only bumps on the FIRST level of each act
-  // (1-1, 2-1, 3-1) so the tally is a floor at act boundaries, not a
-  // reset that erases earlier progress inside the act.
-  const actStart = { '1-1': 3, '2-1': 4, '3-1': 5 };
-  const bump = actStart[level.name];
-  if (bump && lives < bump) {
-    lives = bump;
-    hud.lives.textContent = bump;
+  // GENERAL RULE — per-act lives floor. Act 1 = 3, Act 2 = 4, Act 3+ = 5.
+  // Applied whenever the ACT changes (act boundary OR a fresh Continue that
+  // lands mid-act), never lowering lives and never refilling within an act.
+  const actFloor = { '1': 3, '2': 4, '3': 5, '4': 5 };
+  const am = level.name && level.name.match(/^(\d)-/);
+  const act = am ? am[1] : null;
+  if (act && act !== lastLoadedAct) {
+    const floor = actFloor[act] || 3;
+    if (lives < floor) { lives = floor; hud.lives.textContent = lives; }
+    lastLoadedAct = act;
   }
   // Act 3 also introduces the co-op mechanic: Robin walks in beside
   // Batman, and either can be swapped in as the controlled character.
@@ -868,6 +871,7 @@ function loadLevel(idx) {
 
 function startGame() {
   score = 0; coinsCollected = 0; lives = 3;
+  lastLoadedAct = null;   // so the first level (new game or Continue) applies its act's lives floor
   armored = false;
   caveHubReturn = false;
   ownedGadgets = { batarang: false, batigarra: false };
@@ -915,8 +919,12 @@ function continueAtBoss() {
 }
 
 function restartGame() {
-  if (state === 'start') return;
-  startGame();
+  // R no longer restarts the level mid-play (players hit it by accident and
+  // lost progress). It only acts from a finished run, sending back to the
+  // main menu so New Game / Continue is a deliberate choice.
+  if (state === 'gameover' || state === 'win') {
+    showChoiceMenu(`Puntaje ${score}. ¿Seguimos, ${playerName || 'héroe'}?`);
+  }
 }
 
 // ---------------------------------------------------------------
@@ -1402,19 +1410,8 @@ function updateSnowCannons(dt, now) {
         c.nextFireAt = now + SNOW_BURST_GAP_MS;
       }
     }
-    // Ice trap: touching any face of the cannon freezes Batman. The
-    // top face used to be a stomp — now it's the meanest freeze zone.
-    const invuln = (player.invulnUntil || 0) > now;
-    if (!invuln && !player.swinging &&
-        aabbOverlap({ x: player.x, y: player.y, w: player.w, h: player.h }, c)) {
-      player.frozenUntil = now + FREEZE_MS;
-      player.vx *= 0.3;
-      // Give a tiny upward bump if he landed on top so he doesn't get
-      // stuck INSIDE the muzzle — freeze-then-fall, not freeze-then-glitch.
-      if (player.vy > 0 && player.y + player.h - c.y < STOMP_TOLERANCE) {
-        player.vy = -3;
-      }
-    }
+    // GENERAL RULE: touching the snow cannon itself does NOT freeze Batman.
+    // Only its snowballs freeze him — the cannon body is just scenery.
   }
   // Snowballs
   const invuln = (player.invulnUntil || 0) > now;
@@ -2246,6 +2243,31 @@ function updateMrFreeze(dt, now) {
       }
     }
   });
+
+  // --- falling stalactites (one hangs over each button); they fall more
+  // often as the machine destabilizes (more buttons activated) ---
+  const floorPx = level.groundY * TILE;
+  if (!mf.nextStalAt) mf.nextStalAt = now + 1400;
+  if (now >= mf.nextStalAt) {
+    const sx = mf.stalCols[Math.floor(Math.random() * mf.stalCols.length)];
+    mf.stalDrops.push({ x: sx, y: 1.4 * TILE, vy: 0, warnUntil: now + FREEZE_STAL_WARN_MS, alive: true });
+    const interval = Math.max(FREEZE_STAL_MIN, FREEZE_STAL_INTERVAL - mf.activeCount * 560);
+    mf.nextStalAt = now + interval;
+  }
+  for (const s of mf.stalDrops) {
+    if (!s.alive) continue;
+    if (now < s.warnUntil) continue;   // still shaking at the ceiling (telegraph)
+    s.vy = Math.min(FREEZE_STAL_SPEED, s.vy + GRAVITY * dt);
+    s.y += s.vy * dt;
+    // a falling spike takes a life off Batman on contact
+    if (Date.now() >= invulnUntil && !player.swinging &&
+        Math.abs((player.x + player.w / 2) - s.x) < 18 &&
+        player.y < s.y + 20 && player.y + player.h > s.y - 6) {
+      s.alive = false; hurtPlayer(); if (state !== 'playing') return;
+    }
+    if (s.y > floorPx + 6) s.alive = false; // shattered on the ice
+  }
+  mf.stalDrops = mf.stalDrops.filter(s => s.alive);
 }
 
 function updatePlaying(dt) {
@@ -5025,20 +5047,30 @@ function applyWeaponToSlot(kind) { applyAccessoryToSlot(kind); }
 // Two-step level select: first pick an Act, then pick the level inside
 // that Act. Prevents the whole grid of Act 1 + Act 2 levels from
 // spilling off screen once Two-Face is beaten.
+// GENERAL RULE: the level-select carousel offers every level UP TO the
+// furthest one the player has reached (savedMaxLevel high-water mark), and
+// no further. Acts appear once you've reached at least their first level.
+function maxReachedIndex() {
+  return Math.max(savedMaxLevel | 0, lastPlayedLevel | 0, levelIndex | 0);
+}
 function levelSelectActs() {
-  const cv = level.cave;
-  const acts = [{ id: 1, name: 'ACTO 1', c: '#ffe066' }];
-  if (postTwoFaceReturn) acts.push({ id: 2, name: 'ACTO 2', c: '#7fd4ff' });
-  // Act 3 shows up once the player has actually made it to the frozen
-  // city (a Batcave hub visit is proof of that).
-  if (caveHubReturn) acts.push({ id: 3, name: 'ACTO 3', c: '#c9dff0' });
+  const cap = maxReachedIndex();
+  const acts = [];
+  const palette = { 1: '#ffe066', 2: '#7fd4ff', 3: '#c9dff0', 4: '#e0b0ff' };
+  for (const a of [1, 2, 3, 4]) {
+    const re = new RegExp('^' + a + '-');
+    const first = LEVEL_SPECS.findIndex(s => re.test(s.name));
+    if (first >= 0 && first <= cap) acts.push({ id: a, name: 'ACTO ' + a, c: palette[a] });
+  }
+  if (!acts.length) acts.push({ id: 1, name: 'ACTO 1', c: '#ffe066' });
   acts.push({ id: -1, name: 'SEGUIR', c: '#29d985' });
   return acts;
 }
 function levelSelectLevels(actId) {
   const re = new RegExp('^' + actId + '-');
+  const cap = maxReachedIndex();
   const lvls = LEVEL_SPECS.map((s, i) => ({ i, name: s.name }))
-    .filter(o => re.test(o.name));
+    .filter(o => re.test(o.name) && o.i <= cap);
   lvls.push({ i: -2, name: 'VOLVER' }); // back to act picker
   return lvls;
 }
@@ -6985,10 +7017,13 @@ function drawFreezeCharacter(mf, now, meltT) {
   ctx.fillStyle = '#12222e'; ctx.fillRect(-11, -H + 28, 22, 15);
   const cols = ['#ff5a5a', '#ffd166', '#5affa0'];
   for (let i = 0; i < 3; i++) { ctx.fillStyle = (Math.floor(now / 300) + i) % 2 ? cols[i] : '#25404f'; ctx.beginPath(); ctx.arc(-6 + i * 6, -H + 34, 2.2, 0, 7); ctx.fill(); }
-  // domed glass helmet + head + goggles
+  // domed glass helmet + head
   ctx.fillStyle = 'rgba(180,230,255,0.28)'; ctx.beginPath(); ctx.arc(0, -H + 12, 15, 0, 7); ctx.fill();
   ctx.fillStyle = '#cfe0e8'; ctx.beginPath(); ctx.arc(0, -H + 13, 10, 0, 7); ctx.fill();
-  ctx.fillStyle = meltT > 0 ? '#ff5a3a' : '#37e0ff'; ctx.fillRect(-7, -H + 12, 5, 4); ctx.fillRect(2, -H + 12, 5, 4);
+  // cryo goggles matching the Batcomputer expediente: dark visor + orange lenses
+  ctx.fillStyle = '#0e1420'; ctx.fillRect(-10, -H + 10, 20, 6);
+  ctx.fillStyle = meltT > 0 ? '#ff3a20' : '#ff6b1a'; ctx.fillRect(-9, -H + 11, 7, 4); ctx.fillRect(2, -H + 11, 7, 4);
+  ctx.fillStyle = '#ffd166'; ctx.fillRect(-7, -H + 12, 3, 2); ctx.fillRect(4, -H + 12, 3, 2);
   ctx.strokeStyle = 'rgba(230,250,255,0.6)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, -H + 12, 15, Math.PI * 1.1, Math.PI * 1.7); ctx.stroke();
   if (meltT < 0.6) {
     // cold gun held forward
@@ -7099,6 +7134,27 @@ function drawMrFreeze(t) {
       ctx.beginPath(); ctx.moveTo(bx - 8, chy); ctx.lineTo(bx + 8, chy); ctx.lineTo(bx, chy + 10); ctx.closePath(); ctx.fill();
     }
   });
+
+  // ===== ceiling stalactites over each button (+ the falling ones) =====
+  for (const cxw of mf.stalCols) {
+    const sx = cxw - camera.x;
+    const charging = mf.stalDrops.some(s => s.x === cxw && s.alive && now < s.warnUntil);
+    const shake = charging ? Math.sin(now / 28) * 3 : 0;
+    ctx.fillStyle = charging ? '#eaf6ff' : 'rgba(200,225,245,0.85)';
+    ctx.beginPath();
+    ctx.moveTo(sx - 9 + shake, 0); ctx.lineTo(sx + 9 + shake, 0); ctx.lineTo(sx + shake, 42 + (charging ? 6 : 0));
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(sx - 7 + shake, 0, 3, 26);
+    if (charging) { ctx.fillStyle = 'rgba(255,90,90,0.55)'; ctx.beginPath(); ctx.arc(sx + shake, 34, 5, 0, 7); ctx.fill(); }
+  }
+  for (const s of mf.stalDrops) {
+    if (!s.alive || now < s.warnUntil) continue;
+    const sx = s.x - camera.x, sy = s.y - camera.y;
+    ctx.fillStyle = '#cfeaff';
+    ctx.beginPath(); ctx.moveTo(sx - 8, sy - 20); ctx.lineTo(sx + 8, sy - 20); ctx.lineTo(sx, sy + 6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath(); ctx.moveTo(sx - 5, sy - 18); ctx.lineTo(sx - 1, sy - 18); ctx.lineTo(sx - 3, sy - 2); ctx.closePath(); ctx.fill();
+  }
 
   // ===== Mr. Freeze (character) =====
   drawFreezeCharacter(mf, now, meltT);

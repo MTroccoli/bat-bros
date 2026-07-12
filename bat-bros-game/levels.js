@@ -549,7 +549,8 @@ LEVEL_SPECS.push({
     // Opener pushed away from spawn (tile 2) per the general rule
     { x: 12, y: 28, range: [10, 14], frozen: true },
     { x: 26, y: 20, range: [25, 27], helmet: true, frozen: true },
-    { x: 29, y: 14, range: [28, 31], helmet: true, frozen: true },
+    // (the helmet thug that used to sit on the first tower top is now a
+    //  flying enemy — see birds below)
     { x: 40, y: 28, range: [38, 44], frozen: true },
     { x: 50, y: 16, range: [49, 51], frozen: true },
     { x: 55, y: 10, range: [54, 57], helmet: true, frozen: true },
@@ -562,6 +563,8 @@ LEVEL_SPECS.push({
     { x: 68, interval: 2400 },
   ],
   birds: [
+    // flying enemy guarding the first tower top (replaces the helmet thug)
+    { x: 29, y: 12, range: [26, 33], frozen: true },
     { x: 36, y: 14, range: [30, 44], frozen: true },
     { x: 72, y: 18, range: [64, 80], frozen: true },
   ],
@@ -696,10 +699,10 @@ LEVEL_SPECS.push({
   thugs: [],
   birds: [],
   bats: [],
-  // ice cannons flanking the room (extra hazard alongside Freeze's gun)
+  // ice cannons BETWEEN the control consoles (cols 8/15/22): one in each gap
   snowCannons: [
-    { x: 3, y: 13, interval: 3400 },
-    { x: 26, y: 13, interval: 3400 },
+    { x: 11, y: 13, interval: 3200 },
+    { x: 18, y: 13, interval: 3200 },
   ],
   mrfreeze: {
     buttonCols: [8, 15, 22],   // center column of each control console
