@@ -562,7 +562,8 @@ LEVEL_SPECS.push({
     { x: 55, y: 10, range: [54, 57], helmet: true, frozen: true },
     { x: 58, y: 16, range: [58, 60], frozen: true },
     { x: 84, y: 25, range: [82, 85], frozen: true },
-    { x: 90, y: 28, range: [88, 94], frozen: true },
+    // (removed the final ground thug that walked over the ice
+    //  patch near the exit — the user reads that surface as water)
   ],
   snowCannons: [
     { x: 36, interval: 2600 },
@@ -623,21 +624,16 @@ LEVEL_SPECS.push({
     { x: 95, topRow: 15, baseRow: 19 },
   ],
   houses: [],
-  // Two cargo cranes swing containers over the water so a well-timed
-  // stomp or grapple hop crosses the gap on top of the load. Each
-  // crane runs on its own beat (different speed + explicit phase
-  // offset) so they don't sync up with the boats beneath.
+  // Two clearly different crossing challenges. The FIRST water gap
+  // is a crane crossing (Batman times a stomp on the swinging
+  // container, no raft below). The SECOND water gap is a raft
+  // crossing (drifting boat back-and-forth, no crane above). This
+  // separates the mechanics so each obstacle reads on its own.
   cranes: [
     { towerX: 27, armY: 3, armEndX: 38, ropeLen: 10, cargoW: 3, speed: 0.0013, amplitude: 0.42, phase: 0 },
-    { towerX: 89, armY: 3, armEndX: 80, ropeLen: 11, cargoW: 3, speed: 0.00085, amplitude: 0.45, phase: Math.PI * 0.6 },
   ],
-  // Drifting rafts frozen into moving ice sheets — same class as
-  // 2-1's dock raft, one per water gap. The second raft starts
-  // pointing the opposite way so the two boats never share the
-  // same beat with each other or with the cranes above.
   boats: [
-    { x: 36, y: 19, w: 3, range: [31, 44], speed: 1.9, dir: 1 },
-    { x: 78, y: 19, w: 3, range: [73, 88], speed: 2.6, dir: -1 },
+    { x: 78, y: 19, w: 3, range: [73, 88], speed: 2.4, dir: -1 },
   ],
   swingPoints: [
     // Anchor before pit #1 in case the crane cargo is on the wrong side
@@ -652,7 +648,6 @@ LEVEL_SPECS.push({
   coins: [
     [4, 18], [7, 18], [12, 18],
     [17, 14], [24, 12], [25, 12],
-    [37, 18], [40, 18],   // sit on boat #1
     [51, 13], [52, 13],
     [63, 15],
     [79, 18], [82, 18],   // sit on boat #2
@@ -669,7 +664,9 @@ LEVEL_SPECS.push({
     { x: 52, y: 14, range: [49, 53], helmet: true, frozen: true },
     { x: 63, y: 19, range: [60, 66], frozen: true },
     { x: 68, y: 15, range: [65, 68], helmet: true, frozen: true },
-    { x: 92, y: 19, range: [90, 94], frozen: true },
+    // (removed a ground thug at range [90,94] that patrolled INTO
+    //  the water pit [72,90] — its left bounce landed on tile 90
+    //  which is the last water tile.)
     { x: 97, y: 15, range: [95, 99], helmet: true, frozen: true },
     { x: 103, y: 19, range: [100, 107], frozen: true },
   ],

@@ -5765,53 +5765,44 @@ function drawLadders() {
 // Same solid collision as any other wall — this is purely the look.
 function drawContainerTower(w, x0, wpx, roofY, groundPx) {
   const bandH = TILE * 2;
-  // Wider palette + deterministic per-container hue so stacked crates
-  // in the same yard clearly read as DIFFERENT containers instead of
-  // one long painted wall.
+  // Wider palette so stacked bands in the same yard read as
+  // DIFFERENT shipping containers instead of one long painted wall.
+  // Each band is a SINGLE full-width container (no side-by-side
+  // split — a 4-tile warehouse used to render as one 3-tile crate
+  // plus a tiny 1-tile stub, which looked ugly).
   const palette = [
     '#c1462d', '#3a6bc9', '#3f8c46', '#c9852e',
     '#7c3f9c', '#2a8aa3', '#a86436', '#d4b12b',
     '#5b7a3a', '#8b3a52',
   ];
-  // Each band is split into containers roughly 3 tiles wide so a
-  // 4-tile warehouse shows two side-by-side crates per band and a
-  // 3-tile one still shows a single crate. This gives the yard its
-  // "stacked shipping containers" silhouette.
-  const containerW = TILE * 3;
   let y = roofY, band = 0;
   while (y < groundPx - 1) {
     const h = Math.min(bandH, groundPx - y);
-    let cx0 = x0;
-    let col = 0;
-    while (cx0 < x0 + wpx - 0.5) {
-      const cw = Math.min(containerW, x0 + wpx - cx0);
-      const seed = w.x * 3.1 + band * 11 + col * 17;
-      const paint = palette[Math.floor(hash01(seed) * palette.length)];
-      ctx.fillStyle = paint; ctx.fillRect(cx0, y, cw, h);
-      ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
-      ctx.strokeRect(cx0 + 0.5, y + 0.5, cw - 1, h - 1);
-      // top highlight + bottom shadow
-      ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(cx0 + 2, y + 2, cw - 4, 4);
-      ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(cx0 + 2, y + h - 6, cw - 4, 4);
-      // corrugation lines
-      ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-      for (let lx = cx0 + 8; lx < cx0 + cw - 4; lx += 12) {
-        ctx.beginPath(); ctx.moveTo(lx, y + 6); ctx.lineTo(lx, y + h - 6); ctx.stroke();
-      }
-      // shipping label + serial code (looks like a real container)
-      ctx.fillStyle = 'rgba(240,240,240,0.85)';
-      ctx.fillRect(cx0 + cw * 0.25, y + h * 0.32, cw * 0.5, h * 0.16);
-      ctx.fillStyle = '#111';
-      ctx.font = 'bold 6px monospace'; ctx.textAlign = 'center';
-      const serials = ['MSK', 'GOT', 'WYN', 'BAT', 'ACE', 'ZUR'];
-      ctx.fillText(serials[Math.floor(hash01(seed + 3) * serials.length)] + Math.floor(hash01(seed + 5) * 900 + 100),
-        cx0 + cw * 0.5, y + h * 0.44);
-      // corner castings
-      ctx.fillStyle = '#1a1c22';
-      ctx.fillRect(cx0, y, 5, 5); ctx.fillRect(cx0 + cw - 5, y, 5, 5);
-      ctx.fillRect(cx0, y + h - 5, 5, 5); ctx.fillRect(cx0 + cw - 5, y + h - 5, 5, 5);
-      cx0 += cw; col++;
+    const seed = w.x * 3.1 + band * 11;
+    const paint = palette[Math.floor(hash01(seed) * palette.length)];
+    ctx.fillStyle = paint; ctx.fillRect(x0, y, wpx, h);
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+    ctx.strokeRect(x0 + 0.5, y + 0.5, wpx - 1, h - 1);
+    // top highlight + bottom shadow
+    ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x0 + 2, y + 2, wpx - 4, 4);
+    ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.fillRect(x0 + 2, y + h - 6, wpx - 4, 4);
+    // corrugation lines
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)';
+    for (let cx = x0 + 8; cx < x0 + wpx - 4; cx += 14) {
+      ctx.beginPath(); ctx.moveTo(cx, y + 6); ctx.lineTo(cx, y + h - 6); ctx.stroke();
     }
+    // shipping label + serial code stamped once per container
+    ctx.fillStyle = 'rgba(240,240,240,0.85)';
+    ctx.fillRect(x0 + wpx * 0.3, y + h * 0.32, wpx * 0.4, h * 0.16);
+    ctx.fillStyle = '#111';
+    ctx.font = 'bold 6px monospace'; ctx.textAlign = 'center';
+    const serials = ['MSK', 'GOT', 'WYN', 'BAT', 'ACE', 'ZUR'];
+    ctx.fillText(serials[Math.floor(hash01(seed + 3) * serials.length)] + Math.floor(hash01(seed + 5) * 900 + 100),
+      x0 + wpx * 0.5, y + h * 0.44);
+    // corner castings (one per container corner)
+    ctx.fillStyle = '#1a1c22';
+    ctx.fillRect(x0, y, 5, 5); ctx.fillRect(x0 + wpx - 5, y, 5, 5);
+    ctx.fillRect(x0, y + h - 5, 5, 5); ctx.fillRect(x0 + wpx - 5, y + h - 5, 5, 5);
     y += bandH; band++;
   }
   ctx.fillStyle = 'rgba(255,255,255,0.22)';
