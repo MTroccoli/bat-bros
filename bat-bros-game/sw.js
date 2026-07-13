@@ -1,4 +1,4 @@
-const CACHE_NAME = 'bat-bros-v54';
+const CACHE_NAME = 'bat-bros-v55';
 const ASSETS = [
   './',
   './index.html',

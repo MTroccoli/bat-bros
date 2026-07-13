@@ -2248,8 +2248,10 @@ function spawnFreezeColdGun(now) {
     w: SNOWBALL_SIZE, h: SNOWBALL_SIZE,
     vx: Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
     rot: 0, alive: true, born: now,
-    // Straight-line beam: no gravity, ranged. See the snowball loop.
-    fromFreeze: true,
+    // No fromFreeze flag: the shot now arcs with GRAVITY like a
+    // regular snowball, so it launches diagonally up and falls in
+    // a parabola. This gives Batman a clear "duck under the arc"
+    // window between salvos.
   });
 }
 
