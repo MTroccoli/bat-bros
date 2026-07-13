@@ -2829,6 +2829,11 @@ function updatePlaying(dt) {
         player.vy = STOMP_BOUNCE;
         score += 100;
         hud.score.textContent = score;
+      } else if (g.confused) {
+        // Confused thug touched from the side: they're too disoriented
+        // to land a hit. Batman passes through unharmed — the smoke's
+        // whole point is safe traversal + easy kills.
+        continue;
       } else if (landing && g.frozen) {
         g.frozen = false;
         g.vx = (g.vx < 0 ? -1 : 1) * 1.2;
@@ -2878,6 +2883,9 @@ function updatePlaying(dt) {
           score += 150;
           hud.score.textContent = score;
         }
+      } else if (b.confused) {
+        // Confused bird: harmless mid-air contact (same rule as thugs).
+        continue;
       } else {
         hurtPlayer();
         return;
