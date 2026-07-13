@@ -283,6 +283,53 @@ canvas {
 #controls-left { flex-direction: column; gap: 8px; }
 .dpad-mid { display: flex; gap: 14px; }
 
+/* Virtual joystick — one big circle whose knob follows the finger.
+   The player never has to lift a thumb: sliding across the base
+   updates keys.left/right/up/down in real time. Sized so it's easy
+   to hit with a thumb but doesn't cover too much game area. */
+.stick {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: rgba(20, 25, 45, 0.45);
+  border: 2px solid rgba(255,255,255,0.35);
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  box-shadow: inset 0 0 20px rgba(0,0,0,0.35);
+}
+.stick-arrow {
+  position: absolute;
+  color: rgba(255,255,255,0.55);
+  font-size: 14px;
+  line-height: 1;
+  pointer-events: none;
+}
+.stick-arrow-up { top: 8px; left: 50%; transform: translateX(-50%); }
+.stick-arrow-down { bottom: 8px; left: 50%; transform: translateX(-50%); }
+.stick-arrow-left { left: 10px; top: 50%; transform: translateY(-50%); }
+.stick-arrow-right { right: 10px; top: 50%; transform: translateY(-50%); }
+.stick-knob {
+  position: absolute;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: rgba(255,214,102,0.42);
+  border: 2px solid rgba(255,214,102,0.85);
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: transform 60ms linear;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+}
+.stick.active .stick-knob { transition: none; }
+/* Legacy 4-button d-pad stays in the DOM for chase mode but is
+   hidden during normal play — the joystick handles that input. */
+.dpad-legacy { display: none; }
+
 /* The batarang is an Act 2 upgrade — no shoot button in Act 1. */
 #btn-shoot { display: none; }
 

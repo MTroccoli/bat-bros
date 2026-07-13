@@ -203,6 +203,78 @@ if (document.getElementById('btn-grapple')) {
 bindButton('btn-up', () => keys.up = true, () => keys.up = false);
 bindButton('btn-down', () => keys.down = true, () => keys.down = false);
 
+// --- Virtual joystick (touch left-hand control) ---
+// A single circular pad the thumb drags in any direction. Sliding
+// left/right/up/down (or diagonals) sets the corresponding key on
+// the shared `keys` object in real time. Uses pointer capture so
+// the touch keeps registering even if the finger drifts outside
+// the base — no need to lift and re-press to change heading.
+(function bindStick() {
+  const stick = document.getElementById('stick-left');
+  if (!stick) return;
+  const knob = stick.querySelector('.stick-knob');
+  let activeId = null;
+  // Fraction of the base radius that must be traveled before a
+  // direction fires (kills accidental micro-drift).
+  const DEAD = 0.28;
+
+  const clearKeys = () => {
+    keys.left = false; keys.right = false;
+    keys.up = false; keys.down = false;
+  };
+
+  const setKnob = (dx, dy) => {
+    knob.style.transform =
+      `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+  };
+
+  const update = (e) => {
+    const rect = stick.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    // Base radius the knob can travel — half the base minus half
+    // the knob so the knob stays inside the ring at max deflection.
+    const R = rect.width / 2 - 12;
+    let dx = e.clientX - cx;
+    let dy = e.clientY - cy;
+    const dist = Math.hypot(dx, dy);
+    if (dist > R) { dx = dx * R / dist; dy = dy * R / dist; }
+    setKnob(dx, dy);
+    // Translate cartesian offset → 4-way keys (allows diagonals).
+    const nx = dx / R, ny = dy / R;
+    keys.left = nx < -DEAD;
+    keys.right = nx > DEAD;
+    keys.up = ny < -DEAD;
+    keys.down = ny > DEAD;
+  };
+
+  stick.addEventListener('pointerdown', e => {
+    if (activeId !== null) return;   // ignore secondary touches on the stick
+    e.preventDefault();
+    activeId = e.pointerId;
+    stick.setPointerCapture?.(activeId);
+    stick.classList.add('active');
+    update(e);
+  });
+  stick.addEventListener('pointermove', e => {
+    if (e.pointerId !== activeId) return;
+    e.preventDefault();
+    update(e);
+  });
+  const release = e => {
+    if (e.pointerId !== activeId) return;
+    e.preventDefault();
+    stick.releasePointerCapture?.(activeId);
+    activeId = null;
+    stick.classList.remove('active');
+    setKnob(0, 0);
+    clearKeys();
+  };
+  stick.addEventListener('pointerup', release);
+  stick.addEventListener('pointercancel', release);
+  stick.addEventListener('contextmenu', e => e.preventDefault());
+})();
+
 // Warp back to the Batcave from any Act 3 level. Visible only from
 // Act 3 onward; wired to loadLevel(CUEVA).
 const caveBtnEl = document.getElementById('btn-cave');

@@ -76,12 +76,27 @@
     </div>
 
     <div id="controls-left" class="float-controls">
-      <button id="btn-up" class="touch-btn">▲</button>
-      <div class="dpad-mid">
-        <button id="btn-left" class="touch-btn">◀</button>
-        <button id="btn-right" class="touch-btn">▶</button>
+      <!-- Virtual joystick: a single circle the thumb drags in any
+           direction. Preferred over 4 separate arrows because the
+           finger never has to lift to change direction. -->
+      <div id="stick-left" class="stick">
+        <div class="stick-arrow stick-arrow-up">▲</div>
+        <div class="stick-arrow stick-arrow-right">▶</div>
+        <div class="stick-arrow stick-arrow-down">▼</div>
+        <div class="stick-arrow stick-arrow-left">◀</div>
+        <div class="stick-knob"></div>
       </div>
-      <button id="btn-down" class="touch-btn">▼</button>
+      <!-- Legacy d-pad buttons: hidden in normal play but kept in
+           the DOM so the boat-chase layout (level 2-3) can still
+           grab them and rearrange them into its own row. -->
+      <div class="dpad-legacy">
+        <button id="btn-up" class="touch-btn">▲</button>
+        <div class="dpad-mid">
+          <button id="btn-left" class="touch-btn">◀</button>
+          <button id="btn-right" class="touch-btn">▶</button>
+        </div>
+        <button id="btn-down" class="touch-btn">▼</button>
+      </div>
     </div>
     <div id="controls-right" class="float-controls">
       <button id="btn-shoot" class="touch-btn touch-fire">🪃</button>
