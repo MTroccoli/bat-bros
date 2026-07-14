@@ -330,11 +330,12 @@ function buildLevel(spec) {
     })),
     snowballs: [],
     // Sewer critters (Act 4). Rats scurry along the ground at 2× thug
-    // speed; they can't be helmet-blocked but the small hitbox makes
-    // stomps harder to land. Confuse them with smoke = 1-hit kill.
+    // speed; they can't be helmet-blocked. Bigger silhouette (26×18)
+    // so the pointed snout + big ears actually read at gameplay
+    // distance. Confuse them with smoke = 1-hit kill.
     rats: rats.map(r => ({
-      x: r.x * TILE, y: r.y * TILE - 14,
-      w: 22, h: 14,
+      x: r.x * TILE, y: r.y * TILE - 18,
+      w: 26, h: 18,
       minX: r.range[0] * TILE, maxX: r.range[1] * TILE,
       vx: 2.4 * (r.dir ?? 1), alive: true,
     })),

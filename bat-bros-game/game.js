@@ -526,6 +526,10 @@ const CROUCH_H = 20;
 // Try to make the player crouch. On the ground and pressing down =
 // crouch. Off the ground or no down input = try to uncrouch (only
 // works if the space above the head is clear).
+//
+// SECOND path: any low ceiling directly overhead auto-holds the
+// crouch even if the player let go of down — otherwise standing
+// back up under a tunnel would insta-clip and be blocked forever.
 function updateCrouch() {
   if (!player) return;
   const wantCrouch = player.onGround && keys.down && !player.climbing && !player.swinging;
@@ -545,6 +549,33 @@ function updateCrouch() {
       player.h = restoreH;
       player.crouching = false;
     }
+  }
+}
+
+// Called BEFORE tryMove: if the player is pushing into a tunnel
+// (holding left/right into an overlap) and pressing down, force
+// the crouch to fire even if the crouch check hasn't run yet.
+// This is the "walk up + hold down" flow — Batman starts big,
+// bumps into the ceiling, holds down, and slides right in.
+function tryAutoCrouchIntoTunnel() {
+  if (!player || player.crouching || !player.onGround) return;
+  const tunnels = level.crouchTunnels;
+  if (!tunnels || !tunnels.length) return;
+  const pushing = keys.left || keys.right;
+  if (!pushing || !keys.down) return;
+  for (const t of tunnels) {
+    const tx0 = t.x * TILE, tx1 = (t.x + t.w) * TILE;
+    const ceilPx = (t.ceilRow + 1) * TILE;
+    // Standing player currently overlapping (or touching) the tunnel
+    // horizontally at a height that would be blocked by the ceiling.
+    if (player.x + player.w < tx0 - 2 || player.x > tx1 + 2) continue;
+    if (player.y >= ceilPx) continue;
+    // Fire the crouch now, before enforce pushes him back.
+    const dropH = player.h - CROUCH_H;
+    player.h = CROUCH_H;
+    player.y += dropH;
+    player.crouching = true;
+    return;
   }
 }
 
@@ -2073,9 +2104,16 @@ function hurtPlayer() {
 }
 
 function levelEnemyTotals() {
-  const total = level.thugs.length + level.birds.length + (level.villain ? 1 : 0);
+  // Rats count toward the required kill ratio (they take actual work
+  // to hunt down). Penguin-divers are DELIBERATELY excluded — they
+  // respawn every few seconds from the water, so requiring their
+  // death would gate exit forever.
+  const rats = level.rats || [];
+  const total = level.thugs.length + level.birds.length + rats.length +
+    (level.villain ? 1 : 0);
   const defeated = level.thugs.filter(g => !g.alive).length +
     level.birds.filter(b => !b.alive).length +
+    rats.filter(r => !r.alive).length +
     (level.villain && !level.villain.alive ? 1 : 0);
   return { total, defeated };
 }
@@ -2938,10 +2976,16 @@ function updatePlaying(dt) {
   } else if (player.climbing) {
     updateClimb(dt, now);
   } else {
+    // Auto-crouch: pushing into a low tunnel with down held triggers
+    // crouch immediately, before enforce blocks the move.
+    tryAutoCrouchIntoTunnel();
     // horizontal input
     const iced = (player.frozenUntil || 0) > now;
-    const accelMul = iced ? 0.4 : 1;
-    const speedCap = iced ? MAX_SPEED * 0.45 : MAX_SPEED;
+    const crouched = !!player.crouching;
+    const accelMul = iced ? 0.4 : (crouched ? 0.55 : 1);
+    const speedCap = iced ? MAX_SPEED * 0.45
+                          : crouched ? MAX_SPEED * 0.55
+                          : MAX_SPEED;
     const accel = (player.onGround ? MOVE_ACCEL : AIR_ACCEL) * accelMul;
     if (keys.left && !keys.right) {
       player.vx -= accel * dt;
@@ -2966,13 +3010,13 @@ function updatePlaying(dt) {
     // A snow-cannon hit freezes Batman for 5 s: no jumps until it thaws.
     const frozenNow = (player.frozenUntil || 0) > now;
     if (player.onGround) { coyoteUntil = now + COYOTE_MS; player.jumpsUsed = 0; }
-    if (!frozenNow && now < jumpBufferUntil && now < coyoteUntil) {
+    if (!frozenNow && !crouched && now < jumpBufferUntil && now < coyoteUntil) {
       player.vy = JUMP_VELOCITY;
       player.onGround = false;
       player.jumpsUsed = 1;
       jumpBufferUntil = 0;
       coyoteUntil = 0;
-    } else if (!frozenNow && activeChar === 'robin' && now < jumpBufferUntil &&
+    } else if (!frozenNow && !crouched && activeChar === 'robin' && now < jumpBufferUntil &&
                !player.onGround && (player.jumpsUsed || 0) < 2) {
       // Robin's aerial double jump — a little weaker than the first, plus a
       // 400 ms somersault animation window the renderer draws through
@@ -6145,6 +6189,53 @@ function drawTiles() {
         continue;
       }
 
+      // Sewer floor / ceiling tiles: mossy dark stone, differentiated
+      // for the "low ceiling" tunnel tiles so they read as a rusty
+      // pipe overhead instead of generic ground.
+      if (level.sewer) {
+        const isCeiling = ty < level.groundY;
+        if (isCeiling) {
+          // pipe ceiling — dark rusted metal cylinder
+          ctx.fillStyle = '#3a2820';
+          ctx.fillRect(px, py, TILE, TILE);
+          ctx.fillStyle = '#5c4230';
+          ctx.fillRect(px, py, TILE, 4);
+          ctx.fillStyle = '#1c110a';
+          ctx.fillRect(px, py + TILE - 4, TILE, 4);
+          // rivets
+          ctx.fillStyle = '#8a6a4a';
+          ctx.beginPath(); ctx.arc(px + 6, py + TILE - 6, 1.4, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(px + TILE - 6, py + TILE - 6, 1.4, 0, Math.PI * 2); ctx.fill();
+          // green ooze drip on some tiles
+          if (hash01(tx * 2.7 + ty * 1.9) > 0.6) {
+            ctx.fillStyle = 'rgba(120,200,140,0.5)';
+            ctx.fillRect(px + TILE / 2 - 1, py + TILE - 2, 2, 6);
+          }
+          ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+          ctx.strokeRect(px + 0.5, py + 0.5, TILE - 1, TILE - 1);
+          continue;
+        }
+        // sewer ground: dark stone bricks
+        ctx.fillStyle = '#2a3a30';
+        ctx.fillRect(px, py, TILE, TILE);
+        // brick joints
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(px, py + TILE / 2); ctx.lineTo(px + TILE, py + TILE / 2); ctx.stroke();
+        const off = ((ty * 2 + tx) % 2) * 16;
+        ctx.beginPath(); ctx.moveTo(px + off, py); ctx.lineTo(px + off, py + TILE / 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(px + (off + 16) % 32, py + TILE / 2); ctx.lineTo(px + (off + 16) % 32, py + TILE); ctx.stroke();
+        // slime top edge on the walkable surface
+        const exposedTopS = ty === 0 || !level.solid[ty - 1][tx];
+        if (exposedTopS) {
+          ctx.fillStyle = '#3f6a52';
+          ctx.fillRect(px, py, TILE, 3);
+          ctx.fillStyle = '#5a8a6c';
+          ctx.fillRect(px, py, TILE, 1);
+        }
+        continue;
+      }
+
       const topCol = level.cave ? '#4a5578' : '#565c6b';
       const bodyCol = level.cave ? '#1c2440' : '#282c36';
       const exposedTop = ty === 0 || !level.solid[ty - 1][tx];
@@ -7761,7 +7852,10 @@ function drawConfusedMarker(e) {
   ctx.fillText('?', px, py);
 }
 
-// Rat: small dark rodent with a pink tail, jittery scurry.
+// Rat: unmistakably rodent — hunched furry body, pointed snout,
+// two big round ears, buck teeth, pink whiskers and a long naked
+// pink tail curling behind. Body bobs while scurrying, tail
+// swishes on its own beat.
 function drawRats() {
   const list = level.rats || [];
   for (const r of list) {
@@ -7770,43 +7864,97 @@ function drawRats() {
     const py = r.y - camera.y;
     if (px < -30 || px > CANVAS_W + 30) continue;
     const face = r.vx < 0 ? -1 : 1;
-    const scur = Math.sin(performance.now() / 60 + r.x) * 1.5;
+    const now = performance.now();
+    const scur = Math.sin(now / 60 + r.x) * 1.2;
+    const W = r.w, H = r.h;
     ctx.save();
-    ctx.translate(px + r.w / 2, py + r.h / 2 + scur);
+    ctx.translate(px + W / 2, py + H + scur);
     ctx.scale(face, 1);
-    // body
-    ctx.fillStyle = '#4a3a30';
+
+    // Long naked pink tail — quadratic curve behind the rump so it
+    // curls up. Draws BEFORE body so the body sits on top.
+    const tailWag = Math.sin(now / 80 + r.x) * 4;
+    ctx.strokeStyle = '#e69aa8';
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.ellipse(0, 0, r.w * 0.5, r.h * 0.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // belly
-    ctx.fillStyle = '#6b5340';
-    ctx.beginPath();
-    ctx.ellipse(0, 2, r.w * 0.42, r.h * 0.32, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // head/snout
-    ctx.fillStyle = '#3d2f28';
-    ctx.beginPath();
-    ctx.ellipse(r.w * 0.35, -1, 6, 5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // ears
-    ctx.beginPath();
-    ctx.ellipse(r.w * 0.2, -r.h * 0.55, 3, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(r.w * 0.32, -r.h * 0.55, 3, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // eye
-    ctx.fillStyle = '#ff5e5e';
-    ctx.beginPath(); ctx.arc(r.w * 0.42, -1, 1.3, 0, Math.PI * 2); ctx.fill();
-    // pink tail wagging
-    ctx.strokeStyle = '#e396a4';
-    ctx.lineWidth = 1.8;
-    const tailWag = Math.sin(performance.now() / 90 + r.x) * 3;
-    ctx.beginPath();
-    ctx.moveTo(-r.w * 0.5, 0);
-    ctx.quadraticCurveTo(-r.w * 0.9, tailWag, -r.w * 1.05, tailWag * 1.5);
+    ctx.moveTo(-W * 0.42, -H * 0.4);
+    ctx.quadraticCurveTo(-W * 0.9, -H * 0.9 + tailWag, -W * 0.75, -H * 0.2 + tailWag);
     ctx.stroke();
+    ctx.lineCap = 'butt';
+
+    // Furry hunched body (elongated oval, humped in the middle)
+    ctx.fillStyle = '#4d3b30';
+    ctx.beginPath();
+    ctx.ellipse(0, -H * 0.42, W * 0.52, H * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Fur highlight on top of the back
+    ctx.fillStyle = '#7a5c48';
+    ctx.beginPath();
+    ctx.ellipse(-W * 0.05, -H * 0.7, W * 0.35, H * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Belly (lighter grey-pink)
+    ctx.fillStyle = '#8a6a52';
+    ctx.beginPath();
+    ctx.ellipse(0, -H * 0.28, W * 0.38, H * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head (pointed snout)
+    ctx.fillStyle = '#4d3b30';
+    ctx.beginPath();
+    ctx.ellipse(W * 0.32, -H * 0.55, W * 0.28, H * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Snout tip (pinker)
+    ctx.fillStyle = '#e69aa8';
+    ctx.beginPath();
+    ctx.ellipse(W * 0.52, -H * 0.5, W * 0.09, H * 0.14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Nose (tiny black dot)
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(W * 0.58, -H * 0.5, 1.2, 0, Math.PI * 2);
+    ctx.fill();
+    // Whiskers
+    ctx.strokeStyle = 'rgba(240,220,210,0.85)';
+    ctx.lineWidth = 0.7;
+    for (const dy of [-2, 0, 2]) {
+      ctx.beginPath();
+      ctx.moveTo(W * 0.48, -H * 0.5 + dy);
+      ctx.lineTo(W * 0.78, -H * 0.5 + dy * 1.6);
+      ctx.stroke();
+    }
+    // Buck teeth (two tiny white squares under the snout)
+    ctx.fillStyle = '#f0e8dc';
+    ctx.fillRect(W * 0.5, -H * 0.42, 1.6, 2.2);
+    ctx.fillRect(W * 0.53, -H * 0.42, 1.6, 2.2);
+
+    // Big round ears (dark outer + pink inner)
+    for (const [ex, ey] of [[W * 0.20, -H * 0.95], [W * 0.36, -H * 0.98]]) {
+      ctx.fillStyle = '#3a2c22';
+      ctx.beginPath();
+      ctx.arc(ex, ey, W * 0.13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#e69aa8';
+      ctx.beginPath();
+      ctx.arc(ex, ey, W * 0.07, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Red glowing eye (sewer rats)
+    ctx.fillStyle = '#ff4747';
+    ctx.beginPath(); ctx.arc(W * 0.34, -H * 0.65, 1.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffcfcf';
+    ctx.beginPath(); ctx.arc(W * 0.34, -H * 0.66, 0.6, 0, Math.PI * 2); ctx.fill();
+
+    // Tiny legs peeking under the body (four little pink feet)
+    ctx.fillStyle = '#e69aa8';
+    const stepA = Math.sin(now / 55 + r.x) * 1.5;
+    const stepB = -stepA;
+    ctx.fillRect(-W * 0.28, -1, 3, 2 + Math.max(0, stepA));
+    ctx.fillRect(W * 0.08, -1, 3, 2 + Math.max(0, stepB));
+    ctx.fillRect(-W * 0.08, -1, 3, 2 + Math.max(0, stepB));
+    ctx.fillRect(W * 0.24, -1, 3, 2 + Math.max(0, stepA));
+
     ctx.restore();
     if (r.confused) drawConfusedMarker(r);
   }

@@ -736,65 +736,59 @@ LEVEL_SPECS.push({
 // verdosa, ratas y esbirros que Cobblepot manda emerger del agua.
 // ==============================================================
 
-// 4-1 — ALCANTARILLAS INICIALES. Ritmo alternado: dos zonas de
-// descanso donde patrullan ratas, dos tuberías bajas por las que
-// Batman está obligado a pasar agachado (down + caminar), y dos
-// canales con pingüinos-buzo que saltan mientras cruzás. La
-// primera tubería es corta para que se sienta la mecánica; la
-// segunda pasa POR ENCIMA de un canal con pingüinos saltando.
+// 4-1 — ALCANTARILLAS INICIALES. Corto y CLAUSTROFÓBICO. Sólo
+// 15 filas de alto (canvas completo), groundY=13, así el techo
+// visible del sewer aprieta arriba. Las tuberías bajan el techo
+// a la fila 11 (un tile sobre el suelo) → Batman parado NO pasa
+// (ni siquiera small — hitbox blocked), agachado sí, y saltar
+// dentro del túnel es imposible porque el techo está a 12 px.
 LEVEL_SPECS.push({
   name: '4-1',
   sewer: true,
-  width: 100, height: 22, groundY: 19,
-  pits: [[38, 44], [68, 76]],   // dos canales de agua
+  width: 76, height: 15, groundY: 13,
+  pits: [[36, 42]],
   platforms: [],
   walls: [],
   ladders: [],
   houses: [],
-  // Las tuberías obligan a agacharse: fila de tiles sólidos a
-  // ceilRow=17 (dos filas sobre el suelo). Batman grande no pasa
-  // parado; agachado (h=20) sí.
   crouchTunnels: [
-    // Túnel 1 — corto, seco: aprendés a agacharte con down + walk.
-    { x: 22, w: 8, ceilRow: 17 },
-    // Túnel 2 — largo, cruza por encima del canal 2. Los divers
-    // saltan mientras vos vas agachado abajo del tubo.
-    { x: 66, w: 12, ceilRow: 17 },
+    // Túnel 1 — 8 tiles secos: aprendés la mecánica con monedas.
+    { x: 14, w: 8, ceilRow: 11 },
+    // Túnel 2 — 14 tiles, pasa por encima de un canal con un
+    // pingüino-buzo saltando abajo. Presión temporal.
+    { x: 46, w: 14, ceilRow: 11 },
   ],
-  swingPoints: [
-    [41, 12],   // sobre canal 1 para el que quiera usar batigarra
-  ],
+  swingPoints: [],
   coins: [
-    [5, 18], [8, 18], [12, 18], [16, 18],
-    [22, 18], [26, 18],   // dentro del primer túnel (recompensa por agacharse)
-    [34, 18], [36, 18],   // zona de descanso 1
-    [50, 18], [54, 18], [58, 18],  // zona de descanso 2 (ratas)
-    [67, 18], [71, 18], [75, 18],  // dentro del túnel 2 (peligro divers)
-    [80, 18], [85, 18], [90, 18], [95, 18],   // salida
+    [4, 12], [7, 12],                   // opener
+    [15, 12], [18, 12], [20, 12],       // dentro del túnel 1
+    [26, 12], [30, 12], [34, 12],       // rest zone 1 (ratas)
+    [48, 12], [54, 12], [58, 12],       // dentro del túnel 2 (peligro)
+    [62, 12], [66, 12], [70, 12], [73, 12],   // salida final
   ],
   thugs: [
-    // Solo uno al comienzo para no saturar la intro.
-    { x: 15, y: 19, range: [12, 18] },
+    // Un thug al comienzo (fuera del túnel) para tener un enemy
+    // fácil antes de aprender a agacharse.
+    { x: 9, y: 13, range: [6, 11] },
   ],
   rats: [
-    // Rest zone 1 (entre túneles): dos ratas patrullando.
-    { x: 32, y: 19, range: [30, 37] },
-    { x: 51, y: 19, range: [46, 55] },
-    // Rest zone 2 (después del túnel largo): dos más.
-    { x: 82, y: 19, range: [80, 88], dir: -1 },
-    { x: 93, y: 19, range: [90, 97] },
+    // Rest zone 1 (entre túneles): 3 ratas patrullando.
+    { x: 25, y: 13, range: [23, 32] },
+    { x: 30, y: 13, range: [28, 36], dir: -1 },
+    { x: 34, y: 13, range: [32, 42] },
+    // Rest zone 2 (después del túnel largo): 2 más.
+    { x: 62, y: 13, range: [60, 68] },
+    { x: 68, y: 13, range: [64, 73], dir: -1 },
   ],
   divers: [
-    // Un pingüino-buzo saltando en el primer canal (fácil de esquivar)
-    { x: 41, y: 19, interval: 2400, height: 5 },
-    // Y dos más en el segundo canal, sincopados, mientras cruzás
-    // agachado por el túnel de arriba.
-    { x: 70, y: 19, interval: 2200, height: 5 },
-    { x: 74, y: 19, interval: 2600, height: 5 },
+    // Único pingüino-buzo del nivel — salta desde el canal
+    // mientras cruzás agachado por encima. NO cuenta para el
+    // requisito del 80%.
+    { x: 39, y: 13, interval: 2400, height: 4 },
   ],
   birds: [],
-  bats: [[59, 18]],   // checkpoint entre el rest zone 2 y el túnel 2
-  spawn: { x: 2, y: 17 },
+  bats: [[45, 12]],   // checkpoint antes del túnel largo
+  spawn: { x: 2, y: 11 },
 });
 
 const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);
