@@ -775,6 +775,8 @@ LEVEL_SPECS.push({
   ],
   // Rejillas de desagüe en el piso (decoración).
   drains: [8, 26, 38, 63, 72],
+  // Rendijas de calle en el techo con un rayo de luz.
+  grates: [10, 40, 70],
   swingPoints: [],
   coins: [
     [4, 10], [7, 10], [13, 10],
@@ -837,18 +839,16 @@ LEVEL_SPECS.push({
     { x: 60, dir: -1, interval: 1900, minX: 42, maxX: 62 },
     { x: 61, dir: -1, interval: 2600, minX: 42, maxX: 62 },
   ],
-  // Gotas de ácido tóxico cayendo desde el techo del tubo (la fila
-  // real la calcula dripCeilY siguiendo el techo diagonal).
+  // Gotas de ácido tóxico saliendo de bocas de tubería en el techo
+  // del tubo (dripCeilY sigue el techo diagonal). Pocas y espaciadas.
   drips: [
-    { x: 14, interval: 1500 },   // sobre la bajada
-    { x: 20, interval: 1300 },
-    { x: 26, interval: 1600 },
-    { x: 36, interval: 1400 },   // sobre la poza
-    { x: 48, interval: 1500 },   // sobre la subida
-    { x: 54, interval: 1300 },
-    { x: 68, interval: 1600 },   // meseta final
+    { x: 18, interval: 1800 },   // sobre la bajada
+    { x: 36, interval: 1900 },   // sobre la poza
+    { x: 52, interval: 1800 },   // sobre la subida
   ],
   drains: [5, 36, 68],
+  // Rendijas de calle en el techo que dejan pasar un rayo de luz.
+  grates: [8, 36, 66],
   swingPoints: [],
   // Monedas SIEMPRE 1 tile por encima de la superficie diagonal
   // (alcanzables, nunca enterradas).
@@ -859,10 +859,8 @@ LEVEL_SPECS.push({
     [46, 12], [50, 10], [54, 8], [58, 6],    // subiendo la diagonal
     [66, 4], [70, 4], [74, 4],               // salida
   ],
-  thugs: [
-    // Uno en la meseta inicial (combate previo a la bajada).
-    { x: 7, y: 5, range: [4, 9] },
-  ],
+  // Sin thug inicial (se quitó a pedido). El nivel es de esquivar.
+  thugs: [],
   rats: [
     // Obstáculos que RECORREN la diagonal de bajada (y se snappean
     // a la pendiente en updateRats).

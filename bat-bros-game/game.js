@@ -781,7 +781,10 @@ function updateDivers(dt, now) {
 function updateSliders(dt, now) {
   const groups = level.sliders || [];
   for (const g of groups) {
-    if (!g.nextAt) g.nextAt = now + 800 + Math.random() * g.interval;
+    // Constant cadence: first spawn one full interval in, then evenly
+    // every `interval` ms — no randomness, so they come at a steady
+    // rhythm the player can read.
+    if (!g.nextAt) g.nextAt = now + g.interval;
     if (now >= g.nextAt) {
       g.list.push({
         x: g.spawnX, y: surfaceYAt(g.spawnX) - 26,
@@ -6165,6 +6168,10 @@ function drawBatSignal(t, sink = 0) {
 
 function drawTrash(t) {
   if (level.cave) return; // no street litter inside the Batcave
+  if (level.sewer) return; // sewers are underground — the groundY row is
+                           // buried under ramps/floor masses, so street
+                           // litter there just looks like trash sunk in
+                           // concrete. No litter down here.
   for (let tx = Math.max(0, Math.floor(camera.x / TILE) - 1); tx <= Math.ceil((camera.x + CANVAS_W) / TILE); tx++) {
     if (tx < 0 || tx >= level.width || !level.solid[level.groundY][tx]) continue;
     const r = hash01(tx * 3.7);
@@ -6703,11 +6710,52 @@ function drawRampsSewer(t) {
   }
 }
 
+// Y (px) of the sewer ceiling underside at a world-x: the sloped
+// tube ceiling if over a ceil ramp, else the ceilingRow mass, else
+// the top of the screen.
+function ceilingYAt(worldX) {
+  const r = rampAt(worldX);
+  if (r && r.ceil) return rampSurfaceY(r, worldX) - r.ceil * TILE;
+  if (level.ceilingRow != null) return (level.ceilingRow + 1) * TILE;
+  return 0;
+}
+
 function drawSewerDecor(t) {
   const now = performance.now();
   const floorY = level.groundY * TILE - camera.y;
   const slitTop = (level.groundY - 1) * TILE - camera.y;   // crawl slit ceiling
   const slitH = floorY - slitTop;                          // 32 px opening
+
+  // Ceiling street grates (rendijas): a barred slot in the ceiling
+  // with a soft shaft of daylight dropping through it onto the path.
+  for (const gx0 of (level.grates || [])) {
+    const gx = gx0 - camera.x;
+    if (gx < -60 || gx > CANVAS_W + 60) continue;
+    const cy = ceilingYAt(gx0) - camera.y;
+    // light shaft down to the floor beneath
+    const surfY = surfaceYAt(gx0) - camera.y;
+    const beam = ctx.createLinearGradient(gx, cy, gx, surfY);
+    beam.addColorStop(0, 'rgba(220,235,180,0.22)');
+    beam.addColorStop(1, 'rgba(220,235,180,0)');
+    ctx.fillStyle = beam;
+    ctx.beginPath();
+    ctx.moveTo(gx - 14, cy); ctx.lineTo(gx + 14, cy);
+    ctx.lineTo(gx + 26, surfY); ctx.lineTo(gx - 26, surfY);
+    ctx.closePath(); ctx.fill();
+    // the grate frame set into the ceiling
+    ctx.fillStyle = '#20242a';
+    ctx.fillRect(gx - 18, cy - 4, 36, 7);
+    ctx.fillStyle = '#0d1013';
+    ctx.fillRect(gx - 16, cy - 2, 32, 4);
+    // bars
+    ctx.strokeStyle = '#3a4048'; ctx.lineWidth = 2;
+    for (let b = -14; b <= 14; b += 5) {
+      ctx.beginPath(); ctx.moveTo(gx + b, cy - 2); ctx.lineTo(gx + b, cy + 2); ctx.stroke();
+    }
+    // rim highlight
+    ctx.fillStyle = '#4a525c';
+    ctx.fillRect(gx - 18, cy - 4, 36, 1.5);
+  }
 
   // Pipe mouths: elliptical metal rims at both ends of each ceiling
   // drop + a blinking arrow so it clearly reads as "crawl through here".
@@ -6810,14 +6858,26 @@ function drawDrips(t) {
     const dx = d.x - camera.x;
     if (dx < -20 || dx > CANVAS_W + 20) continue;
     const ceilY = dripCeilY(d) - camera.y;
-    // Swelling bead at the ceiling that pulses toward the next drop
+    // A short rusted drain-pipe spout jutting from the ceiling — the
+    // acid drips out of its mouth, so it reads like a real sewer
+    // outflow instead of a random ceiling stain.
+    ctx.fillStyle = '#3a2c22';                        // pipe body
+    ctx.fillRect(dx - 6, ceilY - 6, 12, 9);
+    ctx.fillStyle = '#4e3a2c';                        // top highlight
+    ctx.fillRect(dx - 6, ceilY - 6, 12, 2);
+    ctx.fillStyle = '#120a06';                        // dark mouth opening
+    ctx.beginPath(); ctx.ellipse(dx, ceilY + 3, 5, 2.4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#5a4636'; ctx.lineWidth = 1;   // rim
+    ctx.beginPath(); ctx.ellipse(dx, ceilY + 3, 5, 2.4, 0, 0, Math.PI * 2); ctx.stroke();
+    // corrosion stain around the spout
+    ctx.fillStyle = 'rgba(90,160,80,0.25)';
+    ctx.fillRect(dx - 8, ceilY - 6, 16, 4);
+    // Swelling acid bead at the mouth, pulsing toward the next drop
     const untilNext = Math.max(0, (d.nextAt || 0) - now);
     const swell = 1 - Math.min(1, untilNext / 400);
-    ctx.fillStyle = '#3a5a2a';
-    ctx.fillRect(dx - 4, ceilY - 4, 8, 5);          // corroded ceiling patch
     ctx.fillStyle = '#8fdc4a';
     ctx.beginPath();
-    ctx.ellipse(dx, ceilY + 1 + swell * 2, 2 + swell * 1.5, 3 + swell * 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(dx, ceilY + 4 + swell * 2, 2 + swell * 1.5, 3 + swell * 3, 0, 0, Math.PI * 2);
     ctx.fill();
     // Falling droplets
     for (const drop of d.drops) {

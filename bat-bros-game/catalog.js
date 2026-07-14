@@ -60,8 +60,8 @@ const SLIDE_ACCEL = 0.34;     // constant downhill pull per frame
 const SLIDE_FRICTION = 0.99;  // near-frictionless (vs 0.78 normal)
 const SLIDE_INPUT_MUL = 0.32; // horizontal input is heavily damped
 const SLIDE_MAX_SPEED = 7.2;  // faster than the normal 3.9 cap — out of control
-const SLIDER_SPEED = 2.0;     // base downhill speed of a sliding penguin
-const SLIDER_ACCEL = 0.05;    // it accelerates as it slides
+const SLIDER_SPEED = 1.15;    // base downhill speed of a sliding penguin (slow)
+const SLIDER_ACCEL = 0.012;   // gentle acceleration so they stay dodgeable
 const BAT_SCORE = 2000;
 
 // --- Progression ---
@@ -195,7 +195,7 @@ function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
           boats = [], cranes = [], snowCannons = [], rats = [], divers = [],
-          pipes = [], ceilingRow = null, drips = [], drains = [],
+          pipes = [], ceilingRow = null, drips = [], drains = [], grates = [],
           ramps = [], sliders = [],
           spawn, name, indoor = false, dock = false, frozen = false, sewer = false,
           bane = null, cave = null, twoface = null, mrfreeze = null } = spec;
@@ -339,6 +339,8 @@ function buildLevel(spec) {
     }),
     // Floor drain grates (pure decor).
     drains: drains.map(dx => (typeof dx === 'number' ? dx : dx.x) * TILE + TILE / 2),
+    // Ceiling street grates (rendijas) that let a shaft of light in.
+    grates: grates.map(gx => (typeof gx === 'number' ? gx : gx.x) * TILE + TILE / 2),
     // Slippery ramp zones (world-px X ranges + downhill sign).
     slideZones,
     // Diagonal ramp segments in px (line + slippery flag + corridor
