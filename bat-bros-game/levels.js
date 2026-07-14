@@ -736,62 +736,72 @@ LEVEL_SPECS.push({
 // verdosa, ratas y esbirros que Cobblepot manda emerger del agua.
 // ==============================================================
 
-// 4-1 — ALCANTARILLAS INICIALES. Corto y CLAUSTROFÓBICO (15 filas,
-// groundY=13). Las TUBERÍAS son mamparas de hormigón que bloquean
-// TODO el corredor del techo al piso, atravesadas por un caño de
-// desagüe a ras del suelo: la única forma de pasar es entrar por la
-// boca — el personaje se agacha SOLO al tocarla, gatea despacio por
-// el interior oscuro (sin salto, sin pararse) y se levanta al salir.
+// 4-1 — ALCANTARILLAS INICIALES. Corredor angosto de cloaca:
+// masa de hormigón GRIS arriba (techo, filas 0-9) y abajo (piso,
+// filas 13-14), dejando sólo 3 filas de corredor. Apenas hay lugar
+// para saltar. En dos puntos el techo BAJA a ras (tubería) y hay
+// que gatear (agachado, sin salto). Gotas de ácido verde caen del
+// techo y hacen daño; rejillas y bocas de tormenta decoran.
 LEVEL_SPECS.push({
   name: '4-1',
   sewer: true,
-  width: 76, height: 15, groundY: 13,
-  pits: [[34, 40]],
+  // Piso ALTO (masa gruesa filas 11-14) + techo BAJO (masa filas
+  // 0-8). El corredor jugable son sólo 2 filas (9-10): se camina
+  // pero apenas se puede saltar. En las tuberías el techo baja a
+  // fila 9 → queda una única ranura (fila 10) para gatear.
+  width: 76, height: 15, groundY: 11,
+  ceilingRow: 8,
+  pits: [],
   platforms: [],
   walls: [],
   ladders: [],
   houses: [],
   pipes: [
-    // Tubería 1 — 8 tiles, seca: enseña la mecánica con monedas
-    // adentro. La flecha parpadeante marca la boca.
-    { x: 14, w: 8 },
-    // Tubería 2 — 12 tiles después del canal. Más larga y con una
-    // rata ADENTRO patrullando el caño (la sorpresa del nivel).
-    { x: 48, w: 12 },
+    // Tubería 1 — el techo baja 8 tiles: gateo obligado.
+    { x: 16, w: 8 },
+    // Tubería 2 — más larga (12 tiles) con una rata patrullando
+    // adentro. Gotas de ácido caen dentro de ella.
+    { x: 46, w: 12 },
   ],
-  swingPoints: [
-    [37, 9],   // anclaje sobre el canal para cruzar con batigarra
+  // Gotas de ácido verde: caen del techo en estas columnas y
+  // hacen daño al tocarte.
+  drips: [
+    { x: 11, interval: 1600 },
+    { x: 30, interval: 1400 },
+    { x: 40, interval: 1500 },
+    { x: 51, interval: 1300 },   // dentro de la tubería 2
+    { x: 56, interval: 1700 },   // dentro de la tubería 2
+    { x: 68, interval: 1500 },
   ],
+  // Rejillas de desagüe en el piso (decoración).
+  drains: [8, 26, 38, 63, 72],
+  swingPoints: [],
   coins: [
-    [4, 12], [7, 12], [10, 12],          // opener
-    [16, 12], [18, 12], [20, 12],        // dentro de la tubería 1
-    [25, 12], [29, 12],                  // zona de descanso 1 (ratas)
-    [43, 12], [46, 12],                  // entre canal y tubería 2
-    [51, 12], [54, 12], [57, 12],        // dentro de la tubería 2
-    [63, 12], [67, 12], [71, 12], [74, 12],   // salida final
+    [4, 10], [7, 10], [13, 10],
+    [18, 10], [20, 10], [22, 10],        // dentro de la tubería 1
+    [27, 10], [33, 10], [37, 10],        // zona de descanso 1 (ratas)
+    [49, 10], [52, 10], [55, 10],        // dentro de la tubería 2
+    [61, 10], [65, 10], [70, 10], [74, 10],   // salida
   ],
   thugs: [
-    // Un thug al comienzo para un primer combate fácil.
-    { x: 9, y: 13, range: [6, 12] },
+    // Un thug al comienzo, en el corredor abierto.
+    { x: 9, y: 11, range: [6, 13] },
   ],
   rats: [
-    // Zona de descanso 1 (entre tubería 1 y el canal): 2 ratas.
-    { x: 25, y: 13, range: [23, 33] },
-    { x: 30, y: 13, range: [26, 33], dir: -1 },
+    // Zona de descanso 1 (entre las dos tuberías): 3 ratas.
+    { x: 27, y: 11, range: [25, 34] },
+    { x: 32, y: 11, range: [27, 36], dir: -1 },
+    { x: 40, y: 11, range: [36, 44] },
     // UNA RATA DENTRO de la tubería 2 — te la cruzás gateando.
-    { x: 52, y: 13, range: [49, 59] },
+    { x: 52, y: 11, range: [47, 57] },
     // Zona de descanso 2 (después de la tubería 2): 2 más.
-    { x: 64, y: 13, range: [61, 69] },
-    { x: 71, y: 13, range: [66, 75], dir: -1 },
+    { x: 64, y: 11, range: [60, 70] },
+    { x: 71, y: 11, range: [66, 75], dir: -1 },
   ],
-  divers: [
-    // Pingüino-buzo saltando del canal entre las dos tuberías.
-    // NO cuenta para el requisito del 80%.
-    { x: 37, y: 13, interval: 2400, height: 4 },
-  ],
+  divers: [],
   birds: [],
-  bats: [[44, 12]],   // checkpoint después del canal, antes de la tubería 2
-  spawn: { x: 2, y: 11 },
+  bats: [[42, 10]],   // checkpoint entre la zona de ratas y la tubería 2
+  spawn: { x: 2, y: 9 },
 });
 
 const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);

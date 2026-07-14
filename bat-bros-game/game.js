@@ -534,14 +534,13 @@ function playerInPipe() {
   const pipes = level.pipes;
   if (!pipes || !pipes.length) return null;
   const floorPx = level.groundY * TILE;
-  // must be at floor height (the interior row) — not falling from above
+  // must be at floor height (the crawl slit) — not on some ledge
   if (player.y + player.h < floorPx - TILE * 1.5) return null;
   for (const p of pipes) {
-    // 14 px margin OUTSIDE each mouth: a standing character walking
-    // toward the opening ducks just before touching it, so the solid
-    // bulkhead never blocks the approach. Without the margin, the
-    // wall stops the hitbox before the overlap test can ever pass.
-    const px0 = p.x * TILE - 14, px1 = (p.x + p.w) * TILE + 14;
+    // 16 px margin OUTSIDE each mouth so a standing character ducks
+    // just before his head clips the low ceiling — otherwise the
+    // solid tiles would stop him dead at the entrance.
+    const px0 = p.x * TILE - 16, px1 = (p.x + p.w) * TILE + 16;
     if (player.x + player.w > px0 && player.x < px1) return p;
   }
   return null;
@@ -3101,6 +3100,7 @@ function updatePlaying(dt) {
   updateBatarangs(dt);
   updateSmokeClouds(dt, now);
   updateCrouch();
+  updateDrips(dt, now);
 
   // thugs
   for (const g of level.thugs) {
@@ -6164,53 +6164,41 @@ function drawTiles() {
         continue;
       }
 
-      // Sewer floor / ceiling tiles: mossy dark stone, differentiated
-      // for the "low ceiling" tunnel tiles so they read as a rusty
-      // pipe overhead instead of generic ground.
+      // Sewer: everything is a solid GREY concrete/stone mass — a
+      // thick ceiling up top and a thick floor below, so the corridor
+      // is a tight band. Ceiling and floor share the same stone look;
+      // exposed surfaces (the corridor faces) get a slime edge.
       if (level.sewer) {
-        // Bulkhead + pipe tiles are painted whole by drawPipesBack /
-        // drawPipesFront — skip them here so brick doesn't bleed through.
-        if (level.pipes && ty <= level.groundY - 2 &&
-            level.pipes.some(pp => tx >= pp.x && tx < pp.x + pp.w)) continue;
-        const isCeiling = ty < level.groundY;
-        if (isCeiling) {
-          // pipe ceiling — dark rusted metal cylinder
-          ctx.fillStyle = '#3a2820';
-          ctx.fillRect(px, py, TILE, TILE);
-          ctx.fillStyle = '#5c4230';
-          ctx.fillRect(px, py, TILE, 4);
-          ctx.fillStyle = '#1c110a';
-          ctx.fillRect(px, py + TILE - 4, TILE, 4);
-          // rivets
-          ctx.fillStyle = '#8a6a4a';
-          ctx.beginPath(); ctx.arc(px + 6, py + TILE - 6, 1.4, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(px + TILE - 6, py + TILE - 6, 1.4, 0, Math.PI * 2); ctx.fill();
-          // green ooze drip on some tiles
-          if (hash01(tx * 2.7 + ty * 1.9) > 0.6) {
-            ctx.fillStyle = 'rgba(120,200,140,0.5)';
-            ctx.fillRect(px + TILE / 2 - 1, py + TILE - 2, 2, 6);
-          }
-          ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-          ctx.strokeRect(px + 0.5, py + 0.5, TILE - 1, TILE - 1);
-          continue;
-        }
-        // sewer ground: dark stone bricks
-        ctx.fillStyle = '#2a3a30';
+        // grey stone body with a subtle vertical shade
+        const sg = ctx.createLinearGradient(px, py, px, py + TILE);
+        sg.addColorStop(0, '#4a4f56'); sg.addColorStop(1, '#3a3f46');
+        ctx.fillStyle = sg;
         ctx.fillRect(px, py, TILE, TILE);
-        // brick joints
-        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-        ctx.lineWidth = 1;
+        // block joints (staggered brick courses)
+        ctx.strokeStyle = 'rgba(0,0,0,0.28)'; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(px, py + TILE / 2); ctx.lineTo(px + TILE, py + TILE / 2); ctx.stroke();
         const off = ((ty * 2 + tx) % 2) * 16;
         ctx.beginPath(); ctx.moveTo(px + off, py); ctx.lineTo(px + off, py + TILE / 2); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(px + (off + 16) % 32, py + TILE / 2); ctx.lineTo(px + (off + 16) % 32, py + TILE); ctx.stroke();
-        // slime top edge on the walkable surface
-        const exposedTopS = ty === 0 || !level.solid[ty - 1][tx];
-        if (exposedTopS) {
-          ctx.fillStyle = '#3f6a52';
-          ctx.fillRect(px, py, TILE, 3);
-          ctx.fillStyle = '#5a8a6c';
-          ctx.fillRect(px, py, TILE, 1);
+        // faint speckle so the grey isn't flat
+        if (hash01(tx * 3.7 + ty * 5.1) > 0.7) {
+          ctx.fillStyle = 'rgba(0,0,0,0.16)';
+          ctx.fillRect(px + 6 + (tx % 3) * 6, py + 8 + (ty % 3) * 5, 3, 3);
+        }
+        // FLOOR top face: green slime edge on the walkable surface
+        const exposedTop = ty === 0 || !level.solid[ty - 1][tx];
+        if (exposedTop && ty >= level.groundY) {
+          ctx.fillStyle = '#3f6a52'; ctx.fillRect(px, py, TILE, 3);
+          ctx.fillStyle = '#5a8a6c'; ctx.fillRect(px, py, TILE, 1);
+        }
+        // CEILING under-face: mossy drip edge on the underside
+        const exposedBottom = ty === level.height - 1 || !level.solid[ty + 1][tx];
+        if (exposedBottom && ty < level.groundY) {
+          ctx.fillStyle = '#2c4034'; ctx.fillRect(px, py + TILE - 3, TILE, 3);
+          if (hash01(tx * 1.9 + ty) > 0.55) {
+            ctx.fillStyle = 'rgba(100,170,120,0.5)';
+            ctx.fillRect(px + TILE / 2 - 1, py + TILE - 2, 2, 5);
+          }
         }
         continue;
       }
@@ -6471,119 +6459,133 @@ function drawLadders() {
 // Docks: shipping-container towers instead of brick apartment buildings.
 // Same solid collision as any other wall — this is purely the look.
 // ---------------------------------------------------------------
-// Act 4 pipes: a concrete bulkhead pierced by a big drainage tube
-// at floor level. Two passes: BACK paints the wall + the pitch-dark
-// interior (before entities), FRONT paints the tube's shell,
-// mouth rims and shadow over the player so a character inside
-// clearly reads as CRAWLING THROUGH A PIPE.
+// Act 4 sewer decor: pipe-mouth rims where the ceiling drops to a
+// crawl slit, drain grates on the floor, manhole covers on the
+// ceiling. Drawn AFTER the grey tile mass so the openings read as
+// round pipe mouths, not just a hole in the wall.
 // ---------------------------------------------------------------
-function drawPipesBack(t) {
-  const pipes = level.pipes;
-  if (!pipes || !pipes.length) return;
-  const floorY = level.groundY * TILE - camera.y;
-  const intTop = (level.groundY - 1) * TILE - camera.y;   // interior ceiling
-  for (const p of pipes) {
-    const x0 = p.x * TILE - camera.x, x1 = (p.x + p.w) * TILE - camera.x;
-    if (x1 < -40 || x0 > CANVAS_W + 40) continue;
-    const wallTop = -camera.y; // bulkhead runs to the level ceiling
-
-    // Concrete bulkhead
-    const wg = ctx.createLinearGradient(0, wallTop, 0, floorY);
-    wg.addColorStop(0, '#3d4448'); wg.addColorStop(1, '#282e31');
-    ctx.fillStyle = wg;
-    ctx.fillRect(x0, wallTop, x1 - x0, intTop - wallTop);
-    // panel joints
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 2;
-    for (let y = wallTop + 40; y < intTop - 8; y += 54) {
-      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
-    }
-    ctx.strokeRect(x0 + 1, wallTop, x1 - x0 - 2, intTop - wallTop);
-    // moisture stains running down the concrete
-    ctx.fillStyle = 'rgba(40,80,60,0.35)';
-    for (let sx = x0 + 14; sx < x1 - 8; sx += 42) {
-      const dh = 20 + hash01(sx * 1.3) * (intTop - wallTop) * 0.5;
-      ctx.fillRect(sx, wallTop + 4, 4, dh);
-    }
-
-    // Pipe interior: near-black tube void with faint depth ribs
-    const ig = ctx.createLinearGradient(0, intTop, 0, floorY);
-    ig.addColorStop(0, '#05070a'); ig.addColorStop(0.5, '#0b0f14'); ig.addColorStop(1, '#05070a');
-    ctx.fillStyle = ig;
-    ctx.fillRect(x0, intTop, x1 - x0, floorY - intTop);
-    // interior weld ribs every 2 tiles — sell the tube's depth
-    ctx.strokeStyle = 'rgba(90,110,130,0.22)'; ctx.lineWidth = 2;
-    for (let rx = x0 + TILE * 2; rx < x1; rx += TILE * 2) {
-      ctx.beginPath(); ctx.moveTo(rx, intTop + 2); ctx.lineTo(rx, floorY - 2); ctx.stroke();
-    }
-    // trickle of water along the pipe floor
-    ctx.fillStyle = 'rgba(80,160,110,0.25)';
-    ctx.fillRect(x0, floorY - 4, x1 - x0, 4);
-  }
-}
-
-function drawPipesFront(t) {
-  const pipes = level.pipes;
-  if (!pipes || !pipes.length) return;
+function drawSewerDecor(t) {
   const now = performance.now();
   const floorY = level.groundY * TILE - camera.y;
-  const intTop = (level.groundY - 1) * TILE - camera.y;
-  const mouthH = floorY - intTop;             // 32 px opening
-  for (const p of pipes) {
+  const slitTop = (level.groundY - 1) * TILE - camera.y;   // crawl slit ceiling
+  const slitH = floorY - slitTop;                          // 32 px opening
+
+  // Pipe mouths: elliptical metal rims at both ends of each ceiling
+  // drop + a blinking arrow so it clearly reads as "crawl through here".
+  for (const p of (level.pipes || [])) {
     const x0 = p.x * TILE - camera.x, x1 = (p.x + p.w) * TILE - camera.x;
     if (x1 < -40 || x0 > CANVAS_W + 40) continue;
-
-    // Semi-transparent front shell — dims the character inside so he
-    // reads as crawling in the dark, barely visible.
-    ctx.fillStyle = 'rgba(8,12,16,0.45)';
-    ctx.fillRect(x0, intTop, x1 - x0, mouthH);
-
-    // Thick metal shell edge along the top of the opening (the tube's
-    // lower lip of the upper shell) + a thin one hugging the floor.
-    ctx.fillStyle = '#4a3a2c';
-    ctx.fillRect(x0, intTop - 8, x1 - x0, 10);
-    ctx.fillStyle = '#6a5440';
-    ctx.fillRect(x0, intTop - 8, x1 - x0, 3);
-    ctx.fillStyle = '#2c2018';
-    ctx.fillRect(x0, floorY - 2, x1 - x0, 4);
-    // rivets along the top lip
-    ctx.fillStyle = '#8a6a4a';
-    for (let rx = x0 + 10; rx < x1 - 6; rx += 26) {
-      ctx.beginPath(); ctx.arc(rx, intTop - 3, 1.6, 0, Math.PI * 2); ctx.fill();
+    // slight darkening inside the slit so the crawler reads as "in a hole"
+    ctx.fillStyle = 'rgba(6,10,12,0.4)';
+    ctx.fillRect(x0, slitTop, x1 - x0, slitH);
+    // metal lip along the underside of the dropped ceiling
+    ctx.fillStyle = '#5a4636';
+    ctx.fillRect(x0, slitTop - 4, x1 - x0, 6);
+    ctx.fillStyle = '#7a604a';
+    ctx.fillRect(x0, slitTop - 4, x1 - x0, 2);
+    // rivets
+    ctx.fillStyle = '#9a7a5a';
+    for (let rx = x0 + 12; rx < x1 - 6; rx += 30) {
+      ctx.beginPath(); ctx.arc(rx, slitTop - 1, 1.5, 0, Math.PI * 2); ctx.fill();
     }
-
-    // MOUTH RIMS: big elliptical rings at both openings so each end
-    // clearly reads as the round mouth of a tube.
+    // round mouth rims at each opening
     for (const mx of [x0, x1]) {
       ctx.strokeStyle = '#7a5c40'; ctx.lineWidth = 5;
       ctx.beginPath();
-      ctx.ellipse(mx, intTop + mouthH / 2, 7, mouthH / 2 + 6, 0, 0, Math.PI * 2);
+      ctx.ellipse(mx, slitTop + slitH / 2, 6, slitH / 2 + 5, 0, 0, Math.PI * 2);
       ctx.stroke();
       ctx.strokeStyle = '#2c2018'; ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.ellipse(mx, intTop + mouthH / 2, 10, mouthH / 2 + 9, 0, 0, Math.PI * 2);
+      ctx.ellipse(mx, slitTop + slitH / 2, 9, slitH / 2 + 8, 0, 0, Math.PI * 2);
       ctx.stroke();
     }
-
-    // Hazard stripes on the bulkhead right above the mouth — "cuidado,
-    // paso bajo" signage that tells the player this is the way through.
-    const signY = intTop - 26;
-    ctx.fillStyle = '#c8a02c';
-    ctx.fillRect(x0 + 4, signY, 46, 14);
-    ctx.fillStyle = '#151515';
-    for (let sx = 0; sx < 46; sx += 12) {
-      ctx.beginPath();
-      ctx.moveTo(x0 + 4 + sx, signY + 14); ctx.lineTo(x0 + 4 + sx + 6, signY);
-      ctx.lineTo(x0 + 4 + sx + 12, signY); ctx.lineTo(x0 + 4 + sx + 6, signY + 14);
-      ctx.closePath(); ctx.fill();
-    }
-    // blinking arrow pointing into the mouth
+    // blinking guide arrow just left of the entrance
     if (Math.floor(now / 500) % 2 === 0) {
       ctx.fillStyle = '#ffd166';
       ctx.beginPath();
-      ctx.moveTo(x0 - 20, intTop + mouthH / 2 - 6);
-      ctx.lineTo(x0 - 8, intTop + mouthH / 2);
-      ctx.lineTo(x0 - 20, intTop + mouthH / 2 + 6);
+      ctx.moveTo(x0 - 22, slitTop + slitH / 2 - 6);
+      ctx.lineTo(x0 - 10, slitTop + slitH / 2);
+      ctx.lineTo(x0 - 22, slitTop + slitH / 2 + 6);
       ctx.closePath(); ctx.fill();
+    }
+  }
+
+  // Floor drain grates (decor): a dark recessed square with bars.
+  for (const dx of (level.drains || [])) {
+    const gx = dx - camera.x;
+    if (gx < -30 || gx > CANVAS_W + 30) continue;
+    const gy = floorY + 4;
+    ctx.fillStyle = '#14201a';
+    ctx.fillRect(gx - 14, gy, 28, 10);
+    ctx.strokeStyle = '#3a4a40'; ctx.lineWidth = 1;
+    ctx.strokeRect(gx - 14, gy, 28, 10);
+    ctx.strokeStyle = '#26362c'; ctx.lineWidth = 2;
+    for (let b = -10; b <= 10; b += 5) {
+      ctx.beginPath(); ctx.moveTo(gx + b, gy + 1); ctx.lineTo(gx + b, gy + 9); ctx.stroke();
+    }
+  }
+}
+
+// Green acid drips: a warning bead swells at the ceiling, then a
+// droplet falls to the floor. Touching a falling droplet hurts.
+function updateDrips(dt, now) {
+  const drips = level.drips;
+  if (!drips || !drips.length) return;
+  // drops start at the underside of the ceiling mass
+  const ceilY = ((level.ceilingRow != null ? level.ceilingRow : level.groundY - 2) + 1) * TILE;
+  const floorPx = level.groundY * TILE;
+  for (const d of drips) {
+    if (!d.nextAt) d.nextAt = now + 600 + Math.random() * d.interval;
+    if (now >= d.nextAt) {
+      d.drops.push({ x: d.x, y: ceilY, vy: 0 });
+      d.nextAt = now + d.interval;
+    }
+    for (const drop of d.drops) {
+      drop.vy += GRAVITY * dt * 0.7;
+      drop.y += drop.vy * dt;
+      // damage on contact with the player
+      if (!(player.frozenUntil > now) && Date.now() >= invulnUntil) {
+        if (Math.abs((player.x + player.w / 2) - drop.x) < player.w / 2 + 5 &&
+            drop.y > player.y && drop.y < player.y + player.h) {
+          hurtPlayer();
+          drop.y = floorPx + 100; // consume it
+          if (state !== 'playing') return;
+        }
+      }
+    }
+    d.drops = d.drops.filter(drop => drop.y < floorPx + 4);
+  }
+}
+
+function drawDrips(t) {
+  const drips = level.drips;
+  if (!drips || !drips.length) return;
+  const now = performance.now();
+  const ceilY = ((level.ceilingRow != null ? level.ceilingRow : level.groundY - 2) + 1) * TILE - camera.y;
+  const floorY = level.groundY * TILE - camera.y;
+  for (const d of drips) {
+    const dx = d.x - camera.x;
+    if (dx < -20 || dx > CANVAS_W + 20) continue;
+    // Swelling bead at the ceiling that pulses toward the next drop
+    const untilNext = Math.max(0, (d.nextAt || 0) - now);
+    const swell = 1 - Math.min(1, untilNext / 400);
+    ctx.fillStyle = '#3a5a2a';
+    ctx.fillRect(dx - 4, ceilY - 4, 8, 5);          // corroded ceiling patch
+    ctx.fillStyle = '#8fdc4a';
+    ctx.beginPath();
+    ctx.ellipse(dx, ceilY + 1 + swell * 2, 2 + swell * 1.5, 3 + swell * 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Falling droplets
+    for (const drop of d.drops) {
+      const py = drop.y - camera.y;
+      if (py < ceilY || py > floorY + 4) continue;
+      // glowing acid blob + a faint trail
+      ctx.fillStyle = 'rgba(140,220,74,0.35)';
+      ctx.beginPath(); ctx.ellipse(dx, py - 6, 2, 6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#a8f05a';
+      ctx.beginPath(); ctx.ellipse(dx, py, 3.2, 4.4, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#e8ffc0';
+      ctx.beginPath(); ctx.arc(dx - 1, py - 1, 1, 0, Math.PI * 2); ctx.fill();
     }
   }
 }
@@ -8267,63 +8269,25 @@ function drawGargoyles() {
 // beams of moonlight dropping through manhole covers.
 // ---------------------------------------------------------------
 function drawSewerBackground(t) {
-  const now = performance.now();
+  // The ceiling + floor are solid grey tile masses, so the only
+  // background that shows through is the thin corridor band between
+  // them. Keep it a dark, wet back-wall so the grey masses pop.
   const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
-  g.addColorStop(0, '#0e1712'); g.addColorStop(0.5, '#152018'); g.addColorStop(1, '#0a120c');
+  g.addColorStop(0, '#10130f'); g.addColorStop(0.5, '#161b15'); g.addColorStop(1, '#0c0f0b');
   ctx.fillStyle = g; ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  // curved vault arches along the ceiling
-  ctx.fillStyle = 'rgba(60,75,50,0.35)';
-  const archW = 140;
-  for (let i = 0; i <= CANVAS_W / archW + 1; i++) {
-    const ax = i * archW + 20 - ((camera.x * 0.4) % archW);
-    ctx.beginPath();
-    ctx.moveTo(ax, 0); ctx.lineTo(ax, 60);
-    ctx.quadraticCurveTo(ax + archW / 2, 130, ax + archW - 20, 60);
-    ctx.lineTo(ax + archW - 20, 0); ctx.closePath(); ctx.fill();
-  }
-  // brick pattern along the back wall
-  ctx.fillStyle = 'rgba(80,60,44,0.35)';
-  const brickW = 42, brickH = 18;
-  for (let by = 90; by < CANVAS_H - 40; by += brickH) {
-    const row = Math.floor(by / brickH);
-    const off = (row % 2) * (brickW / 2);
-    for (let bx = -brickW; bx < CANVAS_W + brickW; bx += brickW) {
-      const x = bx + off - ((camera.x * 0.35) % brickW);
-      ctx.fillRect(x + 2, by + 2, brickW - 4, brickH - 4);
-    }
-  }
-  // moisture streaks
-  ctx.strokeStyle = 'rgba(120,180,140,0.15)';
+  // faint brick courses on the back wall of the corridor
+  ctx.strokeStyle = 'rgba(70,80,66,0.25)';
   ctx.lineWidth = 1;
-  for (let i = 0; i < 12; i++) {
-    const x = (i * 79 - (camera.x * 0.5)) % CANVAS_W;
-    ctx.beginPath(); ctx.moveTo(x, 40); ctx.lineTo(x, CANVAS_H - 60); ctx.stroke();
+  const brickH = 16;
+  for (let by = 0; by < CANVAS_H; by += brickH) {
+    ctx.beginPath(); ctx.moveTo(0, by); ctx.lineTo(CANVAS_W, by); ctx.stroke();
   }
-  // pipes running along the top wall — big rusted lines
-  ctx.fillStyle = '#3a2a20';
-  ctx.fillRect(0, 34, CANVAS_W, 12);
-  ctx.fillStyle = '#5a4030'; ctx.fillRect(0, 34, CANVAS_W, 3);
-  ctx.fillStyle = '#1c110a'; ctx.fillRect(0, 44, CANVAS_W, 2);
-  // dripping condensation from the pipe
-  ctx.fillStyle = 'rgba(180,220,200,0.45)';
-  for (let i = 0; i < CANVAS_W; i += 46) {
-    const dropY = 46 + ((now / 6 + i * 3) % 60);
-    ctx.beginPath(); ctx.arc(i - (camera.x * 0.3) % 46, dropY, 1.5, 0, Math.PI * 2); ctx.fill();
+  // a few vertical moisture streaks
+  ctx.strokeStyle = 'rgba(90,150,110,0.12)';
+  for (let i = 0; i < 8; i++) {
+    const x = (i * 121 - (camera.x * 0.5)) % (CANVAS_W + 120) - 60;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 6, CANVAS_H); ctx.stroke();
   }
-  // moonlight cones dropping through occasional manholes
-  for (let i = 0; i < CANVAS_W; i += 260) {
-    const x = i + 40 - ((camera.x * 0.6) % 260);
-    const grad = ctx.createLinearGradient(x, 0, x + 40, CANVAS_H);
-    grad.addColorStop(0, 'rgba(200,220,180,0.14)');
-    grad.addColorStop(1, 'rgba(200,220,180,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.moveTo(x, 0); ctx.lineTo(x + 40, 0); ctx.lineTo(x + 90, CANVAS_H); ctx.lineTo(x - 20, CANVAS_H);
-    ctx.closePath(); ctx.fill();
-  }
-  // green water shimmer at the very bottom (where the ground begins)
-  ctx.fillStyle = 'rgba(60,140,90,0.08)';
-  ctx.fillRect(0, CANVAS_H - 40, CANVAS_W, 40);
 }
 
 // ---------------------------------------------------------------
@@ -9923,7 +9887,7 @@ function render(t) {
   drawCranes();
   drawSwingPoints(t);
   drawTiles();
-  drawPipesBack(t);
+  if (level.sewer) drawSewerDecor(t);
   if (level.cave) drawCaveProps(t);
   drawWalls(t);
   drawLadders();
@@ -9951,7 +9915,7 @@ function render(t) {
   // Act 3 co-op: only the active character is on screen. The other one
   // is stored in `companion` and only comes back when you hit switch.
   drawPlayer();
-  drawPipesFront(t);
+  if (level.sewer) drawDrips(t);
   if (level.frozen) drawSnowfall(t);
   drawHeroMessage();
 

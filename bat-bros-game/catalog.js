@@ -186,7 +186,7 @@ function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
           boats = [], cranes = [], snowCannons = [], rats = [], divers = [],
-          pipes = [],
+          pipes = [], ceilingRow = null, drips = [], drains = [],
           spawn, name, indoor = false, dock = false, frozen = false, sewer = false,
           bane = null, cave = null, twoface = null, mrfreeze = null } = spec;
 
@@ -196,6 +196,15 @@ function buildLevel(spec) {
     for (let x = 0; x < width; x++) {
       const inPit = pits.some(([a, b]) => x >= a && x <= b);
       if (!inPit) solid[y][x] = true;
+    }
+  }
+
+  // SEWER CEILING (Act 4): a thick solid grey mass along the top so
+  // the whole level is a TIGHT horizontal corridor — high floor, low
+  // ceiling, barely room to jump. Rows 0..ceilingRow are all solid.
+  if (ceilingRow != null) {
+    for (let y = 0; y <= ceilingRow; y++) {
+      for (let x = 0; x < width; x++) solid[y][x] = true;
     }
   }
 
@@ -219,15 +228,15 @@ function buildLevel(spec) {
     solid[l.topRow][l.x] = true;
   }
 
-  // PIPES (Act 4): a concrete bulkhead blocks the WHOLE corridor from
-  // ceiling to one tile above the floor, and a big drainage pipe
-  // pierces it at ground level. The 1-tile interior (row groundY-1)
-  // is the ONLY way past — no walking around, no jumping over.
-  // Touching the mouth force-crouches the character (see updateCrouch
-  // in game.js): he crawls through slowly and stands back up outside.
+  // PIPES (Act 4): a LOCAL drop of the ceiling. Where a pipe sits, the
+  // grey ceiling mass extends down to one tile above the floor, leaving
+  // only a crawl-height slit (row groundY-1). The player must duck to
+  // pass — walking in standing is blocked by the low tiles, and
+  // touching the mouth force-crouches him (see updateCrouch in game.js).
+  const pipeCeil = (ceilingRow != null ? ceilingRow : 0) + 1;
   for (const p of pipes) {
     for (let i = 0; i < p.w; i++) {
-      for (let y = 0; y <= groundY - 2; y++) solid[y][p.x + i] = true;
+      for (let y = pipeCeil; y <= groundY - 2; y++) solid[y][p.x + i] = true;
     }
   }
 
@@ -265,10 +274,23 @@ function buildLevel(spec) {
   return {
     name,
     width, height, groundY, indoor, dock, frozen, sewer,
+    ceilingRow,
     solid,
-    // Pipe descriptors in TILE units; drawPipes + updatePipes read
-    // these. Interior = the single air row at groundY-1.
+    // Pipe descriptors in TILE units. A pipe is a ceiling drop to
+    // crawl height over [x, x+w); its interior row is groundY-1.
     pipes: pipes.map(p => ({ x: p.x, w: p.w })),
+    // Green acid drips: fall from the ceiling at a column on a timer,
+    // damage the player on contact. Built with live droplet state.
+    drips: drips.map(d => {
+      const dx = (typeof d === 'number' ? d : d.x);
+      return {
+        x: dx * TILE + TILE / 2,
+        interval: (typeof d === 'object' && d.interval) ? d.interval : 1800,
+        nextAt: 0, drops: [],
+      };
+    }),
+    // Floor drain grates (pure decor).
+    drains: drains.map(dx => (typeof dx === 'number' ? dx : dx.x) * TILE + TILE / 2),
     pits,
     ladders: ladders.map(l => ({ x: l.x * TILE, top: l.topRow * TILE, bottom: l.baseRow * TILE })),
     walls: walls.map(w => ({ x: w.x, w: w.w, topRow: w.topRow })),
