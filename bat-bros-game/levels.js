@@ -736,58 +736,61 @@ LEVEL_SPECS.push({
 // verdosa, ratas y esbirros que Cobblepot manda emerger del agua.
 // ==============================================================
 
-// 4-1 — ALCANTARILLAS INICIALES. Corto y CLAUSTROFÓBICO. Sólo
-// 15 filas de alto (canvas completo), groundY=13, así el techo
-// visible del sewer aprieta arriba. Las tuberías bajan el techo
-// a la fila 11 (un tile sobre el suelo) → Batman parado NO pasa
-// (ni siquiera small — hitbox blocked), agachado sí, y saltar
-// dentro del túnel es imposible porque el techo está a 12 px.
+// 4-1 — ALCANTARILLAS INICIALES. Corto y CLAUSTROFÓBICO (15 filas,
+// groundY=13). Las TUBERÍAS son mamparas de hormigón que bloquean
+// TODO el corredor del techo al piso, atravesadas por un caño de
+// desagüe a ras del suelo: la única forma de pasar es entrar por la
+// boca — el personaje se agacha SOLO al tocarla, gatea despacio por
+// el interior oscuro (sin salto, sin pararse) y se levanta al salir.
 LEVEL_SPECS.push({
   name: '4-1',
   sewer: true,
   width: 76, height: 15, groundY: 13,
-  pits: [[36, 42]],
+  pits: [[34, 40]],
   platforms: [],
   walls: [],
   ladders: [],
   houses: [],
-  crouchTunnels: [
-    // Túnel 1 — 8 tiles secos: aprendés la mecánica con monedas.
-    { x: 14, w: 8, ceilRow: 11 },
-    // Túnel 2 — 14 tiles, pasa por encima de un canal con un
-    // pingüino-buzo saltando abajo. Presión temporal.
-    { x: 46, w: 14, ceilRow: 11 },
+  pipes: [
+    // Tubería 1 — 8 tiles, seca: enseña la mecánica con monedas
+    // adentro. La flecha parpadeante marca la boca.
+    { x: 14, w: 8 },
+    // Tubería 2 — 12 tiles después del canal. Más larga y con una
+    // rata ADENTRO patrullando el caño (la sorpresa del nivel).
+    { x: 48, w: 12 },
   ],
-  swingPoints: [],
+  swingPoints: [
+    [37, 9],   // anclaje sobre el canal para cruzar con batigarra
+  ],
   coins: [
-    [4, 12], [7, 12],                   // opener
-    [15, 12], [18, 12], [20, 12],       // dentro del túnel 1
-    [26, 12], [30, 12], [34, 12],       // rest zone 1 (ratas)
-    [48, 12], [54, 12], [58, 12],       // dentro del túnel 2 (peligro)
-    [62, 12], [66, 12], [70, 12], [73, 12],   // salida final
+    [4, 12], [7, 12], [10, 12],          // opener
+    [16, 12], [18, 12], [20, 12],        // dentro de la tubería 1
+    [25, 12], [29, 12],                  // zona de descanso 1 (ratas)
+    [43, 12], [46, 12],                  // entre canal y tubería 2
+    [51, 12], [54, 12], [57, 12],        // dentro de la tubería 2
+    [63, 12], [67, 12], [71, 12], [74, 12],   // salida final
   ],
   thugs: [
-    // Un thug al comienzo (fuera del túnel) para tener un enemy
-    // fácil antes de aprender a agacharse.
-    { x: 9, y: 13, range: [6, 11] },
+    // Un thug al comienzo para un primer combate fácil.
+    { x: 9, y: 13, range: [6, 12] },
   ],
   rats: [
-    // Rest zone 1 (entre túneles): 3 ratas patrullando.
-    { x: 25, y: 13, range: [23, 32] },
-    { x: 30, y: 13, range: [28, 36], dir: -1 },
-    { x: 34, y: 13, range: [32, 42] },
-    // Rest zone 2 (después del túnel largo): 2 más.
-    { x: 62, y: 13, range: [60, 68] },
-    { x: 68, y: 13, range: [64, 73], dir: -1 },
+    // Zona de descanso 1 (entre tubería 1 y el canal): 2 ratas.
+    { x: 25, y: 13, range: [23, 33] },
+    { x: 30, y: 13, range: [26, 33], dir: -1 },
+    // UNA RATA DENTRO de la tubería 2 — te la cruzás gateando.
+    { x: 52, y: 13, range: [49, 59] },
+    // Zona de descanso 2 (después de la tubería 2): 2 más.
+    { x: 64, y: 13, range: [61, 69] },
+    { x: 71, y: 13, range: [66, 75], dir: -1 },
   ],
   divers: [
-    // Único pingüino-buzo del nivel — salta desde el canal
-    // mientras cruzás agachado por encima. NO cuenta para el
-    // requisito del 80%.
-    { x: 39, y: 13, interval: 2400, height: 4 },
+    // Pingüino-buzo saltando del canal entre las dos tuberías.
+    // NO cuenta para el requisito del 80%.
+    { x: 37, y: 13, interval: 2400, height: 4 },
   ],
   birds: [],
-  bats: [[45, 12]],   // checkpoint antes del túnel largo
+  bats: [[44, 12]],   // checkpoint después del canal, antes de la tubería 2
   spawn: { x: 2, y: 11 },
 });
 

@@ -26,6 +26,9 @@ function requestSmoke() { smokeBufferUntil = performance.now() + JUMP_BUFFER_MS;
 // with Robin's forced batarang loadout and double-jump ability.
 function switchCharacter() {
   if (!companion) return;
+  // No swapping mid-crawl: the incoming character spawns at standing
+  // height and wouldn't fit inside a pipe's 1-tile interior.
+  if (player && player.inPipe) return;
   const swap = companion;
   companion = {
     x: player.x, y: player.y,
@@ -523,16 +526,39 @@ function newPlayer(spawn, powerState = 'small', gadget = null) {
 // tunnel with only 1 tile of vertical clearance.
 const CROUCH_H = 20;
 
-// Try to make the player crouch. On the ground and pressing down =
-// crouch. Off the ground or no down input = try to uncrouch (only
-// works if the space above the head is clear).
-//
-// SECOND path: any low ceiling directly overhead auto-holds the
-// crouch even if the player let go of down — otherwise standing
-// back up under a tunnel would insta-clip and be blocked forever.
+// Is the player's horizontal span inside a pipe's interior? Used by
+// updateCrouch (forced crawl) and the renderer (dim the character).
+// A character counts as "in the pipe" from the moment any part of
+// his hitbox crosses either mouth while at floor height.
+function playerInPipe() {
+  const pipes = level.pipes;
+  if (!pipes || !pipes.length) return null;
+  const floorPx = level.groundY * TILE;
+  // must be at floor height (the interior row) — not falling from above
+  if (player.y + player.h < floorPx - TILE * 1.5) return null;
+  for (const p of pipes) {
+    // 14 px margin OUTSIDE each mouth: a standing character walking
+    // toward the opening ducks just before touching it, so the solid
+    // bulkhead never blocks the approach. Without the margin, the
+    // wall stops the hitbox before the overlap test can ever pass.
+    const px0 = p.x * TILE - 14, px1 = (p.x + p.w) * TILE + 14;
+    if (player.x + player.w > px0 && player.x < px1) return p;
+  }
+  return null;
+}
+
+// Crouch has TWO triggers:
+//  1. Voluntary: holding DOWN on the ground (anywhere).
+//  2. FORCED: being inside a pipe. Walking into a pipe mouth ducks
+//     the character automatically — no key needed — and he cannot
+//     stand or jump until he's out the other side. That's the whole
+//     fantasy: crawling through a tube, barely any room to breathe.
 function updateCrouch() {
   if (!player) return;
-  const wantCrouch = player.onGround && keys.down && !player.climbing && !player.swinging;
+  const inPipe = playerInPipe();
+  player.inPipe = !!inPipe;
+  const wantCrouch = (!player.climbing && !player.swinging) &&
+    ((player.onGround && keys.down) || inPipe);
   if (wantCrouch && !player.crouching) {
     const dropH = player.h - CROUCH_H;
     player.h = CROUCH_H;
@@ -549,59 +575,6 @@ function updateCrouch() {
       player.h = restoreH;
       player.crouching = false;
     }
-  }
-}
-
-// Called BEFORE tryMove: if the player is pushing into a tunnel
-// (holding left/right into an overlap) and pressing down, force
-// the crouch to fire even if the crouch check hasn't run yet.
-// This is the "walk up + hold down" flow — Batman starts big,
-// bumps into the ceiling, holds down, and slides right in.
-function tryAutoCrouchIntoTunnel() {
-  if (!player || player.crouching || !player.onGround) return;
-  const tunnels = level.crouchTunnels;
-  if (!tunnels || !tunnels.length) return;
-  const pushing = keys.left || keys.right;
-  if (!pushing || !keys.down) return;
-  for (const t of tunnels) {
-    const tx0 = t.x * TILE, tx1 = (t.x + t.w) * TILE;
-    const ceilPx = (t.ceilRow + 1) * TILE;
-    // Standing player currently overlapping (or touching) the tunnel
-    // horizontally at a height that would be blocked by the ceiling.
-    if (player.x + player.w < tx0 - 2 || player.x > tx1 + 2) continue;
-    if (player.y >= ceilPx) continue;
-    // Fire the crouch now, before enforce pushes him back.
-    const dropH = player.h - CROUCH_H;
-    player.h = CROUCH_H;
-    player.y += dropH;
-    player.crouching = true;
-    return;
-  }
-}
-
-// Standing characters can't enter a crouch tunnel — the ceiling
-// tile at ceilRow blocks big Batman (h=40) but small (h=30) and
-// Robin can technically fit under it. To keep the "must crouch"
-// gate consistent for every character, we also push a STANDING
-// player back to the tunnel edge if he crosses in.
-function enforceCrouchTunnels() {
-  const tunnels = level.crouchTunnels;
-  if (!tunnels || !tunnels.length || player.crouching) return;
-  for (const t of tunnels) {
-    const tx0 = t.x * TILE, tx1 = (t.x + t.w) * TILE;
-    const ceilPx = (t.ceilRow + 1) * TILE;
-    // Player must actually be "below" the ceiling row to count as
-    // inside the tunnel — a jump over it doesn't get pushed back.
-    if (player.y < ceilPx - player.h - 4) continue;
-    if (player.x + player.w <= tx0 || player.x >= tx1) continue;
-    // Push to whichever edge is closer.
-    const pcx = player.x + player.w / 2;
-    if (pcx < (tx0 + tx1) / 2) {
-      player.x = tx0 - player.w;
-    } else {
-      player.x = tx1;
-    }
-    player.vx = 0;
   }
 }
 
@@ -1195,9 +1168,14 @@ function loadLevel(idx) {
   // Batman, and either can be swapped in as the controlled character.
   // The companion persists across Batcave HUB visits so switching Batman
   // <-> Robin never "loses" the other one.
-  const isAct3 = level.name && level.name.startsWith('3-');
+  // GENERAL RULE: co-op (Batman + Robin with hot-swap) is active on
+  // EVERY level from Act 3 onward — '3-*', '4-*' and beyond — not
+  // just Act 3. Parsing the leading act number keeps future acts
+  // covered automatically.
+  const actNum = level.name ? parseInt(level.name.charAt(0), 10) : 0;
+  const isCoopAct = actNum >= 3;
   const isCaveHub = level.cave && postTwoFaceReturn;
-  if (isAct3 || isCaveHub) {
+  if (isCoopAct || isCaveHub) {
     // Every Act-3 level starts with BATMAN in the driver's seat so
     // his weapon choice (batarang / batigarra) sticks. Player object
     // was built above as Batman-shaped with currentGadget; force
@@ -2976,15 +2954,13 @@ function updatePlaying(dt) {
   } else if (player.climbing) {
     updateClimb(dt, now);
   } else {
-    // Auto-crouch: pushing into a low tunnel with down held triggers
-    // crouch immediately, before enforce blocks the move.
-    tryAutoCrouchIntoTunnel();
-    // horizontal input
+    // horizontal input. Crawling (crouched — voluntarily or forced
+    // inside a pipe) drops speed to 45 %: it should feel cramped.
     const iced = (player.frozenUntil || 0) > now;
     const crouched = !!player.crouching;
-    const accelMul = iced ? 0.4 : (crouched ? 0.55 : 1);
+    const accelMul = iced ? 0.4 : (crouched ? 0.45 : 1);
     const speedCap = iced ? MAX_SPEED * 0.45
-                          : crouched ? MAX_SPEED * 0.55
+                          : crouched ? MAX_SPEED * 0.45
                           : MAX_SPEED;
     const accel = (player.onGround ? MOVE_ACCEL : AIR_ACCEL) * accelMul;
     if (keys.left && !keys.right) {
@@ -3125,7 +3101,6 @@ function updatePlaying(dt) {
   updateBatarangs(dt);
   updateSmokeClouds(dt, now);
   updateCrouch();
-  enforceCrouchTunnels();
 
   // thugs
   for (const g of level.thugs) {
@@ -6193,6 +6168,10 @@ function drawTiles() {
       // for the "low ceiling" tunnel tiles so they read as a rusty
       // pipe overhead instead of generic ground.
       if (level.sewer) {
+        // Bulkhead + pipe tiles are painted whole by drawPipesBack /
+        // drawPipesFront — skip them here so brick doesn't bleed through.
+        if (level.pipes && ty <= level.groundY - 2 &&
+            level.pipes.some(pp => tx >= pp.x && tx < pp.x + pp.w)) continue;
         const isCeiling = ty < level.groundY;
         if (isCeiling) {
           // pipe ceiling — dark rusted metal cylinder
@@ -6491,6 +6470,124 @@ function drawLadders() {
 
 // Docks: shipping-container towers instead of brick apartment buildings.
 // Same solid collision as any other wall — this is purely the look.
+// ---------------------------------------------------------------
+// Act 4 pipes: a concrete bulkhead pierced by a big drainage tube
+// at floor level. Two passes: BACK paints the wall + the pitch-dark
+// interior (before entities), FRONT paints the tube's shell,
+// mouth rims and shadow over the player so a character inside
+// clearly reads as CRAWLING THROUGH A PIPE.
+// ---------------------------------------------------------------
+function drawPipesBack(t) {
+  const pipes = level.pipes;
+  if (!pipes || !pipes.length) return;
+  const floorY = level.groundY * TILE - camera.y;
+  const intTop = (level.groundY - 1) * TILE - camera.y;   // interior ceiling
+  for (const p of pipes) {
+    const x0 = p.x * TILE - camera.x, x1 = (p.x + p.w) * TILE - camera.x;
+    if (x1 < -40 || x0 > CANVAS_W + 40) continue;
+    const wallTop = -camera.y; // bulkhead runs to the level ceiling
+
+    // Concrete bulkhead
+    const wg = ctx.createLinearGradient(0, wallTop, 0, floorY);
+    wg.addColorStop(0, '#3d4448'); wg.addColorStop(1, '#282e31');
+    ctx.fillStyle = wg;
+    ctx.fillRect(x0, wallTop, x1 - x0, intTop - wallTop);
+    // panel joints
+    ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 2;
+    for (let y = wallTop + 40; y < intTop - 8; y += 54) {
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+    }
+    ctx.strokeRect(x0 + 1, wallTop, x1 - x0 - 2, intTop - wallTop);
+    // moisture stains running down the concrete
+    ctx.fillStyle = 'rgba(40,80,60,0.35)';
+    for (let sx = x0 + 14; sx < x1 - 8; sx += 42) {
+      const dh = 20 + hash01(sx * 1.3) * (intTop - wallTop) * 0.5;
+      ctx.fillRect(sx, wallTop + 4, 4, dh);
+    }
+
+    // Pipe interior: near-black tube void with faint depth ribs
+    const ig = ctx.createLinearGradient(0, intTop, 0, floorY);
+    ig.addColorStop(0, '#05070a'); ig.addColorStop(0.5, '#0b0f14'); ig.addColorStop(1, '#05070a');
+    ctx.fillStyle = ig;
+    ctx.fillRect(x0, intTop, x1 - x0, floorY - intTop);
+    // interior weld ribs every 2 tiles — sell the tube's depth
+    ctx.strokeStyle = 'rgba(90,110,130,0.22)'; ctx.lineWidth = 2;
+    for (let rx = x0 + TILE * 2; rx < x1; rx += TILE * 2) {
+      ctx.beginPath(); ctx.moveTo(rx, intTop + 2); ctx.lineTo(rx, floorY - 2); ctx.stroke();
+    }
+    // trickle of water along the pipe floor
+    ctx.fillStyle = 'rgba(80,160,110,0.25)';
+    ctx.fillRect(x0, floorY - 4, x1 - x0, 4);
+  }
+}
+
+function drawPipesFront(t) {
+  const pipes = level.pipes;
+  if (!pipes || !pipes.length) return;
+  const now = performance.now();
+  const floorY = level.groundY * TILE - camera.y;
+  const intTop = (level.groundY - 1) * TILE - camera.y;
+  const mouthH = floorY - intTop;             // 32 px opening
+  for (const p of pipes) {
+    const x0 = p.x * TILE - camera.x, x1 = (p.x + p.w) * TILE - camera.x;
+    if (x1 < -40 || x0 > CANVAS_W + 40) continue;
+
+    // Semi-transparent front shell — dims the character inside so he
+    // reads as crawling in the dark, barely visible.
+    ctx.fillStyle = 'rgba(8,12,16,0.45)';
+    ctx.fillRect(x0, intTop, x1 - x0, mouthH);
+
+    // Thick metal shell edge along the top of the opening (the tube's
+    // lower lip of the upper shell) + a thin one hugging the floor.
+    ctx.fillStyle = '#4a3a2c';
+    ctx.fillRect(x0, intTop - 8, x1 - x0, 10);
+    ctx.fillStyle = '#6a5440';
+    ctx.fillRect(x0, intTop - 8, x1 - x0, 3);
+    ctx.fillStyle = '#2c2018';
+    ctx.fillRect(x0, floorY - 2, x1 - x0, 4);
+    // rivets along the top lip
+    ctx.fillStyle = '#8a6a4a';
+    for (let rx = x0 + 10; rx < x1 - 6; rx += 26) {
+      ctx.beginPath(); ctx.arc(rx, intTop - 3, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // MOUTH RIMS: big elliptical rings at both openings so each end
+    // clearly reads as the round mouth of a tube.
+    for (const mx of [x0, x1]) {
+      ctx.strokeStyle = '#7a5c40'; ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.ellipse(mx, intTop + mouthH / 2, 7, mouthH / 2 + 6, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = '#2c2018'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(mx, intTop + mouthH / 2, 10, mouthH / 2 + 9, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Hazard stripes on the bulkhead right above the mouth — "cuidado,
+    // paso bajo" signage that tells the player this is the way through.
+    const signY = intTop - 26;
+    ctx.fillStyle = '#c8a02c';
+    ctx.fillRect(x0 + 4, signY, 46, 14);
+    ctx.fillStyle = '#151515';
+    for (let sx = 0; sx < 46; sx += 12) {
+      ctx.beginPath();
+      ctx.moveTo(x0 + 4 + sx, signY + 14); ctx.lineTo(x0 + 4 + sx + 6, signY);
+      ctx.lineTo(x0 + 4 + sx + 12, signY); ctx.lineTo(x0 + 4 + sx + 6, signY + 14);
+      ctx.closePath(); ctx.fill();
+    }
+    // blinking arrow pointing into the mouth
+    if (Math.floor(now / 500) % 2 === 0) {
+      ctx.fillStyle = '#ffd166';
+      ctx.beginPath();
+      ctx.moveTo(x0 - 20, intTop + mouthH / 2 - 6);
+      ctx.lineTo(x0 - 8, intTop + mouthH / 2);
+      ctx.lineTo(x0 - 20, intTop + mouthH / 2 + 6);
+      ctx.closePath(); ctx.fill();
+    }
+  }
+}
+
 // Sewer wall: a chunky stone block Batman can climb, not a Gotham
 // warehouse. Made of mossy grey bricks with a slime-green roof cap
 // so it reads as underground infrastructure, not a building.
@@ -7883,24 +7980,25 @@ function drawRats() {
     ctx.stroke();
     ctx.lineCap = 'butt';
 
-    // Furry hunched body (elongated oval, humped in the middle)
-    ctx.fillStyle = '#4d3b30';
+    // Furry hunched body (elongated oval, humped in the middle) —
+    // sewer-rat GREY, not brown
+    ctx.fillStyle = '#565a64';
     ctx.beginPath();
     ctx.ellipse(0, -H * 0.42, W * 0.52, H * 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
     // Fur highlight on top of the back
-    ctx.fillStyle = '#7a5c48';
+    ctx.fillStyle = '#7e828c';
     ctx.beginPath();
     ctx.ellipse(-W * 0.05, -H * 0.7, W * 0.35, H * 0.16, 0, 0, Math.PI * 2);
     ctx.fill();
-    // Belly (lighter grey-pink)
-    ctx.fillStyle = '#8a6a52';
+    // Belly (lighter grey)
+    ctx.fillStyle = '#8f939c';
     ctx.beginPath();
     ctx.ellipse(0, -H * 0.28, W * 0.38, H * 0.22, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // Head (pointed snout)
-    ctx.fillStyle = '#4d3b30';
+    ctx.fillStyle = '#565a64';
     ctx.beginPath();
     ctx.ellipse(W * 0.32, -H * 0.55, W * 0.28, H * 0.42, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -7928,9 +8026,9 @@ function drawRats() {
     ctx.fillRect(W * 0.5, -H * 0.42, 1.6, 2.2);
     ctx.fillRect(W * 0.53, -H * 0.42, 1.6, 2.2);
 
-    // Big round ears (dark outer + pink inner)
+    // Big round ears (dark grey outer + pink inner)
     for (const [ex, ey] of [[W * 0.20, -H * 0.95], [W * 0.36, -H * 0.98]]) {
-      ctx.fillStyle = '#3a2c22';
+      ctx.fillStyle = '#3c4048';
       ctx.beginPath();
       ctx.arc(ex, ey, W * 0.13, 0, Math.PI * 2);
       ctx.fill();
@@ -9825,6 +9923,7 @@ function render(t) {
   drawCranes();
   drawSwingPoints(t);
   drawTiles();
+  drawPipesBack(t);
   if (level.cave) drawCaveProps(t);
   drawWalls(t);
   drawLadders();
@@ -9852,6 +9951,7 @@ function render(t) {
   // Act 3 co-op: only the active character is on screen. The other one
   // is stored in `companion` and only comes back when you hit switch.
   drawPlayer();
+  drawPipesFront(t);
   if (level.frozen) drawSnowfall(t);
   drawHeroMessage();
 
