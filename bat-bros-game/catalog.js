@@ -218,21 +218,34 @@ function buildLevel(spec) {
     }
   }
 
-  // RAMPS (Act 4): diagonal floor built as a 1-tile staircase. Over
-  // columns [x, x+w) the surface row interpolates fromRow → toRow;
-  // everything below the surface is solid. A ramp with slide:true is
-  // slippery (see slideZones + game.js movement) so the player skids
-  // down without braking.
+  // RAMPS (Act 4): TRUE diagonal surfaces. Each ramp is a line
+  // segment; the player, rats and sliders are snapped smoothly onto
+  // it (see snapToRamps in game.js) instead of climbing tile steps.
+  // We still fill solid tiles strictly BELOW the line as a support
+  // floor, and — when `ceil` is set — a matching diagonal ceiling
+  // mass ABOVE the line so the corridor is a low sloped tube. A ramp
+  // with slide:true is slippery.
   const slideZones = [];
+  const rampSegs = [];
   for (const r of ramps) {
+    const px0 = r.x * TILE, px1 = (r.x + r.w) * TILE;
+    const py0 = r.fromRow * TILE, py1 = r.toRow * TILE;
+    rampSegs.push({ x0: px0, x1: px1, y0: py0, y1: py1, slide: !!r.slide, ceil: r.ceil || 0 });
     for (let i = 0; i < r.w; i++) {
       const frac = r.w <= 1 ? 0 : i / (r.w - 1);
       const surf = Math.round(r.fromRow + (r.toRow - r.fromRow) * frac);
-      for (let y = surf; y < height; y++) solid[y][r.x + i] = true;
+      // support floor: one row below the line downward (line stays in
+      // open air so the smooth snap owns the surface)
+      for (let y = surf + 1; y < height; y++) solid[y][r.x + i] = true;
+      // sloped ceiling mass: everything above the ceiling line
+      if (r.ceil) {
+        const ceilRow = surf - r.ceil;
+        for (let y = 0; y < ceilRow; y++) solid[y][r.x + i] = true;
+      }
     }
     if (r.slide) {
       slideZones.push({
-        x0: r.x * TILE, x1: (r.x + r.w) * TILE,
+        x0: px0, x1: px1,
         dir: Math.sign(r.toRow - r.fromRow) || 1,  // +1 = downhill to the right
       });
     }
@@ -328,7 +341,10 @@ function buildLevel(spec) {
     drains: drains.map(dx => (typeof dx === 'number' ? dx : dx.x) * TILE + TILE / 2),
     // Slippery ramp zones (world-px X ranges + downhill sign).
     slideZones,
-    ramps: ramps.map(r => ({ x: r.x, w: r.w, fromRow: r.fromRow, toRow: r.toRow, slide: !!r.slide })),
+    // Diagonal ramp segments in px (line + slippery flag + corridor
+    // ceiling height). snapToRamps / drawRamps read these.
+    rampSegs,
+    ramps: ramps.map(r => ({ x: r.x, w: r.w, fromRow: r.fromRow, toRow: r.toRow, slide: !!r.slide, ceil: r.ceil || 0 })),
     // Sliding penguins: spawn at a column, slide downhill following
     // the ramp surface, damage on contact (stompable, jumpable).
     sliders: sliders.map(s => ({

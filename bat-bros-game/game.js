@@ -585,9 +585,50 @@ function slideZoneAt(worldX) {
   return null;
 }
 
+// The diagonal ramp segment under a world-x, or null.
+function rampAt(worldX) {
+  const segs = level.rampSegs;
+  if (!segs || !segs.length) return null;
+  for (const r of segs) if (worldX >= r.x0 && worldX < r.x1) return r;
+  return null;
+}
+// The exact surface Y (px) of a ramp at a world-x.
+function rampSurfaceY(r, worldX) {
+  const f = (worldX - r.x0) / (r.x1 - r.x0);
+  return r.y0 + (r.y1 - r.y0) * f;
+}
+
+// Snap an entity smoothly onto the diagonal ramp under it (and, for
+// ramps with a sloped ceiling, clamp its head under the tube). Called
+// after the normal tile collision so the diagonal owns the surface.
+function snapToRamps(e) {
+  const cx = e.x + e.w / 2;
+  const r = rampAt(cx);
+  if (!r) return;
+  const surfY = rampSurfaceY(r, cx);
+  const feet = e.y + e.h;
+  // Floor snap: grab the surface when feet are near it and the entity
+  // isn't rising from a jump. Generous downward band so a fast skid
+  // that briefly clips the support floor gets lifted back onto the line.
+  if (feet > surfY - 3 && feet < surfY + TILE + 12 && (e.vy || 0) >= -0.5) {
+    e.y = surfY - e.h;
+    e.vy = 0;
+    e.onGround = true;
+  }
+  // Sloped-ceiling clamp: can't raise the head above the tube ceiling
+  // (also kills upward jump velocity so you can't jump through it).
+  if (r.ceil) {
+    const ceilY = surfY - r.ceil * TILE;
+    if (e.y < ceilY) { e.y = ceilY; if ((e.vy || 0) < 0) e.vy = 0; }
+  }
+}
+
 // Top solid surface Y (px) at a world-x column — used by sliding
-// penguins to hug the ramp. Returns the level bottom if no solid.
+// penguins + acid drips to hug the ground. On a ramp this returns
+// the exact diagonal line (smooth); otherwise the topmost solid tile.
 function surfaceYAt(worldX) {
+  const r = rampAt(worldX);
+  if (r) return rampSurfaceY(r, worldX);
   const tx = Math.floor(worldX / TILE);
   if (tx < 0 || tx >= level.width) return level.pixelHeight;
   for (let ty = 0; ty < level.height; ty++) {
@@ -668,6 +709,10 @@ function updateRats(dt, now) {
     r.x += r.vx * dt * smokeMul;
     if (r.x < r.minX) { r.x = r.minX; r.vx = Math.abs(r.vx); }
     if (r.x + r.w > r.maxX) { r.x = r.maxX - r.w; r.vx = -Math.abs(r.vx); }
+    // Follow the diagonal ramp surface if patrolling over one, so
+    // rats walk up/down the slope instead of floating on tile tops.
+    const rr = rampAt(r.x + r.w / 2);
+    if (rr) r.y = rampSurfaceY(rr, r.x + r.w / 2) - r.h;
     if (!aabbOverlap(player, r)) continue;
     const landing = player.vy > 0 && (player.y + player.h - r.y) < STOMP_TOLERANCE;
     if (landing) {
@@ -3132,6 +3177,7 @@ function updatePlaying(dt) {
     if (player.vy > MAX_FALL) player.vy = MAX_FALL;
 
     moveAndCollide(player, dt);
+    snapToRamps(player);
 
     if (!player.onGround) tryAttachGrapple(now);
     tryGrabLadder(now);
@@ -6293,6 +6339,10 @@ function drawTiles() {
       // is a tight band. Ceiling and floor share the same stone look;
       // exposed surfaces (the corridor faces) get a slime edge.
       if (level.sewer) {
+        // Ramp columns are painted as smooth diagonal wedges by
+        // drawRampsSewer — skip the blocky tiles here.
+        if (level.rampSegs && level.rampSegs.length &&
+            rampAt(tx * TILE + TILE / 2)) continue;
         // grey stone body with a subtle vertical shade
         const sg = ctx.createLinearGradient(px, py, px, py + TILE);
         sg.addColorStop(0, '#4a4f56'); sg.addColorStop(1, '#3a3f46');
@@ -6588,34 +6638,76 @@ function drawLadders() {
 // ceiling. Drawn AFTER the grey tile mass so the openings read as
 // round pipe mouths, not just a hole in the wall.
 // ---------------------------------------------------------------
+// Smooth diagonal ramp wedges (floor + sloped ceiling) for sewer
+// levels. Replaces the blocky per-tile staircase so ramps read as
+// true diagonals.
+function drawRampsSewer(t) {
+  const segs = level.rampSegs || [];
+  if (!segs.length) return;
+  const now = performance.now();
+  const botY = level.height * TILE - camera.y;
+  const topY = -camera.y;
+  for (const r of segs) {
+    const sx0 = r.x0 - camera.x, sx1 = r.x1 - camera.x;
+    if (sx1 < -20 || sx0 > CANVAS_W + 20) continue;
+    const sy0 = r.y0 - camera.y, sy1 = r.y1 - camera.y;
+
+    // FLOOR wedge — grey stone from the diagonal line down to the base.
+    const fg = ctx.createLinearGradient(0, Math.min(sy0, sy1), 0, botY);
+    fg.addColorStop(0, '#4a4f56'); fg.addColorStop(1, '#33373d');
+    ctx.fillStyle = fg;
+    ctx.beginPath();
+    ctx.moveTo(sx0, sy0); ctx.lineTo(sx1, sy1);
+    ctx.lineTo(sx1, botY); ctx.lineTo(sx0, botY);
+    ctx.closePath(); ctx.fill();
+    // horizontal block courses for texture
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)'; ctx.lineWidth = 1;
+    for (let yy = Math.min(sy0, sy1) + 14; yy < botY; yy += 16) {
+      ctx.beginPath(); ctx.moveTo(sx0, yy); ctx.lineTo(sx1, yy); ctx.stroke();
+    }
+    // slime edge along the diagonal surface
+    ctx.strokeStyle = '#3f6a52'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(sx0, sy0 + 2); ctx.lineTo(sx1, sy1 + 2); ctx.stroke();
+    ctx.strokeStyle = '#5a8a6c'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(sx1, sy1); ctx.stroke();
+    // slippery wet-green sheen + moving glints on slide ramps
+    if (r.slide) {
+      ctx.strokeStyle = 'rgba(150,240,190,0.5)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(sx0, sy0 - 1); ctx.lineTo(sx1, sy1 - 1); ctx.stroke();
+      const len = Math.hypot(sx1 - sx0, sy1 - sy0);
+      const ux = (sx1 - sx0) / len, uy = (sy1 - sy0) / len;
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      for (let d = (now / 6) % 40; d < len; d += 40) {
+        ctx.fillRect(sx0 + ux * d, sy0 + uy * d - 1, 6, 2);
+      }
+    }
+
+    // CEILING wedge — parallel diagonal mass above, making a low tube.
+    if (r.ceil) {
+      const cy0 = sy0 - r.ceil * TILE, cy1 = sy1 - r.ceil * TILE;
+      const cg = ctx.createLinearGradient(0, topY, 0, Math.max(cy0, cy1));
+      cg.addColorStop(0, '#3a3f46'); cg.addColorStop(1, '#4a4f56');
+      ctx.fillStyle = cg;
+      ctx.beginPath();
+      ctx.moveTo(sx0, topY); ctx.lineTo(sx1, topY);
+      ctx.lineTo(sx1, cy1); ctx.lineTo(sx0, cy0);
+      ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,0.22)'; ctx.lineWidth = 1;
+      for (let yy = topY + 16; yy < Math.max(cy0, cy1); yy += 16) {
+        ctx.beginPath(); ctx.moveTo(sx0, yy); ctx.lineTo(sx1, yy); ctx.stroke();
+      }
+      // mossy underside edge of the ceiling
+      ctx.strokeStyle = '#2c4034'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(sx0, cy0); ctx.lineTo(sx1, cy1); ctx.stroke();
+    }
+  }
+}
+
 function drawSewerDecor(t) {
   const now = performance.now();
   const floorY = level.groundY * TILE - camera.y;
   const slitTop = (level.groundY - 1) * TILE - camera.y;   // crawl slit ceiling
   const slitH = floorY - slitTop;                          // 32 px opening
-
-  // Slippery ramp sheen: a glossy wet green wash over the surface of
-  // every slide ramp so the player reads "this skids". Painted on the
-  // top tile of each ramp column.
-  for (const r of (level.ramps || [])) {
-    if (!r.slide) continue;
-    for (let i = 0; i < r.w; i++) {
-      const frac = r.w <= 1 ? 0 : i / (r.w - 1);
-      const surf = Math.round(r.fromRow + (r.toRow - r.fromRow) * frac);
-      const gx = (r.x + i) * TILE - camera.x;
-      const gy = surf * TILE - camera.y;
-      if (gx < -TILE || gx > CANVAS_W) continue;
-      ctx.fillStyle = 'rgba(90,200,150,0.30)';
-      ctx.fillRect(gx, gy, TILE, 5);
-      ctx.fillStyle = 'rgba(200,255,220,0.45)';
-      ctx.fillRect(gx, gy, TILE, 2);
-      // moving glint streaks to sell the wetness
-      if ((Math.floor(now / 120) + i) % 4 === 0) {
-        ctx.fillStyle = 'rgba(255,255,255,0.35)';
-        ctx.fillRect(gx + 6, gy + 1, 8, 1);
-      }
-    }
-  }
 
   // Pipe mouths: elliptical metal rims at both ends of each ceiling
   // drop + a blinking arrow so it clearly reads as "crawl through here".
@@ -6675,13 +6767,21 @@ function drawSewerDecor(t) {
 
 // Green acid drips: a warning bead swells at the ceiling, then a
 // droplet falls to the floor. Touching a falling droplet hurts.
+// Where a drip's droplets are born: the underside of the sloped tube
+// ceiling if there's one over this column, else the spec's ceilY.
+function dripCeilY(d) {
+  const r = rampAt(d.x);
+  if (r && r.ceil) return rampSurfaceY(r, d.x) - r.ceil * TILE + 3;
+  return d.ceilY;
+}
+
 function updateDrips(dt, now) {
   const drips = level.drips;
   if (!drips || !drips.length) return;
   for (const d of drips) {
     if (!d.nextAt) d.nextAt = now + 600 + Math.random() * d.interval;
     if (now >= d.nextAt) {
-      d.drops.push({ x: d.x, y: d.ceilY, vy: 0 });
+      d.drops.push({ x: d.x, y: dripCeilY(d), vy: 0 });
       d.nextAt = now + d.interval;
     }
     for (const drop of d.drops) {
@@ -6709,7 +6809,7 @@ function drawDrips(t) {
   for (const d of drips) {
     const dx = d.x - camera.x;
     if (dx < -20 || dx > CANVAS_W + 20) continue;
-    const ceilY = d.ceilY - camera.y;
+    const ceilY = dripCeilY(d) - camera.y;
     // Swelling bead at the ceiling that pulses toward the next drop
     const untilNext = Math.max(0, (d.nextAt || 0) - now);
     const swell = 1 - Math.min(1, untilNext / 400);
@@ -10030,7 +10130,7 @@ function render(t) {
   drawCranes();
   drawSwingPoints(t);
   drawTiles();
-  if (level.sewer) drawSewerDecor(t);
+  if (level.sewer) { drawRampsSewer(t); drawSewerDecor(t); }
   if (level.cave) drawCaveProps(t);
   drawWalls(t);
   drawLadders();
