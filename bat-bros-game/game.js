@@ -944,6 +944,7 @@ function applySmokeConfusion(cloud, now) {
   if (level.thugs) list.push(...level.thugs);
   if (level.birds) list.push(...level.birds);
   if (level.rats) list.push(...level.rats);
+  if (level.sewerBats) list.push(...level.sewerBats);
   if (level.divers) list.push(...level.divers);
   if (level.mrfreeze && level.mrfreeze.birds) list.push(...level.mrfreeze.birds);
   for (const e of list) {
@@ -1073,6 +1074,15 @@ function updateBatarangs(dt) {
           hud.score.textContent = score;
           b.phase = 'back';
           break;
+        }
+      }
+    }
+    if (b.phase === 'out' && b.type !== 'batigarra') {
+      for (const sb of (level.sewerBats || [])) {
+        if (!sb.alive) continue;
+        if (b.x + 8 > sb.x && b.x - 8 < sb.x + sb.w && b.y + 8 > sb.y && b.y - 8 < sb.y + sb.h) {
+          sb.alive = false; score += 120; hud.score.textContent = score;
+          b.phase = 'back'; break;
         }
       }
     }
@@ -2221,11 +2231,13 @@ function levelEnemyTotals() {
   // respawn every few seconds from the water, so requiring their
   // death would gate exit forever.
   const rats = level.rats || [];
-  const total = level.thugs.length + level.birds.length + rats.length +
+  const sBats = level.sewerBats || [];
+  const total = level.thugs.length + level.birds.length + rats.length + sBats.length +
     (level.villain ? 1 : 0);
   const defeated = level.thugs.filter(g => !g.alive).length +
     level.birds.filter(b => !b.alive).length +
     rats.filter(r => !r.alive).length +
+    sBats.filter(s => !s.alive).length +
     (level.villain && !level.villain.alive ? 1 : 0);
   return { total, defeated };
 }
@@ -3343,6 +3355,28 @@ function updatePlaying(dt) {
       } else if (b.confused) {
         // Confused bird: harmless mid-air contact (same rule as thugs).
         continue;
+      } else {
+        hurtPlayer();
+        return;
+      }
+    }
+  }
+
+  // sewer bats (Act 4 flying enemies — erratic flight, stompable)
+  for (const sb of (level.sewerBats || [])) {
+    if (!sb.alive) continue;
+    sb.x += sb.vx * dt;
+    if (sb.x < sb.minX) { sb.x = sb.minX; sb.vx = Math.abs(sb.vx); }
+    if (sb.x + sb.w > sb.maxX) { sb.x = sb.maxX - sb.w; sb.vx = -Math.abs(sb.vx); }
+    sb.y = sb.baseY + Math.sin(now / 220 + sb.x * 0.06) * 14 + Math.sin(now / 130 + sb.x * 0.1) * 5;
+
+    if (aabbOverlap(player, sb)) {
+      const stomped = player.vy > 0 && (player.y + player.h - sb.y) < STOMP_TOLERANCE;
+      if (stomped) {
+        sb.alive = false;
+        player.vy = STOMP_BOUNCE;
+        score += 120;
+        hud.score.textContent = score;
       } else {
         hurtPlayer();
         return;
@@ -6884,6 +6918,68 @@ function drawSewerDecor(t) {
       ctx.fillRect(wx + ww - 3, wy, 3, wh);
     }
   }
+
+  // Floor-level details for multi-floor sewer: green slime strip, amber
+  // reflections below grates, and puddles with animated ripples.
+  if (level.sewerFloors) {
+    for (const f of level.sewerFloors) {
+      const floorSurfY = (f.bottom + 1) * TILE - camera.y;
+      if (floorSurfY < -20 || floorSurfY > CANVAS_H + 20) continue;
+      // Green slime strip on floor top edge
+      ctx.fillStyle = '#4a7a52';
+      ctx.fillRect(0, floorSurfY - 3, CANVAS_W, 3);
+      ctx.fillStyle = '#6a9a6c';
+      ctx.fillRect(0, floorSurfY - 3, CANVAS_W, 1);
+      // Wet reflection on floor surface
+      const wetG = ctx.createLinearGradient(0, floorSurfY, 0, floorSurfY + 20);
+      wetG.addColorStop(0, 'rgba(100,130,80,0.12)');
+      wetG.addColorStop(1, 'rgba(100,130,80,0)');
+      ctx.fillStyle = wetG;
+      ctx.fillRect(0, floorSurfY, CANVAS_W, 20);
+    }
+
+    // Floor amber reflections below ceiling grates
+    for (const gx0 of (level.grates || [])) {
+      const gx = gx0 - camera.x;
+      if (gx < -50 || gx > CANVAS_W + 50) continue;
+      for (const f of level.sewerFloors) {
+        const floorSurfY = (f.bottom + 1) * TILE - camera.y;
+        if (floorSurfY < -20 || floorSurfY > CANVAS_H + 20) continue;
+        ctx.fillStyle = 'rgba(200,170,80,0.08)';
+        ctx.beginPath();
+        ctx.ellipse(gx, floorSurfY + 4, 35, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Puddles with animated ripple rings
+    for (const px of (level.puddles || [])) {
+      const x = px * TILE - camera.x;
+      if (x < -60 || x > CANVAS_W + 60) continue;
+      for (const f of level.sewerFloors) {
+        const floorSurfY = (f.bottom + 1) * TILE - camera.y;
+        if (floorSurfY < -20 || floorSurfY > CANVAS_H + 20) continue;
+        const pw = 30 + hash01(px * 2.1) * 20;
+        // Puddle shape
+        ctx.fillStyle = 'rgba(50,70,45,0.35)';
+        ctx.beginPath();
+        ctx.ellipse(x, floorSurfY + 3, pw / 2, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Surface shimmer
+        ctx.fillStyle = 'rgba(120,150,90,0.12)';
+        ctx.beginPath();
+        ctx.ellipse(x - 4, floorSurfY + 2, pw / 3, 2, -0.2, 0, Math.PI * 2);
+        ctx.fill();
+        // Animated ripple ring
+        const rippleR = 5 + ((now * 0.02 + px * 7) % 20);
+        ctx.strokeStyle = `rgba(120,160,90,${Math.max(0, 0.15 - rippleR * 0.006)})`;
+        ctx.lineWidth = 0.8;
+        ctx.beginPath();
+        ctx.ellipse(x + 2, floorSurfY + 3, rippleR, rippleR * 0.3, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
 }
 
 // Green acid drips: a warning bead swells at the ceiling, then a
@@ -7687,6 +7783,57 @@ function drawBirds(t) {
       ctx.fillRect(px + b.w * 0.6, cy - 2, 2, 2);
     }
     if (b.confused) drawConfusedMarker(b);
+  }
+}
+
+function drawSewerBats(t) {
+  for (const sb of (level.sewerBats || [])) {
+    if (!sb.alive) continue;
+    const px = sb.x - camera.x;
+    if (px < -40 || px > CANVAS_W + 40) continue;
+    const cy = sb.y + sb.h / 2 - camera.y;
+    const flap = Math.sin(t / 70 + sb.x * 0.08) * 11;
+    ctx.save();
+    ctx.shadowColor = 'rgba(80,200,80,0.5)';
+    ctx.shadowBlur = 5;
+    // wings — dark brown-green, jagged membrane
+    ctx.fillStyle = '#3a2c20';
+    ctx.beginPath();
+    ctx.moveTo(px + sb.w / 2, cy);
+    ctx.lineTo(px - 4, cy - flap);
+    ctx.lineTo(px - 8, cy - flap * 0.6);
+    ctx.lineTo(px + sb.w * 0.3, cy + 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(px + sb.w / 2, cy);
+    ctx.lineTo(px + sb.w + 4, cy - flap);
+    ctx.lineTo(px + sb.w + 8, cy - flap * 0.6);
+    ctx.lineTo(px + sb.w * 0.7, cy + 2);
+    ctx.closePath();
+    ctx.fill();
+    // body — furry brown oval
+    ctx.fillStyle = '#4a3828';
+    ctx.beginPath();
+    ctx.ellipse(px + sb.w / 2, cy, sb.w * 0.22, sb.h * 0.35, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // glowing green eyes
+    ctx.fillStyle = '#80ff60';
+    ctx.beginPath(); ctx.arc(px + sb.w * 0.4, cy - 3, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(px + sb.w * 0.6, cy - 3, 2, 0, Math.PI * 2); ctx.fill();
+    // pointed ears
+    ctx.fillStyle = '#3a2c20';
+    ctx.beginPath();
+    ctx.moveTo(px + sb.w * 0.35, cy - 6);
+    ctx.lineTo(px + sb.w * 0.32, cy - 12);
+    ctx.lineTo(px + sb.w * 0.42, cy - 6);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(px + sb.w * 0.58, cy - 6);
+    ctx.lineTo(px + sb.w * 0.68, cy - 12);
+    ctx.lineTo(px + sb.w * 0.65, cy - 6);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
   }
 }
 
@@ -8650,49 +8797,166 @@ function drawGargoyles() {
 // beams of moonlight dropping through manhole covers.
 // ---------------------------------------------------------------
 function drawSewerBackground(t) {
-  // Victorian vault back-wall: warm dark brick with arched alcoves
-  // and amber-tinged moisture.
+  // Victorian vault back-wall: warm dark brick with arched alcoves,
+  // exposed pipes with valve wheels, moisture stains, green fog, and
+  // arched vault ceiling with keystones.
   const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
-  g.addColorStop(0, '#120e0a'); g.addColorStop(0.5, '#1a150f'); g.addColorStop(1, '#0e0b08');
+  g.addColorStop(0, '#0e110b'); g.addColorStop(0.35, '#141a10');
+  g.addColorStop(0.65, '#111610'); g.addColorStop(1, '#0a0d08');
   ctx.fillStyle = g; ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  // aged brick courses on the back wall (warmer than the old grey)
-  ctx.strokeStyle = 'rgba(80,60,40,0.30)';
-  ctx.lineWidth = 1;
+
+  // Aged brick courses with individually varied brick colors
   const brickH = 14;
   for (let by = 0; by < CANVAS_H; by += brickH) {
-    ctx.beginPath(); ctx.moveTo(0, by); ctx.lineTo(CANVAS_W, by); ctx.stroke();
     const row = Math.floor(by / brickH);
     const off = (row % 2) * 18;
-    ctx.strokeStyle = 'rgba(60,45,30,0.22)';
+    for (let bx = off - 36; bx < CANVAS_W + 36; bx += 36) {
+      const h = Math.abs(hash01(bx * 3.1 + by * 7.3));
+      const r = 45 + h * 20, gr = 35 + h * 12, b2 = 25 + h * 8;
+      ctx.fillStyle = `rgb(${r},${gr},${b2})`;
+      ctx.fillRect(bx, by, 34, brickH - 2);
+    }
+    // mortar lines
+    ctx.fillStyle = 'rgba(30,25,18,0.6)';
+    ctx.fillRect(0, by + brickH - 2, CANVAS_W, 2);
+    ctx.strokeStyle = 'rgba(60,45,30,0.22)'; ctx.lineWidth = 1;
     for (let bx = off; bx < CANVAS_W; bx += 36) {
       ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx, by + brickH); ctx.stroke();
     }
-    ctx.strokeStyle = 'rgba(80,60,40,0.30)';
   }
-  // faint arched alcoves in the back wall (parallax)
+
+  // Moisture stains running down walls (green vertical gradients)
+  for (let i = 0; i < 12; i++) {
+    const mx = (hash01(i * 47.3) * (CANVAS_W + 200) - 100 - camera.x * 0.3) % (CANVAS_W + 200) - 100;
+    const mh = 40 + hash01(i * 23.1) * 80;
+    const mg = ctx.createLinearGradient(mx, 30, mx, 30 + mh);
+    mg.addColorStop(0, 'rgba(40,60,35,0.35)');
+    mg.addColorStop(0.6, 'rgba(50,70,40,0.15)');
+    mg.addColorStop(1, 'rgba(40,60,35,0)');
+    ctx.fillStyle = mg;
+    ctx.fillRect(mx - 3, 30, 6, mh);
+  }
+
+  // Arched vault ceiling (parallax)
   const archW = 140;
-  ctx.fillStyle = 'rgba(30,22,14,0.35)';
-  for (let i = -1; i <= CANVAS_W / archW + 1; i++) {
-    const ax = i * archW + 30 - (camera.x * 0.15) % archW;
+  const archCount = Math.ceil(CANVAS_W / archW) + 2;
+  for (let i = -1; i < archCount; i++) {
+    const ax = i * archW + 20 - (camera.x * 0.15) % archW;
+    const acx = ax + archW / 2;
+    const archBase = 60;
+    // Arch depth shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
     ctx.beginPath();
-    ctx.moveTo(ax + 10, CANVAS_H);
-    ctx.lineTo(ax + 10, CANVAS_H * 0.35);
-    ctx.quadraticCurveTo(ax + archW / 2, CANVAS_H * 0.12, ax + archW - 10, CANVAS_H * 0.35);
-    ctx.lineTo(ax + archW - 10, CANVAS_H);
+    ctx.moveTo(ax + 8, archBase + 10);
+    ctx.quadraticCurveTo(acx, archBase - 50, ax + archW - 8, archBase + 10);
+    ctx.lineTo(ax + archW - 8, archBase);
+    ctx.quadraticCurveTo(acx, archBase - 60, ax + 8, archBase);
     ctx.closePath(); ctx.fill();
+    // Voussoir stones (outer arch line)
+    ctx.strokeStyle = '#4a4535'; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(ax + 6, archBase);
+    ctx.quadraticCurveTo(acx, archBase - 55, ax + archW - 6, archBase);
+    ctx.stroke();
+    // Inner arch line
+    ctx.strokeStyle = '#3a3528'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(ax + 10, archBase + 4);
+    ctx.quadraticCurveTo(acx, archBase - 48, ax + archW - 10, archBase + 4);
+    ctx.stroke();
+    // Keystone
+    ctx.fillStyle = '#5a5545';
+    ctx.fillRect(acx - 6, archBase - 56, 12, 14);
+    ctx.strokeStyle = '#3a3528'; ctx.strokeRect(acx - 6, archBase - 56, 12, 14);
+    // Moss on arch corners
+    ctx.fillStyle = 'rgba(60,100,50,0.5)';
+    ctx.beginPath(); ctx.arc(ax + 8, archBase, 6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ax + archW - 8, archBase, 5, 0, Math.PI * 2); ctx.fill();
   }
-  // moisture streaks (warm amber-green instead of bright green)
-  ctx.strokeStyle = 'rgba(120,100,60,0.10)';
-  for (let i = 0; i < 8; i++) {
-    const x = (i * 121 - (camera.x * 0.5)) % (CANVAS_W + 120) - 60;
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 4, CANVAS_H); ctx.stroke();
+
+  // Ceiling dripping slime edge
+  for (let x = 0; x < CANVAS_W; x += 3) {
+    if (hash01(x * 2.7 + Math.floor(camera.x / 50)) > 0.6) {
+      const dLen = 3 + hash01(x * 4.1) * 8;
+      ctx.fillStyle = `rgba(70,120,55,${0.3 + hash01(x * 1.3) * 0.3})`;
+      ctx.fillRect(x, 58, 2, dLen);
+    }
   }
-  // copper pipe traces along the ceiling line (subtle)
-  ctx.strokeStyle = 'rgba(160,110,60,0.14)'; ctx.lineWidth = 3;
-  const pipeY = 20 - (camera.y * 0.3) % 40;
-  ctx.beginPath(); ctx.moveTo(0, pipeY); ctx.lineTo(CANVAS_W, pipeY); ctx.stroke();
-  ctx.strokeStyle = 'rgba(180,130,70,0.08)'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(0, pipeY + 14); ctx.lineTo(CANVAS_W, pipeY + 14); ctx.stroke();
+
+  // Exposed pipe running along upper wall
+  const pipeY = 85 - (camera.y * 0.2) % 30;
+  // Pipe shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillRect(0, pipeY + 2, CANVAS_W, 18);
+  // Pipe body with gradient
+  const pipeG = ctx.createLinearGradient(0, pipeY, 0, pipeY + 16);
+  pipeG.addColorStop(0, '#6a5540'); pipeG.addColorStop(0.3, '#8a7258');
+  pipeG.addColorStop(0.5, '#9a8268'); pipeG.addColorStop(0.7, '#7a6248');
+  pipeG.addColorStop(1, '#5a4530');
+  ctx.fillStyle = pipeG;
+  ctx.fillRect(0, pipeY, CANVAS_W, 16);
+  // Pipe joints + rust stains
+  for (let jx = 50 - (camera.x * 0.4) % 140; jx < CANVAS_W + 50; jx += 140) {
+    ctx.fillStyle = '#4a3a28'; ctx.fillRect(jx - 3, pipeY - 2, 6, 20);
+    ctx.fillStyle = '#7a6a52'; ctx.fillRect(jx - 3, pipeY - 2, 6, 2);
+    const rustG = ctx.createLinearGradient(jx, pipeY + 16, jx, pipeY + 50);
+    rustG.addColorStop(0, 'rgba(120,70,30,0.3)');
+    rustG.addColorStop(1, 'rgba(120,70,30,0)');
+    ctx.fillStyle = rustG;
+    ctx.fillRect(jx - 4, pipeY + 16, 8, 34);
+  }
+  // Valve wheels (animated rotation)
+  for (let vx = 120 - (camera.x * 0.4) % 280; vx < CANVAS_W + 50; vx += 280) {
+    ctx.save();
+    ctx.translate(vx, pipeY + 8);
+    ctx.rotate(t * 0.0003);
+    ctx.strokeStyle = '#8a6a4a'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI * 2); ctx.stroke();
+    for (let a = 0; a < 4; a++) {
+      const angle = a * Math.PI / 2;
+      ctx.beginPath(); ctx.moveTo(0, 0);
+      ctx.lineTo(Math.cos(angle) * 10, Math.sin(angle) * 10);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#5a4a38';
+    ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+
+  // Small pipe near floor
+  const pipe2Y = CANVAS_H - 55;
+  const pipe2G = ctx.createLinearGradient(0, pipe2Y, 0, pipe2Y + 10);
+  pipe2G.addColorStop(0, '#5a4a38'); pipe2G.addColorStop(0.5, '#7a6550');
+  pipe2G.addColorStop(1, '#4a3a28');
+  ctx.fillStyle = pipe2G;
+  ctx.fillRect(0, pipe2Y, CANVAS_W, 10);
+  // Green corrosion patches on lower pipe
+  for (let cx = 0; cx < CANVAS_W; cx += 60) {
+    ctx.fillStyle = `rgba(60,110,50,${0.2 + hash01(cx * 3.3 + camera.x * 0.01) * 0.2})`;
+    const cw = 15 + hash01(cx * 1.7) * 25;
+    ctx.fillRect(cx, pipe2Y + 6, cw, 4);
+  }
+
+  // Moss/algae clusters on back wall
+  const mossSeeds = [37, 121, 203, 289, 367, 441, 520, 605];
+  for (const seed of mossSeeds) {
+    const mx0 = (seed * 3.7 - camera.x * 0.2) % (CANVAS_W + 60) - 30;
+    const my0 = 100 + hash01(seed * 11) * (CANVAS_H - 200);
+    for (let j = 0; j < 5; j++) {
+      const mx = mx0 + hash01(seed + j * 7) * 16 - 8;
+      const my = my0 + hash01(seed + j * 11) * 12 - 6;
+      const mr = 3 + hash01(seed * j + 3) * 5;
+      ctx.fillStyle = `rgba(${50 + hash01(j * 13) * 30},${90 + hash01(j * 17) * 40},${40 + hash01(j * 19) * 20},0.4)`;
+      ctx.beginPath(); ctx.arc(mx, my, mr, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // Ambient green fog near floor
+  const fogG = ctx.createLinearGradient(0, CANVAS_H - 80, 0, CANVAS_H);
+  fogG.addColorStop(0, 'rgba(60,80,50,0)');
+  fogG.addColorStop(1, 'rgba(60,80,50,0.10)');
+  ctx.fillStyle = fogG;
+  ctx.fillRect(0, CANVAS_H - 80, CANVAS_W, 80);
 }
 
 // ---------------------------------------------------------------
@@ -10306,6 +10570,7 @@ function render(t) {
   drawSwingRope();
   drawThugs();
   drawBirds(t);
+  drawSewerBats(t);
   drawRats();
   drawDivers();
   drawSliders(t);

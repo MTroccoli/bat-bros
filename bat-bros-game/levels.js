@@ -786,8 +786,13 @@ LEVEL_SPECS.push({
 
   drains: [8, 25, 45, 65, 75],
   grates: [15, 50, 72],
+  puddles: [12, 34, 55, 70],
 
-  swingPoints: [],
+  swingPoints: [
+    [44, 15],                                // mid-shaft swing (requires grapple to cross Floor 2 pit)
+  ],
+
+  sewerPit: { floor: 1, from: 40, to: 47 }, // gap carved in Floor 2 only (7 tiles wide)
 
   coins: [
     // Piso 1 — sección izquierda (antes del muro)
@@ -798,14 +803,18 @@ LEVEL_SPECS.push({
     [62, 6], [67, 6], [72, 6], [76, 6],
   ],
 
-  thugs: [
-    { x: 16, y: 8, range: [10, 25] },       // Piso 1 izquierda
-  ],
+  thugs: [],
 
   rats: [
     { x: 36, y: 21, range: [30, 44] },      // Piso 2 izquierda
     { x: 50, y: 21, range: [45, 56] },       // Piso 2 derecha
     { x: 70, y: 8, range: [62, 77] },        // Piso 1 derecha
+  ],
+
+  sewerBats: [
+    { x: 18, y: 5, range: [10, 26] },       // Piso 1 izquierda
+    { x: 42, y: 18, range: [35, 54] },      // Piso 2
+    { x: 68, y: 5, range: [60, 76] },       // Piso 1 derecha
   ],
 
   divers: [],

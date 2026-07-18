@@ -194,8 +194,11 @@ function buildLevel(spec) {
   const { width, height, groundY, pits = [], platforms = [], walls = [], coins = [],
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
           boats = [], cranes = [], snowCannons = [], rats = [], divers = [],
+          sewerBats = [],
           pipes = [], ceilingRow = null, drips = [], drains = [], grates = [],
+          puddles = [],
           ramps = [], sliders = [], sewerFloors = null, sewerWalls = [],
+          sewerPit = null,
           spawn, name, indoor = false, dock = false, frozen = false, sewer = false,
           bane = null, cave = null, twoface = null, mrfreeze = null } = spec;
 
@@ -219,6 +222,11 @@ function buildLevel(spec) {
       const ww = sw.w || 1;
       for (let y = sw.top; y <= sw.bottom; y++)
         for (let xi = 0; xi < ww; xi++) solid[y][sw.x + xi] = true;
+    }
+    if (sewerPit) {
+      const f = sewerFloors[sewerPit.floor];
+      for (let x = sewerPit.from; x < sewerPit.to; x++)
+        for (let y = f.bottom + 1; y < height; y++) solid[y][x] = false;
     }
   } else {
     for (let y = groundY; y < height; y++) {
@@ -451,6 +459,13 @@ function buildLevel(spec) {
       minX: r.range[0] * TILE, maxX: r.range[1] * TILE,
       vx: 2.4 * (r.dir ?? 1), alive: true,
     })),
+    sewerBats: sewerBats.map(b => ({
+      x: b.x * TILE, y: b.y * TILE, baseY: b.y * TILE,
+      w: 28, h: 18,
+      minX: b.range[0] * TILE, maxX: b.range[1] * TILE,
+      vx: 1.5, alive: true,
+    })),
+    puddles,
     // Penguin-divers pop out of a water pit at a fixed interval,
     // arc up N tiles, then fall back into the water. Stompable in
     // the air; contact damages Batman otherwise.
