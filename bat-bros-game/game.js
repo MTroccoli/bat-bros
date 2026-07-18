@@ -316,12 +316,11 @@ if (swapBtnEl) {
 }
 function updateCaveButtonVisibility() {
   if (!caveBtnEl) return;
-  // GENERAL RULE: from Act 3 onward (any level whose name starts with
-  // '3-' or higher), the ⌂ BATICUEVA and ⇄ swap buttons stay visible.
-  // Never hidden on regular gameplay levels — Act 3+ is co-op with a
-  // hub warp always reachable.
-  const firstChar = level && level.name ? parseInt(level.name.charAt(0), 10) : 0;
-  const show = firstChar >= 3;
+  // GENERAL RULE: once the player has REACHED Act 3 (postTwoFaceReturn),
+  // the ⌂ BATICUEVA and ⇄ ROBIN buttons are visible on EVERY level —
+  // including Act 1/2 replays from the level-select carousel. This lets
+  // the player swap to Robin and warp home from anywhere.
+  const show = postTwoFaceReturn || postFreezeReturn;
   caveBtnEl.style.display = show ? 'block' : 'none';
   if (swapBtnEl) {
     swapBtnEl.style.display = show ? 'block' : 'none';
@@ -439,7 +438,6 @@ let startLevelIndex = 0;   // where startGame() begins (0 = new game, >0 = conti
 let savedMaxLevel = 0;     // furthest level this player has reached (for Continue)
 let gameOverCount = 0;     // how many game overs this player has (shown on the Batcave computer)
 let savedGadget = null;    // gadget earned in a previous run (restored on Continue)
-let continueOffer = false; // game over at Bane: offer to spend coins to retry
 let cutsceneStart = 0;
 let levelIndex = 0;
 let level = null;
@@ -1457,7 +1455,6 @@ function startGame() {
     startLevelIndex = caveIdx;
   }
   updateWeaponButton();
-  continueOffer = false;
   hud.score.textContent = 0;
   hud.coins.textContent = 0;
   hud.lives.textContent = 3;
@@ -1466,17 +1463,6 @@ function startGame() {
   overlay.classList.add('hidden');
 }
 
-// Spend coins to jump straight back into the warehouse after falling to Bane.
-function continueAtBoss() {
-  continueOffer = false;
-  coinsCollected = Math.max(0, coinsCollected - CONTINUE_COST);
-  hud.coins.textContent = coinsCollected;
-  lives = 3;
-  hud.lives.textContent = 3;
-  loadLevel(BOSS_LEVEL_INDEX);
-  state = 'playing';
-  overlay.classList.add('hidden');
-}
 
 function restartGame() {
   // R no longer restarts the level mid-play (players hit it by accident and
@@ -1746,7 +1732,6 @@ btnContinue.addEventListener('click', () => {
 });
 
 overlayBtn.addEventListener('click', () => {
-  if (continueOffer) { continueAtBoss(); return; }
   if (state === 'start') {
     // the story first: Dos Caras kidnapping Robin
     overlay.classList.add('hidden');
@@ -2078,16 +2063,6 @@ function killPlayer() {
     // record the game over for this player (shown on the Batcave computer)
     gameOverCount++;
     if (playerName) saveGameOvers(playerName, gameOverCount);
-    // Falling to Bane doesn't reset the whole game: spend coins to walk
-    // straight back into the warehouse instead.
-    if (levelIndex === BOSS_LEVEL_INDEX && coinsCollected >= CONTINUE_COST) {
-      continueOffer = true;
-      showOverlay('CAÍSTE EN EL GALPÓN',
-        `Bane sigue ahí. Usá ${CONTINUE_COST} de tus ${coinsCollected} monedas para volver a enfrentarlo sin perder tu progreso (o presioná R para reiniciar desde cero).`,
-        `USAR ${CONTINUE_COST} MONEDAS`);
-      return;
-    }
-    // back to the menu: pick a new game or continue at the last level reached
     showChoiceMenu(`GAME OVER — Puntaje: ${score}. Elegí cómo seguir, ${playerName || 'héroe'}.`);
     return;
   }
@@ -2203,13 +2178,6 @@ function hurtPlayer() {
       state = 'gameover';
       gameOverCount++;
       if (playerName) saveGameOvers(playerName, gameOverCount);
-      if (levelIndex === BOSS_LEVEL_INDEX && coinsCollected >= CONTINUE_COST) {
-        continueOffer = true;
-        showOverlay('CAÍSTE EN EL GALPÓN',
-          `Bane sigue ahí. Usá ${CONTINUE_COST} de tus ${coinsCollected} monedas para volver a enfrentarlo sin perder tu progreso (o presioná R para reiniciar desde cero).`,
-          `USAR ${CONTINUE_COST} MONEDAS`);
-        return;
-      }
       showChoiceMenu(`GAME OVER — Puntaje: ${score}. Elegí cómo seguir, ${playerName || 'héroe'}.`);
       return;
     }

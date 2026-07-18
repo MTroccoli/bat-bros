@@ -76,7 +76,6 @@ const GRAPPLE_COOLDOWN_MS = 500;
 const TRAPEZE_LATCH_RANGE = 70;
 
 // --- Bane (Act 1 boss) ---
-const CONTINUE_COST = 30;
 const BANE_BIG = { w: 92, h: 150 };
 const BANE_GROW_MS = 1400;
 const BANE_TELEGRAPH_MS = 1800;

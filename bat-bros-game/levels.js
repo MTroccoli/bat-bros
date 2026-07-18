@@ -27,7 +27,6 @@ const LEVEL_SPECS = [
     thugs: [
       { x: 12, y: 24, range: [10, 16] },
       { x: 24, y: 24, range: [22, 29] },
-      { x: 30, y: 18, range: [30, 32] },
       { x: 40, y: 24, range: [36, 44] },
       { x: 56, y: 21, range: [54, 59] },
       { x: 62, y: 24, range: [61, 66] },
@@ -68,8 +67,8 @@ const LEVEL_SPECS = [
     thugs: [
       { x: 6, y: 28, range: [3, 10] },
       { x: 16, y: 28, range: [14, 22] },
-      { x: 32, y: 13, range: [31, 34] },
-      { x: 36, y: 10, range: [34, 40] },
+      { x: 32, y: 13, range: [32, 40] },
+      { x: 36, y: 10, range: [34, 39] },
       { x: 45, y: 19, range: [43, 48] },
       { x: 56, y: 28, range: [54, 59] },
       { x: 64, y: 28, range: [62, 68] },
@@ -80,7 +79,7 @@ const LEVEL_SPECS = [
       { x: 30, y: 17, range: [26, 36] },
       { x: 66, y: 24, range: [63, 69] },
     ],
-    bats: [[7, 25]],
+    bats: [[46, 19]],
     spawn: { x: 2, y: 26 },
   },
   {
@@ -122,7 +121,7 @@ const LEVEL_SPECS = [
       { x: 10, y: 26, range: [6, 13] },
       { x: 50, y: 13, range: [48, 54] },
     ],
-    bats: [[21, 29], [39, 14]],
+    bats: [[39, 14]],
     spawn: { x: 2, y: 30 },
   },
   {
