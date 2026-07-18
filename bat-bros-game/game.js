@@ -635,6 +635,21 @@ function surfaceYAt(worldX) {
   return level.pixelHeight;
 }
 
+// Floor surface Y (px) below a given world-y. Scans downward from
+// startY instead of from row 0, so it works in multi-floor sewers
+// where the ceiling mass would be hit first by surfaceYAt.
+function floorYBelow(worldX, startY) {
+  const r = rampAt(worldX);
+  if (r) return rampSurfaceY(r, worldX);
+  const tx = Math.floor(worldX / TILE);
+  if (tx < 0 || tx >= level.width) return level.pixelHeight;
+  const fromRow = Math.max(0, Math.floor(startY / TILE));
+  for (let ty = fromRow; ty < level.height; ty++) {
+    if (level.solid[ty][tx]) return ty * TILE;
+  }
+  return level.pixelHeight;
+}
+
 // Reject a horizontal move if the destination would collide with a
 // solid tile — used by updateCrouch to check headroom above.
 function collidesAt(x, y, w, h) {
@@ -1078,8 +1093,9 @@ function tryGrabLadder(now) {
   if (!level.ladders.length || !(keys.up || keys.down)) return;
   const cx = player.x + player.w / 2;
   const top = player.y, bottom = player.y + player.h;
+  const grabSlop = level.sewerFloors ? 2 : 6;
   for (const l of level.ladders) {
-    if (cx < l.x + 6 || cx >= l.x + TILE - 6) continue;
+    if (cx < l.x + grabSlop || cx >= l.x + TILE - grabSlop) continue;
     if (bottom > l.top + 4 && top < l.bottom - 4) {
       player.climbing = true;
       player.vx = 0; player.vy = 0;
@@ -1087,7 +1103,7 @@ function tryGrabLadder(now) {
       jumpBufferUntil = 0;
       return;
     }
-    if (keys.down && player.onGround && bottom >= l.top - 4 && bottom <= l.top + 8) {
+    if (keys.down && (player.onGround || now < coyoteUntil) && bottom >= l.top - 4 && bottom <= l.top + 8) {
       player.climbing = true;
       player.y = l.top - player.h + 10;
       player.vx = 0; player.vy = 0;
@@ -6309,40 +6325,60 @@ function drawTiles() {
         continue;
       }
 
-      // Sewer: everything is a solid GREY concrete/stone mass — a
-      // thick ceiling up top and a thick floor below, so the corridor
-      // is a tight band. Ceiling and floor share the same stone look;
-      // exposed surfaces (the corridor faces) get a slime edge.
+      // Sewer: Victorian-vault brick masses — aged brick with warm
+      // undertones, staggered courses, mortar variation. Exposed
+      // corridor faces get moss/slime edges.
       if (level.sewer) {
-        // Ramp columns are painted as smooth diagonal wedges by
-        // drawRampsSewer — skip the blocky tiles here.
         if (level.rampSegs && level.rampSegs.length &&
             rampAt(tx * TILE + TILE / 2)) continue;
-        // grey stone body with a subtle vertical shade
+        // Determine which floor style to use for multi-floor
+        let floorStyle = 'victorian';
+        if (level.sewerFloors) {
+          for (const f of level.sewerFloors) {
+            // tile is in or adjacent to this corridor
+            if (ty >= f.top - 3 && ty <= f.bottom + 3) { floorStyle = f.style || 'victorian'; break; }
+          }
+        }
+        // Brick body colour varies by floor style
+        const isService = floorStyle === 'service';
+        const baseH = hash01(tx * 3.7 + ty * 5.1);
+        const bodyC1 = isService ? '#4a4f56' : '#5a4538';
+        const bodyC2 = isService ? '#3a3f46' : '#483828';
         const sg = ctx.createLinearGradient(px, py, px, py + TILE);
-        sg.addColorStop(0, '#4a4f56'); sg.addColorStop(1, '#3a3f46');
+        sg.addColorStop(0, bodyC1); sg.addColorStop(1, bodyC2);
         ctx.fillStyle = sg;
         ctx.fillRect(px, py, TILE, TILE);
-        // block joints (staggered brick courses)
-        ctx.strokeStyle = 'rgba(0,0,0,0.28)'; ctx.lineWidth = 1;
+        // brick courses with mortar colour
+        const mortarC = isService ? 'rgba(0,0,0,0.28)' : 'rgba(60,50,35,0.45)';
+        ctx.strokeStyle = mortarC; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(px, py + TILE / 2); ctx.lineTo(px + TILE, py + TILE / 2); ctx.stroke();
         const off = ((ty * 2 + tx) % 2) * 16;
         ctx.beginPath(); ctx.moveTo(px + off, py); ctx.lineTo(px + off, py + TILE / 2); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(px + (off + 16) % 32, py + TILE / 2); ctx.lineTo(px + (off + 16) % 32, py + TILE); ctx.stroke();
-        // faint speckle so the grey isn't flat
-        if (hash01(tx * 3.7 + ty * 5.1) > 0.7) {
-          ctx.fillStyle = 'rgba(0,0,0,0.16)';
+        // individual brick colour variation (victorian: warm reds/browns)
+        if (!isService && baseH > 0.4) {
+          const tint = baseH > 0.7 ? 'rgba(90,50,30,0.18)' : 'rgba(40,30,20,0.12)';
+          ctx.fillStyle = tint;
+          ctx.fillRect(px + 2, py + 2, TILE - 4, TILE / 2 - 3);
+        }
+        // speckle / aging
+        if (baseH > 0.7) {
+          ctx.fillStyle = isService ? 'rgba(0,0,0,0.16)' : 'rgba(0,0,0,0.2)';
           ctx.fillRect(px + 6 + (tx % 3) * 6, py + 8 + (ty % 3) * 5, 3, 3);
         }
-        // FLOOR top face: green slime edge on the walkable surface
+        // FLOOR top face: slime edge on any exposed floor surface
         const exposedTop = ty === 0 || !level.solid[ty - 1][tx];
-        if (exposedTop && ty >= level.groundY) {
-          ctx.fillStyle = '#3f6a52'; ctx.fillRect(px, py, TILE, 3);
-          ctx.fillStyle = '#5a8a6c'; ctx.fillRect(px, py, TILE, 1);
+        if (exposedTop) {
+          const isFloor = ty > 0 && !level.solid[ty - 1]?.[tx];
+          // Only draw slime on floors (tile below an open row), not on the very top row
+          if (isFloor) {
+            ctx.fillStyle = '#3f6a52'; ctx.fillRect(px, py, TILE, 3);
+            ctx.fillStyle = '#5a8a6c'; ctx.fillRect(px, py, TILE, 1);
+          }
         }
-        // CEILING under-face: mossy drip edge on the underside
-        const exposedBottom = ty === level.height - 1 || !level.solid[ty + 1][tx];
-        if (exposedBottom && ty < level.groundY) {
+        // CEILING under-face: mossy drip edge
+        const exposedBottom = ty < level.height - 1 && !level.solid[ty + 1]?.[tx];
+        if (exposedBottom) {
           ctx.fillStyle = '#2c4034'; ctx.fillRect(px, py + TILE - 3, TILE, 3);
           if (hash01(tx * 1.9 + ty) > 0.55) {
             ctx.fillStyle = 'rgba(100,170,120,0.5)';
@@ -6581,22 +6617,49 @@ function drawCranes() {
 
 function drawLadders() {
   if (!level.ladders.length) return;
+  const isSewer = level.sewer;
   for (const l of level.ladders) {
     const x0 = l.x - camera.x;
     if (x0 < -40 || x0 > CANVAS_W + 40) continue;
     const y0 = l.top - camera.y, y1 = l.bottom - camera.y;
     if (y1 < -20 || y0 > CANVAS_H + 20) continue;
     const railL = x0 + 5, railR = x0 + TILE - 5;
-    ctx.strokeStyle = '#8a6a42'; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(railL, y0); ctx.lineTo(railL, y1); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(railR, y0); ctx.lineTo(railR, y1); ctx.stroke();
-    ctx.strokeStyle = '#6b4f2e'; ctx.lineWidth = 3;
-    for (let y = y0 + 6; y < y1; y += 10) {
-      ctx.beginPath(); ctx.moveTo(railL, y); ctx.lineTo(railR, y); ctx.stroke();
+    if (isSewer) {
+      // Rusty iron ladder — dark metal with rust highlights
+      ctx.strokeStyle = '#4a3a2e'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(railL, y0); ctx.lineTo(railL, y1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(railR, y0); ctx.lineTo(railR, y1); ctx.stroke();
+      // rust highlights on rails
+      ctx.strokeStyle = 'rgba(160,90,40,0.35)'; ctx.lineWidth = 2;
+      for (let ry = y0 + 20; ry < y1 - 10; ry += 40) {
+        ctx.beginPath(); ctx.moveTo(railL, ry); ctx.lineTo(railL, ry + 12); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(railR, ry + 8); ctx.lineTo(railR, ry + 20); ctx.stroke();
+      }
+      // rungs — thinner iron bars
+      ctx.strokeStyle = '#3a2e24'; ctx.lineWidth = 3;
+      for (let y = y0 + 8; y < y1; y += 12) {
+        ctx.beginPath(); ctx.moveTo(railL, y); ctx.lineTo(railR, y); ctx.stroke();
+      }
+      // bolts at top and bottom mounting points
+      ctx.fillStyle = '#6a5a4a';
+      for (const by of [y0 + 2, y1 - 4]) {
+        ctx.beginPath(); ctx.arc(railL, by, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(railR, by, 2.5, 0, Math.PI * 2); ctx.fill();
+      }
+    } else {
+      // Wooden dock ladder
+      ctx.strokeStyle = '#8a6a42'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(railL, y0); ctx.lineTo(railL, y1); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(railR, y0); ctx.lineTo(railR, y1); ctx.stroke();
+      ctx.strokeStyle = '#6b4f2e'; ctx.lineWidth = 3;
+      for (let y = y0 + 6; y < y1; y += 10) {
+        ctx.beginPath(); ctx.moveTo(railL, y); ctx.lineTo(railR, y); ctx.stroke();
+      }
     }
-    ctx.fillStyle = '#6a6e78';
+    // top platform grate
+    ctx.fillStyle = isSewer ? '#4a4038' : '#6a6e78';
     ctx.fillRect(x0 - 4, y0 - 2, TILE + 8, 6);
-    ctx.fillStyle = '#8a8e98';
+    ctx.fillStyle = isSewer ? '#5a5040' : '#8a8e98';
     ctx.fillRect(x0 - 4, y0 - 2, TILE + 8, 2);
     ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = 1;
     for (let gx = x0 - 2; gx < x0 + TILE + 4; gx += 5) {
@@ -6678,12 +6741,20 @@ function drawRampsSewer(t) {
   }
 }
 
-// Y (px) of the sewer ceiling underside at a world-x: the sloped
+// Y (px) of the sewer ceiling underside at a world-x (and optionally
+// world-y to pick the right floor in multi-floor levels): the sloped
 // tube ceiling if over a ceil ramp, else the ceilingRow mass, else
-// the top of the screen.
-function ceilingYAt(worldX) {
+// the bottom of the solid mass above the open corridor.
+function ceilingYAt(worldX, worldY) {
   const r = rampAt(worldX);
   if (r && r.ceil) return rampSurfaceY(r, worldX) - r.ceil * TILE;
+  if (level.sewerFloors) {
+    const ty = worldY != null ? Math.floor(worldY / TILE) : 0;
+    for (const f of level.sewerFloors) {
+      if (worldY == null || (ty >= f.top && ty <= f.bottom)) return f.top * TILE;
+    }
+    return level.sewerFloors[0].top * TILE;
+  }
   if (level.ceilingRow != null) return (level.ceilingRow + 1) * TILE;
   return 0;
 }
@@ -6691,92 +6762,126 @@ function ceilingYAt(worldX) {
 function drawSewerDecor(t) {
   const now = performance.now();
   const floorY = level.groundY * TILE - camera.y;
-  const slitTop = (level.groundY - 1) * TILE - camera.y;   // crawl slit ceiling
-  const slitH = floorY - slitTop;                          // 32 px opening
+  const slitTop = (level.groundY - 1) * TILE - camera.y;
+  const slitH = floorY - slitTop;
 
-  // Ceiling street grates (rendijas): a barred slot in the ceiling
-  // with a soft shaft of daylight dropping through it onto the path.
+  // Ceiling street grates (rendijas): amber light shaft through the ceiling.
   for (const gx0 of (level.grates || [])) {
     const gx = gx0 - camera.x;
     if (gx < -60 || gx > CANVAS_W + 60) continue;
-    const cy = ceilingYAt(gx0) - camera.y;
-    // light shaft down to the floor beneath
-    const surfY = surfaceYAt(gx0) - camera.y;
+    // For multi-floor: find the top-most floor's ceiling
+    const cy = level.sewerFloors
+      ? level.sewerFloors[0].top * TILE - camera.y
+      : ceilingYAt(gx0) - camera.y;
+    const surfY = level.sewerFloors
+      ? (level.sewerFloors[0].bottom + 1) * TILE - camera.y
+      : floorYBelow(gx0, ceilingYAt(gx0) + TILE) - camera.y;
+    // amber-warm light shaft
     const beam = ctx.createLinearGradient(gx, cy, gx, surfY);
-    beam.addColorStop(0, 'rgba(220,235,180,0.22)');
-    beam.addColorStop(1, 'rgba(220,235,180,0)');
+    beam.addColorStop(0, 'rgba(220,200,140,0.25)');
+    beam.addColorStop(0.6, 'rgba(200,180,120,0.08)');
+    beam.addColorStop(1, 'rgba(200,180,120,0)');
     ctx.fillStyle = beam;
     ctx.beginPath();
     ctx.moveTo(gx - 14, cy); ctx.lineTo(gx + 14, cy);
-    ctx.lineTo(gx + 26, surfY); ctx.lineTo(gx - 26, surfY);
+    ctx.lineTo(gx + 30, surfY); ctx.lineTo(gx - 30, surfY);
     ctx.closePath(); ctx.fill();
-    // the grate frame set into the ceiling
-    ctx.fillStyle = '#20242a';
+    // dust motes in the light shaft
+    ctx.fillStyle = 'rgba(240,220,160,0.4)';
+    for (let mi = 0; mi < 4; mi++) {
+      const mx = gx - 8 + hash01(gx0 + mi * 7) * 16;
+      const my = cy + ((now / 1200 + hash01(mi * 13 + gx0) * 200) % (surfY - cy));
+      ctx.beginPath(); ctx.arc(mx, my, 1 + hash01(mi * 3) * 0.8, 0, Math.PI * 2); ctx.fill();
+    }
+    // grate frame
+    ctx.fillStyle = '#28201a';
     ctx.fillRect(gx - 18, cy - 4, 36, 7);
-    ctx.fillStyle = '#0d1013';
+    ctx.fillStyle = '#1a140e';
     ctx.fillRect(gx - 16, cy - 2, 32, 4);
-    // bars
-    ctx.strokeStyle = '#3a4048'; ctx.lineWidth = 2;
+    ctx.strokeStyle = '#4a3e30'; ctx.lineWidth = 2;
     for (let b = -14; b <= 14; b += 5) {
       ctx.beginPath(); ctx.moveTo(gx + b, cy - 2); ctx.lineTo(gx + b, cy + 2); ctx.stroke();
     }
-    // rim highlight
-    ctx.fillStyle = '#4a525c';
+    ctx.fillStyle = '#5a4e3a';
     ctx.fillRect(gx - 18, cy - 4, 36, 1.5);
   }
 
-  // Pipe mouths: elliptical metal rims at both ends of each ceiling
-  // drop + a blinking arrow so it clearly reads as "crawl through here".
-  for (const p of (level.pipes || [])) {
-    const x0 = p.x * TILE - camera.x, x1 = (p.x + p.w) * TILE - camera.x;
-    if (x1 < -40 || x0 > CANVAS_W + 40) continue;
-    // slight darkening inside the slit so the crawler reads as "in a hole"
-    ctx.fillStyle = 'rgba(6,10,12,0.4)';
-    ctx.fillRect(x0, slitTop, x1 - x0, slitH);
-    // metal lip along the underside of the dropped ceiling
-    ctx.fillStyle = '#5a4636';
-    ctx.fillRect(x0, slitTop - 4, x1 - x0, 6);
-    ctx.fillStyle = '#7a604a';
-    ctx.fillRect(x0, slitTop - 4, x1 - x0, 2);
-    // rivets
-    ctx.fillStyle = '#9a7a5a';
-    for (let rx = x0 + 12; rx < x1 - 6; rx += 30) {
-      ctx.beginPath(); ctx.arc(rx, slitTop - 1, 1.5, 0, Math.PI * 2); ctx.fill();
-    }
-    // round mouth rims at each opening
-    for (const mx of [x0, x1]) {
-      ctx.strokeStyle = '#7a5c40'; ctx.lineWidth = 5;
-      ctx.beginPath();
-      ctx.ellipse(mx, slitTop + slitH / 2, 6, slitH / 2 + 5, 0, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.strokeStyle = '#2c2018'; ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.ellipse(mx, slitTop + slitH / 2, 9, slitH / 2 + 8, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    // blinking guide arrow just left of the entrance
-    if (Math.floor(now / 500) % 2 === 0) {
-      ctx.fillStyle = '#ffd166';
-      ctx.beginPath();
-      ctx.moveTo(x0 - 22, slitTop + slitH / 2 - 6);
-      ctx.lineTo(x0 - 10, slitTop + slitH / 2);
-      ctx.lineTo(x0 - 22, slitTop + slitH / 2 + 6);
-      ctx.closePath(); ctx.fill();
+  // Pipe mouths (single-floor sewer only — multi-floor has no pipes)
+  if (!level.sewerFloors) {
+    for (const p of (level.pipes || [])) {
+      const x0 = p.x * TILE - camera.x, x1 = (p.x + p.w) * TILE - camera.x;
+      if (x1 < -40 || x0 > CANVAS_W + 40) continue;
+      ctx.fillStyle = 'rgba(6,10,12,0.4)';
+      ctx.fillRect(x0, slitTop, x1 - x0, slitH);
+      ctx.fillStyle = '#5a4636';
+      ctx.fillRect(x0, slitTop - 4, x1 - x0, 6);
+      ctx.fillStyle = '#7a604a';
+      ctx.fillRect(x0, slitTop - 4, x1 - x0, 2);
+      ctx.fillStyle = '#9a7a5a';
+      for (let rx = x0 + 12; rx < x1 - 6; rx += 30) {
+        ctx.beginPath(); ctx.arc(rx, slitTop - 1, 1.5, 0, Math.PI * 2); ctx.fill();
+      }
+      for (const mx of [x0, x1]) {
+        ctx.strokeStyle = '#7a5c40'; ctx.lineWidth = 5;
+        ctx.beginPath();
+        ctx.ellipse(mx, slitTop + slitH / 2, 6, slitH / 2 + 5, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.strokeStyle = '#2c2018'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.ellipse(mx, slitTop + slitH / 2, 9, slitH / 2 + 8, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      if (Math.floor(now / 500) % 2 === 0) {
+        ctx.fillStyle = '#ffd166';
+        ctx.beginPath();
+        ctx.moveTo(x0 - 22, slitTop + slitH / 2 - 6);
+        ctx.lineTo(x0 - 10, slitTop + slitH / 2);
+        ctx.lineTo(x0 - 22, slitTop + slitH / 2 + 6);
+        ctx.closePath(); ctx.fill();
+      }
     }
   }
 
-  // Floor drain grates (decor): a dark recessed square with bars.
+  // Floor drain grates: for multi-floor, draw on every floor.
+  const drainFloors = level.sewerFloors
+    ? level.sewerFloors.map(f => (f.bottom + 1) * TILE)
+    : [level.groundY * TILE];
   for (const dx of (level.drains || [])) {
     const gx = dx - camera.x;
     if (gx < -30 || gx > CANVAS_W + 30) continue;
-    const gy = floorY + 4;
-    ctx.fillStyle = '#14201a';
-    ctx.fillRect(gx - 14, gy, 28, 10);
-    ctx.strokeStyle = '#3a4a40'; ctx.lineWidth = 1;
-    ctx.strokeRect(gx - 14, gy, 28, 10);
-    ctx.strokeStyle = '#26362c'; ctx.lineWidth = 2;
-    for (let b = -10; b <= 10; b += 5) {
-      ctx.beginPath(); ctx.moveTo(gx + b, gy + 1); ctx.lineTo(gx + b, gy + 9); ctx.stroke();
+    for (const dfY of drainFloors) {
+      const gy = dfY - camera.y + 4;
+      if (gy < -20 || gy > CANVAS_H + 20) continue;
+      ctx.fillStyle = '#14201a';
+      ctx.fillRect(gx - 14, gy, 28, 10);
+      ctx.strokeStyle = '#3a4a40'; ctx.lineWidth = 1;
+      ctx.strokeRect(gx - 14, gy, 28, 10);
+      ctx.strokeStyle = '#26362c'; ctx.lineWidth = 2;
+      for (let b = -10; b <= 10; b += 5) {
+        ctx.beginPath(); ctx.moveTo(gx + b, gy + 1); ctx.lineTo(gx + b, gy + 9); ctx.stroke();
+      }
+    }
+  }
+
+  // Multi-floor: draw internal sewer wall barriers with archways
+  if (level.sewerWalls) {
+    for (const sw of level.sewerWalls) {
+      const wx = sw.x - camera.x;
+      const ww = sw.w;
+      if (wx + ww < -20 || wx > CANVAS_W + 20) continue;
+      const wy = sw.top - camera.y;
+      const wh = sw.bottom - sw.top;
+      // darker brick fill with arch detail
+      ctx.fillStyle = '#3a2e22';
+      ctx.fillRect(wx, wy, ww, wh);
+      ctx.strokeStyle = 'rgba(60,45,30,0.5)'; ctx.lineWidth = 1;
+      for (let by = wy + 10; by < wy + wh; by += 12) {
+        ctx.beginPath(); ctx.moveTo(wx, by); ctx.lineTo(wx + ww, by); ctx.stroke();
+      }
+      // beveled edges
+      ctx.fillStyle = 'rgba(0,0,0,0.3)';
+      ctx.fillRect(wx, wy, 3, wh);
+      ctx.fillRect(wx + ww - 3, wy, 3, wh);
     }
   }
 }
@@ -6814,7 +6919,7 @@ function updateDrips(dt, now) {
       }
     }
     // drops die when they hit the floor/ramp surface beneath them
-    d.drops = d.drops.filter(drop => !drop.landed && drop.y < surfaceYAt(drop.x) + 4);
+    d.drops = d.drops.filter(drop => !drop.landed && drop.y < floorYBelow(drop.x, dripCeilY(d)) + 4);
   }
 }
 
@@ -6861,16 +6966,17 @@ function drawDrips(t) {
   }
 }
 
-// Sewer wall: a chunky stone block Batman can climb, not a Gotham
-// warehouse. Made of mossy grey bricks with a slime-green roof cap
-// so it reads as underground infrastructure, not a building.
+// Sewer wall: aged Victorian brick block — warm brown-red with
+// darker mortar, moss clusters, and a slime-green roof cap.
 function drawSewerBlock(w, x0, wpx, roofY, groundPx) {
   const H = groundPx - roofY;
-  // main stone body
-  ctx.fillStyle = '#33403a';
+  // main brick body (warm brown)
+  const bg = ctx.createLinearGradient(x0, roofY, x0, groundPx);
+  bg.addColorStop(0, '#5a4538'); bg.addColorStop(1, '#483828');
+  ctx.fillStyle = bg;
   ctx.fillRect(x0, roofY, wpx, H);
-  // brick joints (staggered rows)
-  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  // brick joints (warm mortar)
+  ctx.strokeStyle = 'rgba(60,45,30,0.45)';
   ctx.lineWidth = 1;
   const brickH = 12;
   for (let y = roofY + brickH; y < groundPx; y += brickH) {
@@ -6884,16 +6990,20 @@ function drawSewerBlock(w, x0, wpx, roofY, groundPx) {
       ctx.beginPath(); ctx.moveTo(bx, y); ctx.lineTo(bx, y + brickH); ctx.stroke();
     }
   }
-  // moss / algae streaks
-  ctx.fillStyle = 'rgba(90,160,110,0.28)';
-  for (let i = 0; i < wpx; i += 26) {
-    const dh = 4 + hash01(w.x * 3.1 + i * 0.7) * (H - 8);
-    ctx.fillRect(x0 + i + 3, roofY, 3, dh);
+  // moss clusters (organic clumps, not uniform streaks)
+  ctx.fillStyle = 'rgba(70,130,80,0.30)';
+  for (let i = 0; i < wpx; i += 30) {
+    const h01 = hash01(w.x * 3.1 + i * 0.7);
+    if (h01 > 0.4) {
+      const cy = groundPx - 6 - h01 * (H * 0.4);
+      const cw = 6 + h01 * 8;
+      ctx.beginPath(); ctx.ellipse(x0 + i + 4, cy, cw / 2, cw / 3, 0, 0, Math.PI * 2); ctx.fill();
+    }
   }
-  // dark base shadow — merges into the ground
+  // dark base shadow
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
   ctx.fillRect(x0, groundPx - 4, wpx, 4);
-  // slime-green roof cap so it doesn't look like a rooftop
+  // slime-green roof cap
   ctx.fillStyle = '#2c5040';
   ctx.fillRect(x0, roofY, wpx, 5);
   ctx.fillStyle = '#3f6a52';
@@ -8540,25 +8650,49 @@ function drawGargoyles() {
 // beams of moonlight dropping through manhole covers.
 // ---------------------------------------------------------------
 function drawSewerBackground(t) {
-  // The ceiling + floor are solid grey tile masses, so the only
-  // background that shows through is the thin corridor band between
-  // them. Keep it a dark, wet back-wall so the grey masses pop.
+  // Victorian vault back-wall: warm dark brick with arched alcoves
+  // and amber-tinged moisture.
   const g = ctx.createLinearGradient(0, 0, 0, CANVAS_H);
-  g.addColorStop(0, '#10130f'); g.addColorStop(0.5, '#161b15'); g.addColorStop(1, '#0c0f0b');
+  g.addColorStop(0, '#120e0a'); g.addColorStop(0.5, '#1a150f'); g.addColorStop(1, '#0e0b08');
   ctx.fillStyle = g; ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  // faint brick courses on the back wall of the corridor
-  ctx.strokeStyle = 'rgba(70,80,66,0.25)';
+  // aged brick courses on the back wall (warmer than the old grey)
+  ctx.strokeStyle = 'rgba(80,60,40,0.30)';
   ctx.lineWidth = 1;
-  const brickH = 16;
+  const brickH = 14;
   for (let by = 0; by < CANVAS_H; by += brickH) {
     ctx.beginPath(); ctx.moveTo(0, by); ctx.lineTo(CANVAS_W, by); ctx.stroke();
+    const row = Math.floor(by / brickH);
+    const off = (row % 2) * 18;
+    ctx.strokeStyle = 'rgba(60,45,30,0.22)';
+    for (let bx = off; bx < CANVAS_W; bx += 36) {
+      ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(bx, by + brickH); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(80,60,40,0.30)';
   }
-  // a few vertical moisture streaks
-  ctx.strokeStyle = 'rgba(90,150,110,0.12)';
+  // faint arched alcoves in the back wall (parallax)
+  const archW = 140;
+  ctx.fillStyle = 'rgba(30,22,14,0.35)';
+  for (let i = -1; i <= CANVAS_W / archW + 1; i++) {
+    const ax = i * archW + 30 - (camera.x * 0.15) % archW;
+    ctx.beginPath();
+    ctx.moveTo(ax + 10, CANVAS_H);
+    ctx.lineTo(ax + 10, CANVAS_H * 0.35);
+    ctx.quadraticCurveTo(ax + archW / 2, CANVAS_H * 0.12, ax + archW - 10, CANVAS_H * 0.35);
+    ctx.lineTo(ax + archW - 10, CANVAS_H);
+    ctx.closePath(); ctx.fill();
+  }
+  // moisture streaks (warm amber-green instead of bright green)
+  ctx.strokeStyle = 'rgba(120,100,60,0.10)';
   for (let i = 0; i < 8; i++) {
     const x = (i * 121 - (camera.x * 0.5)) % (CANVAS_W + 120) - 60;
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 6, CANVAS_H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + 4, CANVAS_H); ctx.stroke();
   }
+  // copper pipe traces along the ceiling line (subtle)
+  ctx.strokeStyle = 'rgba(160,110,60,0.14)'; ctx.lineWidth = 3;
+  const pipeY = 20 - (camera.y * 0.3) % 40;
+  ctx.beginPath(); ctx.moveTo(0, pipeY); ctx.lineTo(CANVAS_W, pipeY); ctx.stroke();
+  ctx.strokeStyle = 'rgba(180,130,70,0.08)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, pipeY + 14); ctx.lineTo(CANVAS_W, pipeY + 14); ctx.stroke();
 }
 
 // ---------------------------------------------------------------

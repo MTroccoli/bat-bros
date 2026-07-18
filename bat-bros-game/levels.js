@@ -737,72 +737,82 @@ LEVEL_SPECS.push({
 
 // 4-1 — ALCANTARILLAS INICIALES. Corredor angosto de cloaca:
 // masa de hormigón GRIS arriba (techo, filas 0-9) y abajo (piso,
-// filas 13-14), dejando sólo 3 filas de corredor. Apenas hay lugar
-// para saltar. En dos puntos el techo BAJA a ras (tubería) y hay
-// que gatear (agachado, sin salto). Gotas de ácido verde caen del
-// techo y hacen daño; rejillas y bocas de tormenta decoran.
+// 4-1 — LABERINTO TUTORIAL. Dos pisos conectados por escaleras de
+// hierro oxidado. El piso superior (servicio) es un túnel moderno
+// con tuberías de cobre; el inferior (bóveda victoriana) tiene
+// arcos de ladrillo viejo y musgo. Un muro en el piso 1 bloquea
+// el paso directo: hay que BAJAR por la escalera, atravesar el
+// piso 2, y SUBIR por otra escalera al lado correcto.
+//
+// Estructura vertical (25 filas):
+//   0-2  masa sólida (techo general)
+//   3-7  PISO 1 — corredor abierto (servicio)
+//   8-15 masa sólida (separación entre pisos)
+//  16-20 PISO 2 — corredor abierto (bóveda victoriana)
+//  21-24 masa sólida (base)
 LEVEL_SPECS.push({
   name: '4-1',
   sewer: true,
-  // Piso ALTO (masa gruesa filas 11-14) + techo BAJO (masa filas
-  // 0-8). El corredor jugable son sólo 2 filas (9-10): se camina
-  // pero apenas se puede saltar. En las tuberías el techo baja a
-  // fila 9 → queda una única ranura (fila 10) para gatear.
-  width: 76, height: 15, groundY: 11,
-  ceilingRow: 8,
+  width: 80, height: 25, groundY: 21,
+
+  sewerFloors: [
+    { top: 3, bottom: 7, style: 'service' },
+    { top: 16, bottom: 20, style: 'victorian' },
+  ],
+
+  sewerWalls: [
+    { x: 38, top: 3, bottom: 7, w: 3 },    // bloquea paso directo en Piso 1
+  ],
+
+  ladders: [
+    { x: 28, topRow: 8, baseRow: 21 },      // baja de Piso 1 a Piso 2
+    { x: 58, topRow: 8, baseRow: 21 },       // sube de Piso 2 a Piso 1
+  ],
+
   pits: [],
   platforms: [],
   walls: [],
-  ladders: [],
   houses: [],
-  pipes: [
-    // Tubería 1 — el techo baja 8 tiles: gateo obligado.
-    { x: 16, w: 8 },
-    // Tubería 2 — más larga (12 tiles) con una rata patrullando
-    // adentro. Gotas de ácido caen dentro de ella.
-    { x: 46, w: 12 },
-  ],
-  // Gotas de ácido verde: caen del techo en estas columnas y
-  // hacen daño al tocarte.
+  pipes: [],
+
   drips: [
-    { x: 11, interval: 1600 },
-    { x: 30, interval: 1400 },
-    { x: 40, interval: 1500 },
-    { x: 51, interval: 1300 },   // dentro de la tubería 2
-    { x: 56, interval: 1700 },   // dentro de la tubería 2
-    { x: 68, interval: 1500 },
+    { x: 12, y: 3, interval: 1800 },        // Piso 1
+    { x: 22, y: 3, interval: 1600 },        // Piso 1
+    { x: 35, y: 16, interval: 1500 },       // Piso 2
+    { x: 48, y: 16, interval: 1400 },       // Piso 2
+    { x: 65, y: 3, interval: 1700 },        // Piso 1 (tras subir)
+    { x: 75, y: 3, interval: 1500 },        // Piso 1
   ],
-  // Rejillas de desagüe en el piso (decoración).
-  drains: [8, 26, 38, 63, 72],
-  // Rendijas de calle en el techo con un rayo de luz.
-  grates: [10, 40, 70],
+
+  drains: [8, 25, 45, 65, 75],
+  grates: [15, 50, 72],
+
   swingPoints: [],
+
   coins: [
-    [4, 10], [7, 10], [13, 10],
-    [18, 10], [20, 10], [22, 10],        // dentro de la tubería 1
-    [27, 10], [33, 10], [37, 10],        // zona de descanso 1 (ratas)
-    [49, 10], [52, 10], [55, 10],        // dentro de la tubería 2
-    [61, 10], [65, 10], [70, 10], [74, 10],   // salida
+    // Piso 1 — sección izquierda (antes del muro)
+    [5, 6], [10, 6], [15, 6], [20, 6], [25, 6],
+    // Piso 2 — travesía completa
+    [32, 19], [37, 19], [42, 19], [47, 19], [53, 19],
+    // Piso 1 — sección derecha (después del muro)
+    [62, 6], [67, 6], [72, 6], [76, 6],
   ],
+
   thugs: [
-    // Un thug al comienzo, en el corredor abierto.
-    { x: 9, y: 11, range: [6, 13] },
+    { x: 16, y: 8, range: [10, 25] },       // Piso 1 izquierda
   ],
+
   rats: [
-    // Zona de descanso 1 (entre las dos tuberías): 3 ratas.
-    { x: 27, y: 11, range: [25, 34] },
-    { x: 32, y: 11, range: [27, 36], dir: -1 },
-    { x: 40, y: 11, range: [36, 44] },
-    // UNA RATA DENTRO de la tubería 2 — te la cruzás gateando.
-    { x: 52, y: 11, range: [47, 57] },
-    // Zona de descanso 2 (después de la tubería 2): 2 más.
-    { x: 64, y: 11, range: [60, 70] },
-    { x: 71, y: 11, range: [66, 75], dir: -1 },
+    { x: 36, y: 21, range: [30, 44] },      // Piso 2 izquierda
+    { x: 50, y: 21, range: [45, 56] },       // Piso 2 derecha
+    { x: 70, y: 8, range: [62, 77] },        // Piso 1 derecha
   ],
+
   divers: [],
   birds: [],
-  bats: [[42, 10]],   // checkpoint entre la zona de ratas y la tubería 2
-  spawn: { x: 2, y: 9 },
+  bats: [[45, 19]],
+
+  spawn: { x: 2, y: 5 },
 });
 
 // 4-2 — LA RAMPA. Tobogán de cloaca con rampas DIAGONALES reales

@@ -195,16 +195,37 @@ function buildLevel(spec) {
           thugs = [], birds = [], bats = [], swingPoints = [], houses = [], ladders = [],
           boats = [], cranes = [], snowCannons = [], rats = [], divers = [],
           pipes = [], ceilingRow = null, drips = [], drains = [], grates = [],
-          ramps = [], sliders = [],
+          ramps = [], sliders = [], sewerFloors = null, sewerWalls = [],
           spawn, name, indoor = false, dock = false, frozen = false, sewer = false,
           bane = null, cave = null, twoface = null, mrfreeze = null } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
 
-  for (let y = groundY; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const inPit = pits.some(([a, b]) => x >= a && x <= b);
-      if (!inPit) solid[y][x] = true;
+  // Multi-floor sewer corridors (Act 4 labyrinth): fill ALL tiles solid
+  // then carve out each corridor and ladder shaft.
+  if (sewerFloors) {
+    for (let y = 0; y < height; y++)
+      for (let x = 0; x < width; x++) solid[y][x] = true;
+    for (const f of sewerFloors) {
+      for (let y = f.top; y <= f.bottom; y++)
+        for (let x = 0; x < width; x++) solid[y][x] = false;
+    }
+    for (const l of ladders) {
+      const lastFloorBottom = sewerFloors[sewerFloors.length - 1].bottom;
+      const carveEnd = Math.min(l.baseRow, lastFloorBottom);
+      for (let y = l.topRow + 1; y <= carveEnd; y++) solid[y][l.x] = false;
+    }
+    for (const sw of sewerWalls) {
+      const ww = sw.w || 1;
+      for (let y = sw.top; y <= sw.bottom; y++)
+        for (let xi = 0; xi < ww; xi++) solid[y][sw.x + xi] = true;
+    }
+  } else {
+    for (let y = groundY; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const inPit = pits.some(([a, b]) => x >= a && x <= b);
+        if (!inPit) solid[y][x] = true;
+      }
     }
   }
 
@@ -267,7 +288,7 @@ function buildLevel(spec) {
   }
 
   for (const l of ladders) {
-    solid[l.topRow][l.x] = true;
+    if (!sewerFloors) solid[l.topRow][l.x] = true;
   }
 
   // PIPES (Act 4): a LOCAL drop of the ceiling. Where a pipe sits, the
@@ -317,6 +338,8 @@ function buildLevel(spec) {
     name,
     width, height, groundY, indoor, dock, frozen, sewer,
     ceilingRow,
+    sewerFloors: sewerFloors ? sewerFloors.map(f => ({ top: f.top, bottom: f.bottom, style: f.style || 'victorian' })) : null,
+    sewerWalls: sewerWalls.map(sw => ({ x: sw.x * TILE, w: (sw.w || 1) * TILE, top: sw.top * TILE, bottom: (sw.bottom + 1) * TILE })),
     solid,
     // Pipe descriptors in TILE units. A pipe is a ceiling drop to
     // crawl height over [x, x+w); its interior row is groundY-1.
