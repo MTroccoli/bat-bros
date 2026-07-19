@@ -6753,27 +6753,27 @@ function drawRampsSewer(t) {
     if (sx1 < -20 || sx0 > CANVAS_W + 20) continue;
     const sy0 = r.y0 - camera.y, sy1 = r.y1 - camera.y;
 
-    // FLOOR wedge — grey stone from the diagonal line down to the base.
+    // FLOOR wedge — aged brown brick matching victorian sewer palette.
     const fg = ctx.createLinearGradient(0, Math.min(sy0, sy1), 0, botY);
-    fg.addColorStop(0, '#4a4f56'); fg.addColorStop(1, '#33373d');
+    fg.addColorStop(0, '#4a3a28'); fg.addColorStop(1, '#2e2218');
     ctx.fillStyle = fg;
     ctx.beginPath();
     ctx.moveTo(sx0, sy0); ctx.lineTo(sx1, sy1);
     ctx.lineTo(sx1, botY); ctx.lineTo(sx0, botY);
     ctx.closePath(); ctx.fill();
-    // horizontal block courses for texture
-    ctx.strokeStyle = 'rgba(0,0,0,0.22)'; ctx.lineWidth = 1;
-    for (let yy = Math.min(sy0, sy1) + 14; yy < botY; yy += 16) {
+    // brick course lines for texture
+    ctx.strokeStyle = 'rgba(20,15,8,0.3)'; ctx.lineWidth = 1;
+    for (let yy = Math.min(sy0, sy1) + 14; yy < botY; yy += 14) {
       ctx.beginPath(); ctx.moveTo(sx0, yy); ctx.lineTo(sx1, yy); ctx.stroke();
     }
-    // slime edge along the diagonal surface
-    ctx.strokeStyle = '#3f6a52'; ctx.lineWidth = 4;
+    // moss edge along the diagonal surface
+    ctx.strokeStyle = '#3a5535'; ctx.lineWidth = 4;
     ctx.beginPath(); ctx.moveTo(sx0, sy0 + 2); ctx.lineTo(sx1, sy1 + 2); ctx.stroke();
-    ctx.strokeStyle = '#5a8a6c'; ctx.lineWidth = 2;
+    ctx.strokeStyle = '#4a6a40'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(sx0, sy0); ctx.lineTo(sx1, sy1); ctx.stroke();
-    // slippery wet-green sheen + moving glints on slide ramps
+    // slippery wet sheen + moving glints on slide ramps
     if (r.slide) {
-      ctx.strokeStyle = 'rgba(150,240,190,0.5)'; ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(180,150,80,0.4)'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(sx0, sy0 - 1); ctx.lineTo(sx1, sy1 - 1); ctx.stroke();
       const len = Math.hypot(sx1 - sx0, sy1 - sy0);
       const ux = (sx1 - sx0) / len, uy = (sy1 - sy0) / len;
