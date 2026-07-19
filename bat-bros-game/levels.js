@@ -832,73 +832,69 @@ LEVEL_SPECS.push({
   spawn: { x: 2, y: 4 },
 });
 
-// 4-2 — LA RAMPA. Dos pisos: Piso 1 (rows 1-8, mesetas y bajada),
-// Piso 2 (rows 13-22, base, pozo, subida). Escalera entre pisos con
-// descanso y ratas. Pingüinos bajan por la subida del Piso 2.
+// 4-2 — LA RAMPA. Un corredor abierto (un solo piso) con bóveda
+// victoriana y rampas diagonales. Bajada resbaladiza → pozo con
+// balsa → subida con pingüinos → DESCANSO plano con ratas → escalera
+// que sube a la meseta de salida (cambio de nivel estilo 4-1).
 LEVEL_SPECS.push({
   name: '4-2',
   sewer: true,
   width: 80, height: 25, groundY: 23,
 
-  // Dos pisos como 4-1: corredor superior para mesetas, corredor
-  // inferior para la base/pozo/subida. Masa sólida rows 9-12 forma
-  // el descanso natural de la escalera.
+  // Un solo corredor alto: todo el espacio vertical queda abierto para
+  // que las rampas diagonales funcionen sin chocar contra masa sólida.
   sewerFloors: [
-    { top: 1, bottom: 8, style: 'victorian' },
-    { top: 13, bottom: 22, style: 'victorian' },
+    { top: 1, bottom: 22, style: 'victorian' },
   ],
 
-  // Rampas SIN ceil. Piso 1: mesetas a row 6. Piso 2: base row 18,
-  // subida a row 14 con pingüinos.
+  // Rampas SIN ceil. Meseta row 6 (alto), pozo row 18 (bajo), subida
+  // parcial a row 13, descanso plano row 13, luego escalera a row 6.
   ramps: [
-    { x: 0,  w: 10, fromRow: 6,  toRow: 6  },              // P1: meseta inicio
-    { x: 10, w: 14, fromRow: 6,  toRow: 18, slide: true },  // BAJADA P1→P2 ↘
-    { x: 24, w: 4,  fromRow: 18, toRow: 18 },               // P2: base antes del pozo
+    { x: 0,  w: 10, fromRow: 6,  toRow: 6  },               // meseta inicio
+    { x: 10, w: 14, fromRow: 6,  toRow: 18, slide: true },  // BAJADA resbaladiza ↘
+    { x: 24, w: 4,  fromRow: 18, toRow: 18 },               // base antes del pozo
     // HUECO: tiles 28-33 (pozo con balsa de escombros)
-    { x: 34, w: 4,  fromRow: 18, toRow: 18 },               // P2: base después del pozo
-    { x: 38, w: 14, fromRow: 18, toRow: 14, slide: true },  // P2: SUBIDA con pingüinos ↗
-    { x: 52, w: 8,  fromRow: 14, toRow: 14 },               // P2: meseta antes de escalera
-    { x: 58, w: 22, fromRow: 6,  toRow: 6  },               // P1: meseta final / salida
+    { x: 34, w: 4,  fromRow: 18, toRow: 18 },               // base después del pozo
+    { x: 38, w: 12, fromRow: 18, toRow: 13 },               // SUBIDA con pingüinos ↗ (no resbala: se puede subir)
+    { x: 50, w: 9,  fromRow: 13, toRow: 13 },               // DESCANSO plano (ratas)
+    { x: 59, w: 21, fromRow: 6,  toRow: 6  },               // meseta final / salida
   ],
 
-  sewerPit: { floor: 1, from: 28, to: 34 },
-
-  // Muros sólidos: sellan el Piso 1 sobre la zona de rampas (tiles 10-59)
-  // para que solo se transite por el Piso 2 en esa franja. Dejan el
-  // hueco de la escalera libre.
-  sewerWalls: [
-    { x: 10, top: 1, bottom: 8, w: 44 },                   // cierra P1 sobre rampas
-    { x: 55, top: 1, bottom: 8, w: 3 },                    // cierra P1 derecha de escalera
-  ],
+  sewerPit: { floor: 0, from: 28, to: 34 },
 
   boats: [
-    { x: 29, y: 19, w: 3, range: [28, 33], speed: 0.8 },
+    { x: 29, y: 19, w: 3, range: [28, 33], speed: 0.8 },   // balsa de escombros
   ],
 
-  // Pingüinos salen de la meseta alta de la subida y bajan hacia el pozo.
-  sliders: [
-    { x: 51, dir: -1, interval: 2200, minX: 34, maxX: 52 },
-    { x: 51, dir: -1, interval: 3000, minX: 34, maxX: 52 },
-  ],
-
-  // Escalera: sube de Piso 2 (row 14) a Piso 1 (row 6). La masa
-  // sólida rows 9-12 forma el descanso intermedio.
+  // Escalera en el borde derecho del descanso: sube del descanso
+  // (row 13, pisa en row 14) a la meseta de salida (row 6, pisa row 7).
   ladders: [
-    { x: 54, topRow: 6, baseRow: 22 },
+    { x: 58, topRow: 7, baseRow: 14 },
   ],
 
-  platforms: [],
+  // Repisa sólida en el tope de la escalera (row 7) para pisar al salir
+  // y conectar con la meseta final.
+  platforms: [
+    { x: 58, y: 7, w: 1 },
+  ],
+
+  // 2 pingüinos salen de una alcantarilla en lo alto de la subida
+  // (tile 48) y se deslizan hacia abajo, hacia el precipicio.
+  sliders: [
+    { x: 48, dir: -1, interval: 2400, minX: 33, maxX: 49 },
+    { x: 48, dir: -1, interval: 3600, minX: 33, maxX: 49 },
+  ],
 
   drips: [
     { x: 14, y: 1, interval: 1800 },
-    { x: 30, y: 13, interval: 1600 },
-    { x: 46, y: 13, interval: 1900 },
+    { x: 30, y: 1, interval: 1600 },
+    { x: 46, y: 1, interval: 1900 },
     { x: 68, y: 1, interval: 1700 },
   ],
 
-  drains: [5, 36, 60, 74],
+  drains: [5, 36, 48, 74],                                  // alcantarilla en tile 48
   grates: [8, 66],
-  puddles: [55, 70],
+  puddles: [12, 55, 70],
 
   pits: [],
   walls: [],
@@ -907,44 +903,50 @@ LEVEL_SPECS.push({
   swingPoints: [],
 
   coins: [
-    // Meseta inicio P1
+    // Meseta inicio
     [3, 5], [6, 5],
-    // Bajada diagonal — 1 tile sobre la superficie
-    [12, 5], [15, 8], [18, 11], [21, 14],
-    // Base P2 alrededor del pozo
-    [25, 17], [27, 17], [35, 17], [37, 17],
-    // Subida P2 — 2 tiles sobre la superficie
-    [40, 15], [43, 14], [46, 13], [49, 13],
-    // Meseta P2 antes de escalera
-    [53, 13],
-    // Meseta final P1
+    // Bajada — sobre la superficie diagonal
+    [13, 6], [16, 9], [19, 11], [22, 14],
+    // Bases alrededor del pozo
+    [25, 16], [27, 16], [35, 16], [37, 16],
+    // Subida — sobre la superficie diagonal
+    [40, 15], [43, 14], [46, 12], [49, 11],
+    // Descanso row 13
+    [52, 11], [55, 11],
+    // Meseta final
     [62, 5], [66, 5], [70, 5], [75, 5],
   ],
 
   thugs: [],
 
   rats: [
-    // Bajada: 2 ratas subiendo (derecha a izquierda)
-    { x: 18, y: 12, range: [12, 23], dir: -1 },
-    { x: 14, y: 8,  range: [12, 23], dir: -1 },
-    // Base P2 antes del pozo
+    // Bajada: 2 ratas subiendo de derecha a izquierda
+    { x: 20, y: 10, range: [12, 23], dir: -1 },
+    { x: 16, y: 8,  range: [12, 23], dir: -1 },
+    // Base antes del pozo
     { x: 26, y: 18, range: [24, 27] },
-    // Meseta P2 antes de escalera
-    { x: 53, y: 14, range: [52, 58] },
-    // Meseta final P1
+    // DESCANSO row 13: ratas transitando (el "cambio de nivel").
+    // Se mantienen en la mitad derecha para no tirar al jugador
+    // pendiente abajo apenas corona la subida.
+    { x: 55, y: 13, range: [54, 58] },
+    { x: 57, y: 13, range: [54, 58] },
+    // Meseta final
     { x: 65, y: 6, range: [60, 72] },
     { x: 74, y: 6, range: [70, 78] },
   ],
 
   sewerBats: [
-    { x: 16, y: 15, range: [12, 23] },
-    { x: 44, y: 15, range: [34, 51] },
-    { x: 68, y: 3, range: [60, 78] },
+    { x: 16, y: 3, range: [10, 23] },      // sobre la bajada
+    { x: 53, y: 10, range: [50, 58] },     // sobre el descanso (alcanzable)
+    { x: 68, y: 3, range: [60, 78] },      // meseta final
   ],
 
   divers: [],
   birds: [],
-  bats: [[26, 17]],
+  // Checkpoints (cada bat es checkpoint): antes del pozo y en el
+  // descanso (a nivel de piso, se recoge caminando), para que morir en
+  // la escalera no obligue a repetir el pozo. Además da forma grande.
+  bats: [[26, 16], [52, 13]],
 
   spawn: { x: 2, y: 5 },
 });
