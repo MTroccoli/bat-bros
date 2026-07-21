@@ -866,16 +866,17 @@ LEVEL_SPECS.push({
     { x: 29, y: 19, w: 3, range: [28, 33], speed: 0.8 },   // balsa de escombros
   ],
 
-  // Escalera en el borde derecho del descanso: sube del descanso
-  // (row 13, pisa en row 14) a la meseta de salida (row 6, pisa row 7).
+  // Escalera en el borde derecho del descanso: baja hasta la superficie
+  // del descanso (row 13) y sube hasta la meseta de salida (row 6), sin
+  // quedar por debajo del piso.
   ladders: [
-    { x: 58, topRow: 7, baseRow: 14 },
+    { x: 58, topRow: 6, baseRow: 13 },
   ],
 
-  // Repisa sólida en el tope de la escalera (row 7) para pisar al salir
+  // Repisa sólida en el tope de la escalera (row 6) para pisar al salir
   // y conectar con la meseta final.
   platforms: [
-    { x: 58, y: 7, w: 1 },
+    { x: 58, y: 6, w: 1 },
   ],
 
   // 2 pingüinos salen de una alcantarilla en lo alto de la subida
@@ -919,25 +920,21 @@ LEVEL_SPECS.push({
 
   thugs: [],
 
+  // Menos enemigos: el nivel estaba muy cargado. 1 rata por tramo.
   rats: [
-    // Bajada: 2 ratas subiendo de derecha a izquierda
-    { x: 20, y: 10, range: [12, 23], dir: -1 },
-    { x: 16, y: 8,  range: [12, 23], dir: -1 },
+    // Bajada: 1 rata subiendo de derecha a izquierda
+    { x: 18, y: 12, range: [12, 23], dir: -1 },
     // Base antes del pozo
     { x: 26, y: 18, range: [24, 27] },
-    // DESCANSO row 13: ratas transitando (el "cambio de nivel").
-    // Se mantienen en la mitad derecha para no tirar al jugador
-    // pendiente abajo apenas corona la subida.
-    { x: 55, y: 13, range: [54, 58] },
-    { x: 57, y: 13, range: [54, 58] },
+    // DESCANSO row 13: 1 rata en la mitad derecha (no tira al jugador
+    // pendiente abajo apenas corona la subida).
+    { x: 56, y: 13, range: [54, 58] },
     // Meseta final
-    { x: 65, y: 6, range: [60, 72] },
-    { x: 74, y: 6, range: [70, 78] },
+    { x: 70, y: 6, range: [62, 76] },
   ],
 
   sewerBats: [
     { x: 16, y: 3, range: [10, 23] },      // sobre la bajada
-    { x: 53, y: 10, range: [50, 58] },     // sobre el descanso (alcanzable)
     { x: 68, y: 3, range: [60, 78] },      // meseta final
   ],
 

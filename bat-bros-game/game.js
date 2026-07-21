@@ -829,6 +829,55 @@ function updateSliders(dt, now) {
   }
 }
 
+// Drainage pipe mouth at each penguin spawn point, so the sliders read
+// as coming OUT of a sewer chute instead of appearing from nowhere. The
+// pipe is set into the slope, tilted to match the ramp, opening downhill.
+function drawSliderChutes(t) {
+  const groups = level.sliders || [];
+  const now = performance.now();
+  for (const g of groups) {
+    const wx = g.spawnX;
+    const sx = wx - camera.x;
+    if (sx < -60 || sx > CANVAS_W + 60) continue;
+    const surfY = surfaceYAt(wx);
+    const sy = surfY - camera.y;
+    // tilt along the ramp under the spawn (if any)
+    const r = rampAt(wx);
+    const ang = r ? Math.atan2(r.y1 - r.y0, r.x1 - r.x0) : 0;
+    // center the mouth just up-slope of the spawn, half-sunk into the floor
+    const cxp = sx + Math.cos(ang) * 10;
+    const cyp = sy + Math.sin(ang) * 10 - 13;
+    ctx.save();
+    ctx.translate(cxp, cyp);
+    ctx.rotate(ang);
+    // brick/stone collar around the pipe
+    ctx.fillStyle = '#3a2c1e';
+    ctx.beginPath(); ctx.ellipse(0, 0, 26, 21, 0, 0, Math.PI * 2); ctx.fill();
+    // corroded metal rim (two-tone)
+    ctx.strokeStyle = '#6b5a44'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.ellipse(0, 0, 20, 16, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#8a7659'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(0, -1, 20, 16, 0, 0, Math.PI * 2); ctx.stroke();
+    // rivets around the rim
+    ctx.fillStyle = '#9a8568';
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
+      ctx.beginPath(); ctx.arc(Math.cos(a) * 20, Math.sin(a) * 16, 1.6, 0, Math.PI * 2); ctx.fill();
+    }
+    // dark interior with depth gradient
+    const hole = ctx.createRadialGradient(-4, -3, 2, 0, 0, 18);
+    hole.addColorStop(0, '#0a0f0c'); hole.addColorStop(0.7, '#0c1410'); hole.addColorStop(1, '#1b2a20');
+    ctx.fillStyle = hole;
+    ctx.beginPath(); ctx.ellipse(0, 0, 16, 12, 0, 0, Math.PI * 2); ctx.fill();
+    // green slime clinging to the lower lip + a slow drip
+    ctx.fillStyle = 'rgba(74,122,82,0.85)';
+    ctx.beginPath(); ctx.ellipse(-2, 11, 12, 4, 0, 0, Math.PI); ctx.fill();
+    const drip = (now / 22) % 26;
+    ctx.fillStyle = 'rgba(120,170,120,0.7)';
+    ctx.beginPath(); ctx.ellipse(-4, 12 + drip, 1.8, 3 + drip * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
 function drawSliders(t) {
   const groups = level.sliders || [];
   const now = performance.now();
@@ -10625,6 +10674,7 @@ function render(t) {
   drawSewerBats(t);
   drawRats();
   drawDivers();
+  drawSliderChutes(t);
   drawSliders(t);
   if (level.mrfreeze) drawMrFreeze(t);
   drawSnowCannons(t);
