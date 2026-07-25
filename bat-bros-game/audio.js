@@ -24,7 +24,7 @@ const BatAudio = (() => {
       masterGain.connect(ctx.destination);
 
       musicGain = ctx.createGain();
-      musicGain.gain.value = 0.25;
+      musicGain.gain.value = 0.4;
       musicGain.connect(masterGain);
 
       sfxGain = ctx.createGain();
