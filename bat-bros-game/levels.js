@@ -1002,7 +1002,9 @@ LEVEL_SPECS.push({
 
   sewerWalls: [
     { x: 42, top: 1, bottom: 8, w: 2 },     // bloquea Piso 1, fuerza bajar
-    { x: 35, top: 13, bottom: 22, w: 2 },   // bloquea Piso 2, fuerza usar escalera derecha
+    // El muro de Piso 2 se sacó: cortaba la ruta ni bien Batman bajaba
+    // por la escalera x=30 (queda del lado izquierdo del muro y no había
+    // forma de pasar). Ahora Piso 2 es transitable de punta a punta.
   ],
 
   ladders: [
@@ -1057,10 +1059,12 @@ LEVEL_SPECS.push({
   coins: [
     // Piso 1 izquierda (antes del muro)
     [5, 7], [10, 7], [15, 7], [20, 7], [25, 7],
-    // Piso 2 izquierda (después de bajar)
-    [33, 24], [38, 24],
-    // Alrededor del pozo en Piso 2
-    [42, 24], [51, 24],
+    // Piso 2 izquierda (después de bajar). Fila 22 = último tile de
+    // aire del corredor, 1 sobre el piso — a la altura del pecho de
+    // Batman. Fila 24 estaba DENTRO del macizo sólido debajo del piso.
+    [33, 22], [38, 22],
+    // Alrededor del pozo en Piso 2 (mismo ajuste)
+    [42, 22], [51, 22],
     // Rampas en Piso 2
     [58, 22], [64, 20], [67, 18], [70, 16],
     // Meseta alta
