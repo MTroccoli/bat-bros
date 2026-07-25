@@ -1708,14 +1708,18 @@ function startGame() {
   ownedGadgets = { batarang: false, batigarra: false };
   postTwoFaceReturn = loadAct2Beaten();
   postFreezeReturn = loadAct3Beaten();
-  // Derive act-beaten flags from the Continue target: if the player's
-  // max level is in Act 3+ or Act 4+, the corresponding return flags
-  // must be true so the Batcomputer shows the right expediente.
+  // Derive act-beaten flags from progress: scan all levels up to the
+  // player's high-water mark for the highest act number. The cave
+  // level sits between acts and its name ('CUEVA') doesn't start with
+  // a digit, so checking only the target level misses it.
   if (startLevelIndex > 0) {
-    const contName = (LEVEL_SPECS[Math.min(startLevelIndex, LEVEL_SPECS.length - 1)] || {}).name || '';
-    const contAct = parseInt(contName, 10) || 0;
-    if (contAct >= 3 && !postTwoFaceReturn) { postTwoFaceReturn = true; try { localStorage.setItem('bitbros:act2beaten', '1'); } catch (e) {} }
-    if (contAct >= 4 && !postFreezeReturn)  { postFreezeReturn = true;  try { localStorage.setItem('bitbros:act3beaten', '1'); } catch (e) {} }
+    let maxAct = 0;
+    for (let i = 0, cap = Math.min(startLevelIndex, LEVEL_SPECS.length - 1); i <= cap; i++) {
+      const a = parseInt((LEVEL_SPECS[i].name || ''), 10);
+      if (a > maxAct) maxAct = a;
+    }
+    if (maxAct >= 3 && !postTwoFaceReturn) { postTwoFaceReturn = true; try { localStorage.setItem('bitbros:act2beaten', '1'); } catch (e) {} }
+    if (maxAct >= 4 && !postFreezeReturn)  { postFreezeReturn = true;  try { localStorage.setItem('bitbros:act3beaten', '1'); } catch (e) {} }
   }
   currentPowerState = 'small';
   currentGadget = startLevelIndex > 0 ? savedGadget : null;
@@ -1970,10 +1974,7 @@ async function submitName() {
     if (cavaIdx >= 0) savedMaxLevel = Math.max(savedMaxLevel, cavaIdx);
     savedGadget = savedGadget || 'batarang';
     try { localStorage.setItem('bitbros:act2beaten', '1'); } catch (e) {}
-    const maxName = (LEVEL_SPECS[Math.min(savedMaxLevel, LEVEL_SPECS.length - 1)] || {}).name || '';
-    if (parseInt(maxName, 10) >= 4) {
-      try { localStorage.setItem('bitbros:act3beaten', '1'); } catch (e) {}
-    }
+    try { localStorage.setItem('bitbros:act3beaten', '1'); } catch (e) {}
   }
   // Restore the full belt state persisted last session (both weapons
   // + armor). If nothing is stored, keep the current defaults — first
