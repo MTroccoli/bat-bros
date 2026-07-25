@@ -5544,6 +5544,35 @@ function drawCaveComputer(cx, plateauScreenY) {
 
   const tx = x + 118;
   ctx.textAlign = 'left';
+  if (postFreezeReturn) {
+    // Post-3-4: the desk file swaps to the Act 4 villain — El
+    // Pingüino — keeping the monitor in sync with the expediente
+    // the Batcomputer opens (GENERAL RULE: the cave desk always
+    // mirrors the boss of the max act reached).
+    ctx.save();
+    ctx.translate(x + 16, y + 16); ctx.scale(0.6, 0.6);
+    drawPenguinPortrait(ctx);
+    ctx.restore();
+    ctx.fillStyle = '#7fd4ff'; ctx.font = 'bold 10px monospace'; ctx.fillText('O. COBBLEPOT', tx, y + 30);
+    ctx.font = '9px monospace';
+    ctx.fillStyle = '#ff5e5e'; ctx.fillText('EL PINGÜINO', tx, y + 46);
+    ctx.fillStyle = '#ffd166'; ctx.fillText('ICEBERG LOUNGE', tx, y + 62);
+    ctx.fillStyle = '#29d985'; ctx.fillText('IR A: CLOACAS', tx, y + 78);
+    ctx.fillStyle = '#a97fd8'; ctx.fillRect(tx, y + 92, 62, 16);
+    ctx.fillStyle = '#0b2438'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('BUSCADO', tx + 31, y + 103);
+    // The Act 3 mystery is solved: the mecenas has a name now.
+    ctx.textAlign = 'left';
+    const nowP = performance.now();
+    const blinkP = Math.floor(nowP / 500) % 2 === 0;
+    ctx.fillStyle = blinkP ? '#c95a3a' : '#7a2f22';
+    ctx.font = 'bold 8px monospace';
+    ctx.fillText('MECENAS: CONFIRMADO', tx, y + 122);
+    ctx.font = '7px monospace';
+    ctx.fillStyle = '#a97fd8';
+    ctx.fillText('paraguas + monóculo', tx, y + 132);
+    return;
+  }
   if (postTwoFaceReturn) {
     // Post-2-4: the desktop switches to the current villain — Mr.
     // Freeze — the visible face of the freeze. A "MECENAS: ?"

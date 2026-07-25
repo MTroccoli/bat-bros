@@ -30,7 +30,8 @@ html, body {
 #hud {
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  gap: 10px;
   background: #111528;
   border: 3px solid #3a4a7a;
   border-bottom: none;
@@ -53,10 +54,12 @@ html, body {
   display: flex;
   gap: 4px;
   align-items: center;
-  margin-left: auto;
-  padding-left: 8px;
 }
 
+/* pointer-events: auto is load-bearing — the landscape layout sets
+   pointer-events: none on the whole #hud (it overlays the canvas),
+   and the property inherits, so without this the audio buttons
+   would silently stop receiving taps on mobile. */
 .audio-btn {
   background: none;
   border: 1px solid #3a4a7a;
@@ -66,6 +69,7 @@ html, body {
   padding: 2px 6px;
   cursor: pointer;
   line-height: 1;
+  pointer-events: auto;
   touch-action: manipulation;
 }
 .audio-btn:active {
