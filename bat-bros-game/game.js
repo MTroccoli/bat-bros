@@ -755,6 +755,97 @@ function updateRats(dt, now) {
   }
 }
 
+// Waddling minions with a lit bomb strapped to the back. Chase
+// Batman on the floor at a slow pace; when the fuse runs out (3s
+// from spawn) they detonate a radial shockwave that kills anything
+// caught — including OTHER bomb-penguins, so a group in a hallway
+// can chain-explode if the player runs past. Stomping or hitting
+// with a batarang defuses them for +score. Smoke-bomb confuses
+// them (like every other Act 4 enemy).
+function updateBombPenguins(dt, now) {
+  const list = level.bombPenguins || [];
+  if (!list.length) return;
+  if (!level._t0) level._t0 = now;
+  const t0 = level._t0;
+  for (const p of list) {
+    if (!p.alive && !p.exploding) continue;
+    // Deferred spawn (used by the Penguin fight, phase 2): stay
+    // invisible until spawnAt ms into the level.
+    if (p.spawnAt && now - t0 < p.spawnAt) continue;
+    if (!p.fuseUntil) p.fuseUntil = now + BOMB_PENGUIN_FUSE_MS;
+
+    // Explosion frame + shockwave contact
+    if (p.exploding) {
+      const age = now - p.explodeStart;
+      if (age > BOMB_PENGUIN_EXPLODE_MS) { p.alive = false; p.exploding = false; continue; }
+      // damage while the blast is visible: hit anything within RADIUS
+      const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+      const pcx = player.x + player.w / 2, pcy = player.y + player.h / 2;
+      const dx = pcx - cx, dy = pcy - cy;
+      if (dx * dx + dy * dy < BOMB_PENGUIN_RADIUS * BOMB_PENGUIN_RADIUS &&
+          Date.now() >= invulnUntil && !(player.frozenUntil > now)) {
+        hurtPlayer();
+        if (state !== 'playing') return;
+      }
+      // Chain: any other bomb-penguin caught in this blast lights early
+      for (const q of list) {
+        if (q === p || !q.alive || q.exploding) continue;
+        const qcx = q.x + q.w / 2, qcy = q.y + q.h / 2;
+        const ddx = qcx - cx, ddy = qcy - cy;
+        if (ddx * ddx + ddy * ddy < BOMB_PENGUIN_RADIUS * BOMB_PENGUIN_RADIUS) {
+          q.fuseUntil = now + 120;   // near-instant chain detonation
+        }
+      }
+      continue;
+    }
+
+    if (p.confused && (p.confusedUntil || 0) < now) p.confused = false;
+    const smokeMul = p.confused ? SMOKE_SPEED_MULT : 1;
+
+    // Face Batman: flip direction toward the player, but respect the
+    // patrol range so they don't chase off a cliff.
+    if (!p.confused) {
+      const wantDir = (player.x + player.w / 2) < (p.x + p.w / 2) ? -1 : 1;
+      p.vx = BOMB_PENGUIN_SPEED * wantDir;
+    }
+    p.x += p.vx * dt * smokeMul;
+    if (p.x < p.minX) { p.x = p.minX; p.vx = Math.abs(p.vx); }
+    if (p.x + p.w > p.maxX) { p.x = p.maxX - p.w; p.vx = -Math.abs(p.vx); }
+    // Follow ramp surface — but only if the penguin's feet are near
+    // this ramp's local surface. Otherwise (e.g. Piso 1 penguin walking
+    // over a column that has a Piso 2 ramp below) leave them alone.
+    const rp = rampAt(p.x + p.w / 2);
+    if (rp) {
+      const rSurf = rampSurfaceY(rp, p.x + p.w / 2);
+      const feetY = p.y + p.h;
+      if (Math.abs(feetY - rSurf) < TILE * 1.5) p.y = rSurf - p.h;
+    }
+
+    // Fuse ran out → detonate
+    if (now >= p.fuseUntil) {
+      p.exploding = true;
+      p.explodeStart = now;
+      BatAudio.sfxShockwave();
+      continue;
+    }
+
+    // Contact interactions
+    if (!aabbOverlap(player, p)) continue;
+    const landing = player.vy > 0 && (player.y + player.h - p.y) < STOMP_TOLERANCE;
+    if (landing) {
+      p.alive = false; p.exploding = false;
+      player.vy = STOMP_BOUNCE;
+      score += 200; hud.score.textContent = score;
+      BatAudio.sfxStomp();
+    } else if (p.confused) {
+      continue;
+    } else if (Date.now() >= invulnUntil && !(player.frozenUntil > now)) {
+      hurtPlayer();
+      if (state !== 'playing') return;
+    }
+  }
+}
+
 // Penguin-divers wait at rest inside a water pit and periodically
 // launch a parabolic arc upward. They damage on contact if hit
 // mid-air except when Batman stomps them from above.
@@ -1182,6 +1273,7 @@ function applySmokeConfusion(cloud, now) {
   if (level.rats) list.push(...level.rats);
   if (level.sewerBats) list.push(...level.sewerBats);
   if (level.divers) list.push(...level.divers);
+  if (level.bombPenguins) list.push(...level.bombPenguins);
   if (level.mrfreeze && level.mrfreeze.birds) list.push(...level.mrfreeze.birds);
   for (const e of list) {
     if (!e.alive) continue;
@@ -1323,6 +1415,17 @@ function updateBatarangs(dt) {
         if (b.x + 8 > sb.x && b.x - 8 < sb.x + sb.w && b.y + 8 > sb.y && b.y - 8 < sb.y + sb.h) {
           sb.alive = false; score += 120; hud.score.textContent = score;
           b.phase = 'back'; BatAudio.sfxBatarangHit(); break;
+        }
+      }
+    }
+    if (b.phase === 'out' && b.type !== 'batigarra') {
+      for (const bp of (level.bombPenguins || [])) {
+        if (!bp.alive || bp.exploding) continue;
+        if (b.x + 8 > bp.x && b.x - 8 < bp.x + bp.w && b.y + 8 > bp.y && b.y - 8 < bp.y + bp.h) {
+          bp.alive = false;
+          score += 200; hud.score.textContent = score;
+          b.phase = 'back'; BatAudio.sfxBatarangHit();
+          break;
         }
       }
     }
@@ -2569,25 +2672,129 @@ function completeLevel() {
 // finishes we route Batman through the Baticueva so Alfred can
 // hand over the smoke pouch and the Batcomputer can swap to the
 // Penguin expediente. Same flow the Two-Face rescue uses.
-const PENGUIN_REVEAL_MS = 5500;
+const PENGUIN_REVEAL_MS = 6500;
 let penguinRevealStart = 0;
 
-// Text-only cutscene overlay — no umbrella / monocle graphics
-// (they were too on-the-nose). Alfred narrates the twist over
-// the melting Freeze arena; a subtle vignette darkens the edges.
+// Post-3-4 cutscene: over the melting Freeze arena, Batman finds
+// the evidence Freeze wasn't the mastermind — a purple umbrella and
+// a monocle at the scene. Alfred narrates. Two visual beats:
+//   0.0–0.30 : vignette darkens, Alfred's first line fades in
+//   0.30–1.0 : evidence card slides in with the umbrella + monocle
+//              under a spotlight; Alfred's second + third lines
+//              land while a blinking "EVIDENCIA" tag pulses purple.
 function drawPenguinRevealOverlay() {
   const now = performance.now();
   const t = Math.min(1, (now - penguinRevealStart) / PENGUIN_REVEAL_MS);
-  // Vignette: darker at the edges, mostly transparent in the middle
-  // so the Freeze arena stays visible behind Alfred's words.
+
+  // Vignette
   const vg = ctx.createRadialGradient(CANVAS_W/2, CANVAS_H/2, 60,
                                        CANVAS_W/2, CANVAS_H/2, 480);
-  vg.addColorStop(0, 'rgba(0,0,0,0.15)');
-  vg.addColorStop(1, `rgba(0,0,0,${0.65 + 0.15 * t})`);
+  vg.addColorStop(0, 'rgba(0,0,0,0.18)');
+  vg.addColorStop(1, `rgba(0,0,0,${0.7 + 0.15 * t})`);
   ctx.fillStyle = vg; ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
 
-  // Alfred voiceover box at the bottom (a bit taller — this is the
-  // only story beat now).
+  // Evidence card slides in from the right after the vignette settles.
+  // easeOut on the slide, holds in place once landed.
+  const cardT = Math.max(0, Math.min(1, (t - 0.30) / 0.25));
+  const cardEase = 1 - Math.pow(1 - cardT, 3);
+  const cardW = 260, cardH = 210;
+  const cardTargetX = (CANVAS_W - cardW) / 2;
+  const cardX = CANVAS_W + 20 - (CANVAS_W + 20 - cardTargetX) * cardEase;
+  const cardY = 40;
+
+  if (cardT > 0) {
+    // Spotlight cone behind the card (soft yellow beam)
+    const beam = ctx.createRadialGradient(cardX + cardW / 2, cardY - 40, 10,
+                                          cardX + cardW / 2, cardY - 40, 260);
+    beam.addColorStop(0, 'rgba(255,220,120,0.25)');
+    beam.addColorStop(1, 'rgba(255,220,120,0)');
+    ctx.fillStyle = beam;
+    ctx.fillRect(cardX - 80, cardY - 60, cardW + 160, cardH + 120);
+
+    // Card body — evidence board with border
+    ctx.fillStyle = 'rgba(14,18,26,0.94)';
+    ctx.fillRect(cardX, cardY, cardW, cardH);
+    ctx.strokeStyle = '#c9c2a8'; ctx.lineWidth = 2;
+    ctx.strokeRect(cardX + 0.5, cardY + 0.5, cardW - 1, cardH - 1);
+    // Header band
+    ctx.fillStyle = '#1a1e2c'; ctx.fillRect(cardX + 2, cardY + 2, cardW - 4, 22);
+    ctx.fillStyle = '#c9c2a8'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
+    ctx.fillText('ESCENA DEL CRIMEN — GCPD', cardX + 10, cardY + 17);
+
+    // Purple umbrella (angled) — canopy + shaft + handle
+    ctx.save();
+    ctx.translate(cardX + 90, cardY + 128);
+    ctx.rotate(-0.35);
+    // shaft
+    ctx.fillStyle = '#1a1520';
+    ctx.fillRect(-2, -60, 4, 100);
+    // ferrule
+    ctx.fillStyle = '#c9b04a';
+    ctx.fillRect(-3, -65, 6, 6);
+    // canopy — purple with gore lines
+    const umbCol = ['#5a2c7a', '#7a3fa2', '#5a2c7a', '#7a3fa2', '#5a2c7a', '#7a3fa2'];
+    for (let i = 0; i < 6; i++) {
+      const a0 = Math.PI + i * Math.PI / 6;
+      const a1 = Math.PI + (i + 1) * Math.PI / 6;
+      ctx.fillStyle = umbCol[i];
+      ctx.beginPath();
+      ctx.moveTo(0, -60);
+      ctx.arc(0, -60, 56, a0, a1);
+      ctx.closePath(); ctx.fill();
+    }
+    // rim + gore edges
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)'; ctx.lineWidth = 1;
+    for (let i = 0; i <= 6; i++) {
+      const a = Math.PI + i * Math.PI / 6;
+      ctx.beginPath();
+      ctx.moveTo(0, -60);
+      ctx.lineTo(Math.cos(a) * 56, -60 + Math.sin(a) * 56);
+      ctx.stroke();
+    }
+    ctx.beginPath(); ctx.arc(0, -60, 56, Math.PI, Math.PI * 2); ctx.stroke();
+    // handle (curved crook)
+    ctx.strokeStyle = '#3a2416'; ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(0, 40);
+    ctx.quadraticCurveTo(0, 56, 12, 56);
+    ctx.stroke();
+    ctx.restore();
+
+    // Monocle: ring + chain + reflection
+    ctx.save();
+    ctx.translate(cardX + 190, cardY + 130);
+    ctx.strokeStyle = '#e6c94a'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.stroke();
+    // glass sheen
+    ctx.fillStyle = 'rgba(180,220,255,0.20)';
+    ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 18, Math.PI * 1.1, Math.PI * 1.55); ctx.stroke();
+    // chain drooping down-right
+    ctx.strokeStyle = '#c9a83f'; ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(20, 4);
+    ctx.quadraticCurveTo(38, 22, 46, 44);
+    ctx.stroke();
+    ctx.fillStyle = '#c9a83f';
+    for (let i = 0; i <= 6; i++) {
+      const p = i / 6;
+      const px = 20 + (46 - 20) * p + Math.sin(p * Math.PI) * 4;
+      const py = 4 + (44 - 4) * p;
+      ctx.beginPath(); ctx.arc(px, py, 1.2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+
+    // Blinking "EVIDENCIA" tag — pulses purple to sell the reveal
+    const pulse = 0.55 + 0.45 * Math.sin(now / 180);
+    ctx.fillStyle = `rgba(170,80,220,${0.85 * pulse})`;
+    ctx.fillRect(cardX + 8, cardY + cardH - 26, cardW - 16, 18);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'center';
+    ctx.fillText('EVIDENCIA — MECENAS DE FREEZE', cardX + cardW / 2, cardY + cardH - 13);
+  }
+
+  // Alfred voiceover box, timed reveal of lines
   const boxY = CANVAS_H - 130;
   ctx.fillStyle = 'rgba(6,10,16,0.9)';
   ctx.fillRect(30, boxY, CANVAS_W - 60, 108);
@@ -2596,10 +2803,13 @@ function drawPenguinRevealOverlay() {
   ctx.fillStyle = '#ffd166'; ctx.font = 'bold 11px monospace'; ctx.textAlign = 'left';
   ctx.fillText('ALFRED', 46, boxY + 22);
   ctx.fillStyle = '#e6f1ff'; ctx.font = '13px monospace';
-  const line = (idx, s) => ctx.fillText(s, 46, boxY + 44 + idx * 18);
-  line(0, 'Amo Bruce... Freeze no actuaba solo. Alguien le pagaba con');
-  line(1, 'promesas y con paraguas. El rastro baja a las cloacas.');
-  line(2, 'Vuelva a la Baticueva — traigo bombas de humo y un expediente.');
+  const line = (idx, s, showAt) => {
+    if (t < showAt) return;
+    ctx.fillText(s, 46, boxY + 44 + idx * 18);
+  };
+  line(0, 'Amo Bruce... Freeze no actuaba solo. Alguien le pagaba con', 0.05);
+  line(1, 'promesas y con paraguas. El rastro baja a las cloacas.', 0.30);
+  line(2, 'Vuelva a la Baticueva — traigo bombas de humo y un expediente.', 0.65);
 
   // Tap-to-skip hint
   const blink = Math.floor(now / 400) % 2 === 0;
@@ -3489,6 +3699,8 @@ function updatePlaying(dt) {
   updateCranes(dt, now);
   updateSnowCannons(dt, now);
   updateRats(dt, now);
+  updateBombPenguins(dt, now);
+  if (state !== 'playing') return;
   updateDivers(dt, now);
   if (state !== 'playing') return;
   updateBombWaves(dt, now);
@@ -8886,6 +9098,149 @@ function drawConfusedMarker(e) {
 // two big round ears, buck teeth, pink whiskers and a long naked
 // pink tail curling behind. Body bobs while scurrying, tail
 // swishes on its own beat.
+function drawBombPenguins(t) {
+  const list = level.bombPenguins || [];
+  const now = performance.now();
+  const t0 = level._t0 || now;
+  for (const p of list) {
+    if (!p.alive && !p.exploding) continue;
+    if (p.spawnAt && now - t0 < p.spawnAt) continue;
+    const px = p.x - camera.x, py = p.y - camera.y;
+    if (px < -60 || px > CANVAS_W + 60) continue;
+
+    // EXPLOSION frame: bright radial burst with expanding ring
+    if (p.exploding) {
+      const age = (now - p.explodeStart) / BOMB_PENGUIN_EXPLODE_MS;
+      const cx = px + p.w / 2, cy = py + p.h / 2;
+      const R = BOMB_PENGUIN_RADIUS * (0.4 + 0.9 * age);
+      const g = ctx.createRadialGradient(cx, cy, 4, cx, cy, R);
+      g.addColorStop(0, `rgba(255,240,200,${0.9 * (1 - age)})`);
+      g.addColorStop(0.35, `rgba(255,170,90,${0.75 * (1 - age)})`);
+      g.addColorStop(0.75, `rgba(210,90,50,${0.5 * (1 - age)})`);
+      g.addColorStop(1, 'rgba(60,20,10,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+      // ring
+      ctx.strokeStyle = `rgba(255,220,150,${0.9 * (1 - age)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, cy, R * 0.9, 0, Math.PI * 2); ctx.stroke();
+      // debris flecks
+      ctx.fillStyle = `rgba(30,25,20,${0.9 * (1 - age)})`;
+      for (let i = 0; i < 8; i++) {
+        const ang = i / 8 * Math.PI * 2;
+        const rr = R * (0.5 + 0.4 * hash01(i * 3.1));
+        ctx.fillRect(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr, 2, 2);
+      }
+      continue;
+    }
+
+    const face = p.vx < 0 ? -1 : 1;
+    // waddle: side-to-side sway synced to slow walk speed
+    const waddle = Math.sin(now / 140 + p.x * 0.02) * 3;
+    const W = p.w, H = p.h;
+    ctx.save();
+    ctx.translate(px + W / 2, py + H);
+    ctx.rotate(waddle * 0.02);
+    ctx.scale(face, 1);
+
+    // feet — small orange triangles that alternate
+    ctx.fillStyle = '#e88a2c';
+    const stepA = Math.sin(now / 130 + p.x * 0.03);
+    const stepB = -stepA;
+    ctx.fillRect(-W * 0.28, -1 + Math.max(0, stepA) * -1, 5, 3);
+    ctx.fillRect(W * 0.10, -1 + Math.max(0, stepB) * -1, 5, 3);
+
+    // Body: black pear shape (wider at bottom)
+    ctx.fillStyle = '#0d0d12';
+    ctx.beginPath();
+    ctx.ellipse(0, -H * 0.5, W * 0.48, H * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // White belly triangle-ish oval
+    ctx.fillStyle = '#f2f2f5';
+    ctx.beginPath();
+    ctx.ellipse(0, -H * 0.44, W * 0.30, H * 0.36, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head: small round black on top
+    ctx.fillStyle = '#0d0d12';
+    ctx.beginPath();
+    ctx.arc(0, -H * 0.86, W * 0.32, 0, Math.PI * 2); ctx.fill();
+    // little face
+    ctx.fillStyle = '#f2f2f5';
+    ctx.beginPath(); ctx.arc(W * 0.12, -H * 0.92, 1.4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(W * 0.02, -H * 0.92, 1.4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.arc(W * 0.13, -H * 0.92, 0.7, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(W * 0.03, -H * 0.92, 0.7, 0, Math.PI * 2); ctx.fill();
+    // orange beak
+    ctx.fillStyle = '#f4a83a';
+    ctx.beginPath();
+    ctx.moveTo(W * 0.20, -H * 0.86);
+    ctx.lineTo(W * 0.36, -H * 0.82);
+    ctx.lineTo(W * 0.20, -H * 0.78);
+    ctx.closePath(); ctx.fill();
+
+    // Tiny wing/flipper
+    ctx.fillStyle = '#0a0a0f';
+    ctx.beginPath();
+    ctx.ellipse(-W * 0.34, -H * 0.5, 3, H * 0.3, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Bomb strapped to the back — round black sphere behind the body
+    ctx.fillStyle = '#1a1a20';
+    ctx.beginPath();
+    ctx.arc(-W * 0.38, -H * 0.42, W * 0.34, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#3a3a44'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(-W * 0.38, -H * 0.42, W * 0.34, 0, Math.PI * 2); ctx.stroke();
+    // strap
+    ctx.strokeStyle = '#5a3a1e'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-W * 0.15, -H * 0.75);
+    ctx.quadraticCurveTo(-W * 0.45, -H * 0.6, -W * 0.15, -H * 0.2);
+    ctx.stroke();
+    // Fuse: bent line up out of the bomb, ending in a sparkling burst
+    // whose radius pulses faster as the fuse nears its end.
+    const fuseLeft = Math.max(0, (p.fuseUntil - now) / BOMB_PENGUIN_FUSE_MS);
+    const panic = 1 - fuseLeft;
+    const fuseWobble = Math.sin(now / (60 - panic * 40) + p.x) * 2;
+    const fx0 = -W * 0.38, fy0 = -H * 0.76;
+    const fx1 = -W * 0.55 + fuseWobble, fy1 = -H * 1.15;
+    ctx.strokeStyle = '#e0d4a8'; ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(fx0, fy0);
+    ctx.quadraticCurveTo((fx0 + fx1) / 2 - 3, (fy0 + fy1) / 2, fx1, fy1);
+    ctx.stroke();
+    // Spark at the tip — brighter/wider as fuse runs out
+    const sparkR = 2 + Math.sin(now / (60 - panic * 45)) * (1.6 + panic * 3);
+    const sg = ctx.createRadialGradient(fx1, fy1, 0.3, fx1, fy1, sparkR + 3);
+    sg.addColorStop(0, '#fff5a0');
+    sg.addColorStop(0.4, `rgba(255,200,90,${0.8})`);
+    sg.addColorStop(1, 'rgba(255,120,40,0)');
+    ctx.fillStyle = sg;
+    ctx.beginPath(); ctx.arc(fx1, fy1, sparkR + 3, 0, Math.PI * 2); ctx.fill();
+    // tiny particles jumping off
+    ctx.fillStyle = `rgba(255,220,100,${0.7 + panic * 0.3})`;
+    for (let i = 0; i < 3; i++) {
+      const ang = (now / 50 + i * 2.1) % (Math.PI * 2);
+      const dr = sparkR + 1 + Math.sin(now / 40 + i) * 1.5;
+      ctx.fillRect(fx1 + Math.cos(ang) * dr, fy1 + Math.sin(ang) * dr, 1, 1);
+    }
+
+    // Confused smoke — like the rest of Act 4
+    if (p.confused) {
+      ctx.fillStyle = 'rgba(180,180,190,0.55)';
+      for (let i = 0; i < 4; i++) {
+        const ax = Math.cos(now / 200 + i) * 8;
+        const ay = -H * 1.3 + Math.sin(now / 240 + i) * 4;
+        ctx.beginPath(); ctx.arc(ax, ay, 3, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+}
+
 function drawRats() {
   const list = level.rats || [];
   for (const r of list) {
@@ -10979,6 +11334,7 @@ function render(t) {
   drawDivers();
   drawSliderChutes(t);
   drawSliders(t);
+  drawBombPenguins(t);
   drawBombWaves(t);
   drawSteamVents(t);
   if (level.mrfreeze) drawMrFreeze(t);

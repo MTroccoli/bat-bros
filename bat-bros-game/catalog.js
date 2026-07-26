@@ -62,6 +62,11 @@ const SLIDE_INPUT_MUL = 0.32; // horizontal input is heavily damped
 const SLIDE_MAX_SPEED = 7.2;  // faster than the normal 3.9 cap — out of control
 const SLIDER_SPEED = 1.15;    // base downhill speed of a sliding penguin (slow)
 const SLIDER_ACCEL = 0.012;   // gentle acceleration so they stay dodgeable
+// --- Act 4: bomb-penguins (waddling minions with a lit bomb) ---
+const BOMB_PENGUIN_SPEED = 1.4;         // px/frame — a hair faster than a rat
+const BOMB_PENGUIN_FUSE_MS = 3000;      // spawn → boom
+const BOMB_PENGUIN_EXPLODE_MS = 260;    // visible blast frame
+const BOMB_PENGUIN_RADIUS = 44;         // px shockwave — kills anything caught
 const BAT_SCORE = 2000;
 
 // --- Progression ---
@@ -197,7 +202,7 @@ function buildLevel(spec) {
           sewerBats = [],
           pipes = [], ceilingRow = null, drips = [], drains = [], grates = [],
           puddles = [],
-          ramps = [], sliders = [], sewerFloors = null, sewerWalls = [],
+          ramps = [], sliders = [], bombPenguins = [], sewerFloors = null, sewerWalls = [],
           sewerPit = null, sewerPits = [], steamVents = [], waterCanals = [],
           spawn, name, indoor = false, dock = false, frozen = false, sewer = false,
           bane = null, cave = null, twoface = null, mrfreeze = null } = spec;
@@ -403,6 +408,21 @@ function buildLevel(spec) {
       interval: s.interval ?? 2200,
       nextAt: 0, list: [],
       minX: (s.minX ?? 0) * TILE, maxX: (s.maxX ?? width) * TILE,
+    })),
+    // Bomb-penguins: waddling minions with a lit bomb strapped to the
+    // back. Walk toward Batman, explode on the fuse timer with a
+    // radial shockwave. Stomp or batarang defuses them.
+    bombPenguins: bombPenguins.map(b => ({
+      x: b.x * TILE, y: b.y * TILE - 22,
+      w: 16, h: 22,
+      vx: BOMB_PENGUIN_SPEED * (b.dir ?? -1),
+      minX: (b.range?.[0] ?? Math.max(0, b.x - 12)) * TILE,
+      maxX: (b.range?.[1] ?? Math.min(width, b.x + 12)) * TILE,
+      alive: true,
+      spawnAt: b.spawnAt || 0,      // ms into the level to appear (0 = immediately)
+      fuseUntil: 0,                  // set when the penguin becomes active
+      exploding: false, explodeStart: 0,
+      confused: false, confusedUntil: 0,
     })),
     pits,
     ladders: ladders.map(l => ({ x: l.x * TILE, top: l.topRow * TILE, bottom: l.baseRow * TILE })),

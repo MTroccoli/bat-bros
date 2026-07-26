@@ -1104,6 +1104,16 @@ LEVEL_SPECS.push({
 
   divers: [],
   birds: [],
+  // Pingüinos-bomba en Piso 1 y 2: minions del Pingüino avisando de qué
+  // se trata Act 4. Chicos (16×22), waddling, mecha de 3s. Se rompen con
+  // stomp o batarang. Los tres arrancan alejados del spawn: dos en Piso 1
+  // del lado derecho (después de la escalera de subida) y uno en Piso 2
+  // cruzando la meseta.
+  bombPenguins: [
+    { x: 60, y: 9, range: [55, 76], dir: -1 },      // Piso 1 derecha
+    { x: 74, y: 9, range: [70, 85], dir: -1 },      // Piso 1 más a la derecha
+    { x: 80, y: 15, range: [74, 88], dir: -1 },     // Meseta arriba
+  ],
   bats: [[38, 22]],                          // checkpoint en Piso 2 antes del pozo
 
   spawn: { x: 2, y: 7 },
