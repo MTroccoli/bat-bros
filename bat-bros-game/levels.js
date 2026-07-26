@@ -1010,7 +1010,12 @@ LEVEL_SPECS.push({
   ladders: [
     { x: 30, topRow: 9, baseRow: 25 },      // baja de Piso 1 a Piso 2
     { x: 55, topRow: 9, baseRow: 25 },      // sube de Piso 2 a Piso 1
-    { x: 80, topRow: 9, baseRow: 25 },      // salida: vuelve a Piso 1
+    // Salida: conecta MESETA (row 15) ↔ Piso 1 solamente. Antes iba hasta
+    // row 25, pero el macizo de la meseta (ramp x=74 w=16) rellena las
+    // filas 16-22 en x=80 → tapaba la mitad de abajo del shaft (parecía
+    // "escalera hacia la nada / piso falso") y dejaba un canal angosto
+    // arriba que se sentía como "techo invisible" al saltar.
+    { x: 80, topRow: 9, baseRow: 15 },      // salida: sube de meseta a Piso 1
   ],
 
   // Rampas en Piso 2 (derecha del muro). Conectan con el suelo del
