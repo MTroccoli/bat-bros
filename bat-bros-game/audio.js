@@ -1093,12 +1093,13 @@ const BatAudio = (() => {
   }
 
   // Music type for a given level
-  function musicForLevel(levelName, isCave, isChase, hasBane, hasTwoface, hasMrfreeze) {
+  function musicForLevel(levelName, isCave, isChase, hasBane, hasTwoface, hasMrfreeze, hasPenguin) {
     if (isCave) return 'cave';
     if (isChase) return 'chase';
     if (hasBane) return null; // boss music triggered separately
     if (hasTwoface) return null;
     if (hasMrfreeze) return null;
+    if (hasPenguin) return null;
     if (!levelName) return 'act1';
     if (levelName.startsWith('4-')) return 'act4';
     if (levelName.startsWith('3-')) return 'act3';

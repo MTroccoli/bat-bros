@@ -67,6 +67,20 @@ const BOMB_PENGUIN_SPEED = 1.4;         // px/frame — a hair faster than a rat
 const BOMB_PENGUIN_FUSE_MS = 3000;      // spawn → boom
 const BOMB_PENGUIN_EXPLODE_MS = 260;    // visible blast frame
 const BOMB_PENGUIN_RADIUS = 44;         // px shockwave — kills anything caught
+// --- Act 4 boss: El Pingüino (Iceberg Lounge, 3 phases) ---
+const PENGUIN_MAX_HP = 5;
+const PENGUIN_W = 32; const PENGUIN_H = 46;
+const PENGUIN_SPEED_P1 = 0.75;          // waddle speed on phase 1 (~half Bane)
+const PENGUIN_SPEED_P2 = 1.7;           // helicopter glide speed
+const PENGUIN_SPIN_SPEED = 4.5;         // umbrella-blade spin
+const PENGUIN_SHOT_INTERVAL_MS = 1800;  // phase 1 spread shot cadence
+const PENGUIN_BOMB_INTERVAL_MS = 4000;  // phase 1 bomb-egg cadence
+const PENGUIN_MINION_INTERVAL_MS = 2500;// phase 2 drops a bomb-penguin
+const PENGUIN_P2_RELOAD_MS = 6000;      // phase 2 lands to reload every N ms
+const PENGUIN_P2_RELOAD_DURATION = 1000;// window Batman can dive-stomp
+const PENGUIN_SPIN_MS = 3000;           // phase 3 spin duration
+const PENGUIN_STAGGER_MS = 1000;        // phase 3 dizzy window (only kill hit)
+const PENGUIN_HIT_FLASH_MS = 900;
 const BAT_SCORE = 2000;
 
 // --- Progression ---
@@ -205,7 +219,7 @@ function buildLevel(spec) {
           ramps = [], sliders = [], bombPenguins = [], sewerFloors = null, sewerWalls = [],
           sewerPit = null, sewerPits = [], steamVents = [], waterCanals = [],
           spawn, name, indoor = false, dock = false, frozen = false, sewer = false,
-          bane = null, cave = null, twoface = null, mrfreeze = null } = spec;
+          bane = null, cave = null, twoface = null, mrfreeze = null, penguin = null } = spec;
 
   const solid = Array.from({ length: height }, () => new Array(width).fill(false));
 
@@ -441,6 +455,32 @@ function buildLevel(spec) {
       walkPhase: 0, nextTurnAt: 0,
       growStart: 0, teleStart: 0, waveAt: 0, hitUntil: 0, deadAt: 0,
       minX: 3 * TILE, maxX: (width - 4) * TILE,
+    } : null,
+    // El Pingüino boss (Act 4, Iceberg Lounge). One entity, 3 phases,
+    // 5 HP total. Phase 1 (HP 5-4): waddles, umbrella spread + bomb
+    // eggs. Phase 2 (HP 3-2): helicopter umbrella at ceiling height,
+    // drops bomb-penguin minions, dives to reload periodically.
+    // Phase 3 (HP 1): bladed umbrella spin, then stagger window.
+    penguin: penguin ? {
+      x: penguin.x * TILE, homeX: penguin.x * TILE,
+      y: groundY * TILE - PENGUIN_H,
+      w: PENGUIN_W, h: PENGUIN_H,
+      hp: PENGUIN_MAX_HP, maxHp: PENGUIN_MAX_HP,
+      state: 'idle',       // idle | waddle | flyto | glide | reload | spin | stagger | dying | dead
+      vx: PENGUIN_SPEED_P1, vy: 0,
+      facing: -1,
+      walkPhase: 0,
+      alive: true,
+      hitUntil: 0, deadAt: 0,
+      nextShotAt: 0, nextBombAt: 0, nextMinionAt: 0,
+      phaseSwitchAt: 0,
+      spinEnds: 0, staggerEnds: 0, reloadEnds: 0, glideTargetY: 0,
+      minX: 3 * TILE, maxX: (width - 4) * TILE,
+      floorY: groundY * TILE - PENGUIN_H,
+      ceilingY: 3 * TILE,   // top of arena Pingüino hovers around in P2
+      // Live projectiles + minions the boss spawns:
+      shots: [],            // umbrella spread bullets
+      bombs: [],             // arcing bomb-eggs
     } : null,
     waves: [],
     coins: builtCoins,

@@ -1119,4 +1119,41 @@ LEVEL_SPECS.push({
   spawn: { x: 2, y: 7 },
 });
 
+// ==============================================================
+// 4-4 — EL PINGÜINO en el ICEBERG LOUNGE.
+// Salón de gala del club: piso de damero, dos plataformas
+// laterales (palcos) y columnas espejadas. Cobblepot te espera
+// sentado en el trono; al pisar la arena arranca la fase 1 y ya
+// no podés retirarte. Tres fases (5 HP total). Batman/Robin
+// pueden alternarse — a Robin le sirve el doble salto para
+// esquivar la fase 2 desde los palcos, a Batman le sirve el
+// batarang para desarmar el paraguas-helicóptero.
+// ==============================================================
+LEVEL_SPECS.push({
+  name: '4-4',
+  indoor: true,
+  width: 34, height: 15, groundY: 13,
+  pits: [],
+  walls: [],
+  // Dos palcos elevados a los costados que hacen de plataforma alta:
+  // desde ahí Robin puede planear con doble salto sobre el Pingüino
+  // en fase 2, y a Batman le dan cobertura de los balines de fase 1.
+  platforms: [
+    { x: 2,  y: 9, w: 4 },
+    { x: 28, y: 9, w: 4 },
+  ],
+  swingPoints: [
+    // Un solo gancho central sobre el trono — te lleva de un palco
+    // al otro cruzando por arriba del jefe (útil en fase 3 para
+    // esquivar el paraguas-cuchilla girando).
+    [17, 4],
+  ],
+  coins: [],
+  thugs: [],
+  birds: [],
+  bats: [],
+  penguin: { x: 17 },
+  spawn: { x: 2, y: 11 },
+});
+
 const BOSS_LEVEL_INDEX = LEVEL_SPECS.findIndex(s => s.bane);

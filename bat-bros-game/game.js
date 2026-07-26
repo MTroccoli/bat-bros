@@ -1429,6 +1429,19 @@ function updateBatarangs(dt) {
         }
       }
     }
+    // Batarang vs El Pingüino: only lands damage during phase 2 (glide)
+    // per spec — you either dive-stomp him on the ground or ping him
+    // in the air.
+    if (b.phase === 'out' && b.type !== 'batigarra' && level.penguin) {
+      const pg = level.penguin;
+      if (pg.alive && (pg.state === 'glide' || pg.state === 'flyto') &&
+          Date.now() >= pg.hitUntil &&
+          b.x + 8 > pg.x && b.x - 8 < pg.x + pg.w &&
+          b.y + 8 > pg.y && b.y - 8 < pg.y + pg.h) {
+        damagePenguin(performance.now(), pg);
+        b.phase = 'back'; BatAudio.sfxBatarangHit();
+      }
+    }
     const v = level.villain;
     if (b.type !== 'batigarra' && v && v.alive && Date.now() >= v.hitUntil &&
         b.x + 8 > v.x && b.x - 8 < v.x + v.w && b.y + 8 > v.y && b.y - 8 < v.y + v.h) {
@@ -1798,7 +1811,7 @@ function loadLevel(idx) {
   const spec = LEVEL_SPECS[idx];
   const mtype = BatAudio.musicForLevel(
     spec?.name, spec?.cave, spec?.chase,
-    spec?.bane, spec?.twoface, spec?.mrfreeze
+    spec?.bane, spec?.twoface, spec?.mrfreeze, spec?.penguin
   );
   if (mtype) BatAudio.startMusic(mtype);
 }
@@ -1855,7 +1868,7 @@ function startGame() {
   overlay.classList.add('hidden');
   BatAudio.ensureReady();
   const spec = LEVEL_SPECS[startLevelIndex || 0];
-  const mtype = BatAudio.musicForLevel(spec?.name, spec?.cave, spec?.chase, spec?.bane, spec?.twoface, spec?.mrfreeze);
+  const mtype = BatAudio.musicForLevel(spec?.name, spec?.cave, spec?.chase, spec?.bane, spec?.twoface, spec?.mrfreeze, spec?.penguin);
   if (mtype) BatAudio.startMusic(mtype);
 }
 
@@ -2584,7 +2597,8 @@ function hurtPlayer() {
   // bypass this branch.
   const tfEngaged = level.twoface && level.twoface.alive && level.twoface.state !== 'idle';
   const baneEngaged = level.bane && level.bane.alive && level.bane.state !== 'idle';
-  if (tfEngaged || baneEngaged) {
+  const pgEngaged = level.penguin && level.penguin.alive && level.penguin.state !== 'idle';
+  if (tfEngaged || baneEngaged || pgEngaged) {
     lives--;
     hud.lives.textContent = Math.max(lives, 0);
     BatAudio.sfxHurt();
@@ -2602,7 +2616,9 @@ function hurtPlayer() {
     if (armored && player.powerState === 'small') setPowerState('big');
     // small knockback away from the boss so Batman doesn't immediately
     // eat a second hit standing inside the enemy
-    const boss = level.twoface?.alive ? level.twoface : level.bane;
+    const boss = level.twoface?.alive ? level.twoface
+              : level.bane?.alive ? level.bane
+              : level.penguin;
     if (boss) {
       const bossCx = boss.x + boss.w / 2;
       const dir = (player.x + player.w / 2) < bossCx ? -1 : 1;
@@ -3363,6 +3379,270 @@ function hitFreezeButton(mf, i, now, viaDive) {
   return true;
 }
 
+// ---------------------------------------------------------------
+// El Pingüino boss (Act 4, level 4-4) — Iceberg Lounge.
+// One entity with 5 HP and three phases. Phase transitions are
+// driven off `hp`: 5-4 = P1 waddler, 3-2 = P2 helicopter, 1 = P3
+// bladed spin. Each phase has its own attack cadence and damage
+// rule (see per-branch comments below).
+// ---------------------------------------------------------------
+function updatePenguinBoss(dt, now) {
+  const p = level.penguin;
+  if (!p) return;
+
+  // Death sequence — brief melt-away then complete level.
+  if (p.state === 'dying') {
+    if (now - p.deadAt > 1500) {
+      p.alive = false; p.state = 'dead';
+      BatAudio.sfxBossDefeat();
+      completeLevel();
+    }
+    return;
+  }
+  if (!p.alive) return;
+
+  // Kick off phase 1 on first player contact — the boss is idle on
+  // the throne until Batman crosses mid-arena.
+  if (p.state === 'idle') {
+    if ((player.x + player.w / 2) > 6 * TILE) {
+      p.state = 'waddle';
+      p.nextShotAt = now + 900;
+      p.nextBombAt = now + 2600;
+      p.vx = PENGUIN_SPEED_P1 * -1;
+      p.facing = -1;
+      BatAudio.startMusic('boss-penguin');
+    } else {
+      return;
+    }
+  }
+
+  // Auto-select phase from current HP (only when in a stable state).
+  const stable = p.state === 'waddle' || p.state === 'glide' || p.state === 'flyto' || p.state === 'reload';
+  if (stable) {
+    if (p.hp <= 1 && p.state !== 'spin' && p.state !== 'stagger') {
+      // Enter phase 3 — bladed spin
+      p.state = 'spin';
+      p.spinEnds = now + PENGUIN_SPIN_MS;
+      p.vx = PENGUIN_SPIN_SPEED * (Math.random() < 0.5 ? -1 : 1);
+      p.y = p.floorY;
+      return;
+    }
+    if (p.hp <= 3 && p.hp > 1 && p.state === 'waddle') {
+      // Enter phase 2 — take off toward the ceiling
+      p.state = 'flyto';
+      p.glideTargetY = p.ceilingY + TILE * 0.5;
+      p.nextMinionAt = now + 1400;
+      p.reloadEnds = now + PENGUIN_P2_RELOAD_MS;
+      return;
+    }
+    if (p.hp > 3 && p.state !== 'waddle') {
+      // Fell back into P1 range (shouldn't normally happen)
+      p.state = 'waddle';
+    }
+  }
+
+  // Face Batman on the ground states
+  if (p.state === 'waddle' || p.state === 'reload') {
+    p.facing = (player.x + player.w / 2) < (p.x + p.w / 2) ? -1 : 1;
+  }
+
+  // --- PHASE 1: waddle + spread shots + arced bomb-eggs ---
+  if (p.state === 'waddle') {
+    p.vx = PENGUIN_SPEED_P1 * p.facing;
+    p.x += p.vx * dt;
+    if (p.x < p.minX) { p.x = p.minX; }
+    if (p.x + p.w > p.maxX) { p.x = p.maxX - p.w; }
+    p.walkPhase += Math.abs(p.vx) * 0.08 * dt;
+    p.y = p.floorY;
+
+    if (now >= p.nextShotAt) {
+      // 3-shot spread from the umbrella, slight fan angle
+      const cx = p.x + (p.facing > 0 ? p.w : 0);
+      const cy = p.y + p.h * 0.4;
+      const dir = p.facing;
+      for (let k = -1; k <= 1; k++) {
+        p.shots.push({
+          x: cx, y: cy,
+          vx: 6.2 * dir, vy: k * 1.4,
+          w: 8, h: 6, alive: true, spawnedAt: now,
+        });
+      }
+      p.nextShotAt = now + PENGUIN_SHOT_INTERVAL_MS;
+    }
+    if (now >= p.nextBombAt) {
+      // Bomb-egg lobbed toward Batman
+      const target = player.x + player.w / 2;
+      const cx = p.x + p.w / 2;
+      const dx = target - cx;
+      const dir = Math.sign(dx) || 1;
+      p.bombs.push({
+        x: cx, y: p.y + p.h * 0.2,
+        vx: 3.5 * dir, vy: -8.5,
+        w: 12, h: 12, alive: true, spawnedAt: now,
+      });
+      p.nextBombAt = now + PENGUIN_BOMB_INTERVAL_MS;
+    }
+  }
+
+  // --- PHASE 2: helicopter — glide near the ceiling, drop minions ---
+  if (p.state === 'flyto') {
+    // rise linearly
+    const dy = p.glideTargetY - p.y;
+    if (Math.abs(dy) < 4) { p.state = 'glide'; p.y = p.glideTargetY; p.vx = PENGUIN_SPEED_P2; }
+    else p.y += Math.sign(dy) * 3 * dt;
+  } else if (p.state === 'glide') {
+    p.x += p.vx * dt;
+    if (p.x < p.minX) { p.x = p.minX; p.vx = Math.abs(p.vx); }
+    if (p.x + p.w > p.maxX) { p.x = p.maxX - p.w; p.vx = -Math.abs(p.vx); }
+    // hover bob
+    p.y = p.glideTargetY + Math.sin(now / 260) * 6;
+
+    if (now >= p.nextMinionAt) {
+      // drop a bomb-penguin minion straight down
+      const spawnX = Math.round((p.x + p.w / 2) / TILE);
+      if (!level.bombPenguins) level.bombPenguins = [];
+      level.bombPenguins.push({
+        x: p.x + p.w / 2 - 8, y: p.y + p.h,
+        w: 16, h: 22, vx: -BOMB_PENGUIN_SPEED, alive: true,
+        minX: (spawnX - 6) * TILE, maxX: (spawnX + 6) * TILE,
+        fuseUntil: now + BOMB_PENGUIN_FUSE_MS,
+        exploding: false, explodeStart: 0,
+        spawnAt: 0, confused: false, confusedUntil: 0,
+      });
+      p.nextMinionAt = now + PENGUIN_MINION_INTERVAL_MS;
+    }
+    // Descend to reload every N seconds — this is the vulnerable window
+    if (now >= p.reloadEnds) {
+      p.state = 'reload';
+      p.glideTargetY = p.floorY;
+      p.staggerEnds = now + PENGUIN_P2_RELOAD_DURATION;
+    }
+  } else if (p.state === 'reload') {
+    // Descend to the ground, hold briefly, then take off again.
+    const dy = p.floorY - p.y;
+    if (Math.abs(dy) > 4) { p.y += Math.sign(dy) * 4 * dt; }
+    else { p.y = p.floorY; }
+    if (now >= p.staggerEnds) {
+      p.state = 'flyto';
+      p.glideTargetY = p.ceilingY + TILE * 0.5;
+      p.reloadEnds = now + PENGUIN_P2_RELOAD_MS;
+    }
+  }
+
+  // --- PHASE 3: bladed umbrella spin + stagger ---
+  if (p.state === 'spin') {
+    p.x += p.vx * dt;
+    if (p.x < p.minX) { p.x = p.minX; p.vx = Math.abs(p.vx); }
+    if (p.x + p.w > p.maxX) { p.x = p.maxX - p.w; p.vx = -Math.abs(p.vx); }
+    p.y = p.floorY;
+    if (now >= p.spinEnds) {
+      p.state = 'stagger';
+      p.staggerEnds = now + PENGUIN_STAGGER_MS;
+      p.vx = 0;
+    }
+  } else if (p.state === 'stagger') {
+    p.vx = 0;
+    if (now >= p.staggerEnds) {
+      // Repeat: back into spin
+      p.state = 'spin';
+      p.spinEnds = now + PENGUIN_SPIN_MS;
+      p.vx = PENGUIN_SPIN_SPEED * (Math.random() < 0.5 ? -1 : 1);
+    }
+  }
+
+  updatePenguinProjectiles(dt, now, p);
+  handlePenguinContact(now, p);
+}
+
+// Umbrella spread + bomb-eggs update. Shots die after ~700ms flight
+// or on player hit. Bomb-eggs arc + explode into a floor shockwave
+// on landing (radius 40 px).
+function updatePenguinProjectiles(dt, now, p) {
+  for (const s of p.shots) {
+    if (!s.alive) continue;
+    s.x += s.vx * dt;
+    s.y += s.vy * dt;
+    // ~700ms lifetime is roughly 4-5 tiles of reach
+    if (now - s.spawnedAt > 700) { s.alive = false; continue; }
+    if (Date.now() >= invulnUntil && !(player.frozenUntil > now) &&
+        s.x + s.w > player.x && s.x < player.x + player.w &&
+        s.y + s.h > player.y && s.y < player.y + player.h) {
+      s.alive = false;
+      hurtPlayer();
+      if (state !== 'playing') return;
+    }
+  }
+  p.shots = p.shots.filter(s => s.alive);
+  for (const b of p.bombs) {
+    if (!b.alive) continue;
+    b.vy += GRAVITY * dt * 0.9;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    // ground contact → explode
+    if (b.y + b.h >= p.floorY + p.h) {
+      b.alive = false;
+      // 40px radial shockwave at landing spot
+      const cx = b.x + b.w / 2, cy = p.floorY + p.h - 4;
+      const pcx = player.x + player.w / 2, pcy = player.y + player.h / 2;
+      const dx = pcx - cx, dy = pcy - cy;
+      if (dx * dx + dy * dy < 40 * 40 && Date.now() >= invulnUntil &&
+          !(player.frozenUntil > now)) {
+        hurtPlayer();
+        if (state !== 'playing') return;
+      }
+      BatAudio.sfxShockwave();
+      continue;
+    }
+    if (Date.now() >= invulnUntil && !(player.frozenUntil > now) &&
+        b.x + b.w > player.x && b.x < player.x + player.w &&
+        b.y + b.h > player.y && b.y < player.y + player.h) {
+      hurtPlayer();
+      if (state !== 'playing') return;
+    }
+  }
+  p.bombs = p.bombs.filter(b => b.alive);
+}
+
+// Body contact damage/damage-taken by phase:
+//   P1 (waddle): dive-stomp from above damages Pingüino.
+//   P2 (glide) : batarang mid-air damages; contact hurts Batman.
+//                Dive-stomp during a `reload` state also damages.
+//   P3 (spin)  : spin is invulnerable, contact hurts; stagger window
+//                takes a dive-stomp for the kill hit.
+function handlePenguinContact(now, p) {
+  if (!aabbOverlap(player, p)) return;
+  const above = player.vy > 0 && (player.y + player.h - p.y) < STOMP_TOLERANCE + 4;
+  if (p.state === 'spin') {
+    // spin is invulnerable AND painful on any contact
+    if (Date.now() >= invulnUntil && !(player.frozenUntil > now)) {
+      hurtPlayer();
+    }
+    return;
+  }
+  if (above && (p.state === 'waddle' || p.state === 'reload' || p.state === 'stagger')) {
+    damagePenguin(now, p);
+    player.vy = STOMP_BOUNCE;
+    return;
+  }
+  // Any other contact: Batman gets hit
+  if (Date.now() >= invulnUntil && !(player.frozenUntil > now)) {
+    hurtPlayer();
+  }
+}
+
+function damagePenguin(now, p) {
+  if (now < p.hitUntil) return;
+  p.hp -= 1;
+  p.hitUntil = now + PENGUIN_HIT_FLASH_MS;
+  score += 500; hud.score.textContent = score;
+  BatAudio.sfxBossHit();
+  if (p.hp <= 0) {
+    p.state = 'dying';
+    p.deadAt = now;
+    p.vx = 0;
+  }
+}
+
 function updateMrFreeze(dt, now) {
   const mf = level.mrfreeze;
 
@@ -3948,6 +4228,12 @@ function updatePlaying(dt) {
   // Mr. Freeze boss fight (cryo-reactor)
   if (level.mrfreeze) {
     updateMrFreeze(dt, now);
+    if (state !== 'playing') return;
+  }
+
+  // El Pingüino boss fight (Iceberg Lounge)
+  if (level.penguin) {
+    updatePenguinBoss(dt, now);
     if (state !== 'playing') return;
   }
 
@@ -10023,6 +10309,209 @@ function drawMrFreeze(t) {
 }
 
 // ---------------------------------------------------------------
+// El Pingüino boss rendering (Iceberg Lounge)
+// ---------------------------------------------------------------
+function drawPenguinBoss(t) {
+  const p = level.penguin;
+  if (!p) return;
+  const now = performance.now();
+
+  // Projectiles first (behind the boss body)
+  for (const s of p.shots) {
+    if (!s.alive) continue;
+    const sx = s.x - camera.x, sy = s.y - camera.y;
+    if (sx < -20 || sx > CANVAS_W + 20) continue;
+    ctx.fillStyle = '#c86fff';
+    ctx.beginPath(); ctx.ellipse(sx, sy, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(230,180,255,0.85)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(sx - 8, sy); ctx.lineTo(sx + 4, sy); ctx.stroke();
+  }
+  for (const b of p.bombs) {
+    if (!b.alive) continue;
+    const bx = b.x - camera.x, by = b.y - camera.y;
+    if (bx < -20 || bx > CANVAS_W + 20) continue;
+    // egg body with a lit sparky wick
+    ctx.fillStyle = '#f6ede0';
+    ctx.beginPath(); ctx.ellipse(bx, by, 7, 8, 0.1, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#8a7860'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.ellipse(bx, by, 7, 8, 0.1, 0, Math.PI * 2); ctx.stroke();
+    // wick + spark
+    ctx.strokeStyle = '#5a3a1e'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(bx + 1, by - 8); ctx.lineTo(bx + 4, by - 12); ctx.stroke();
+    ctx.fillStyle = '#ffd85e';
+    ctx.beginPath(); ctx.arc(bx + 4, by - 12, 2 + Math.sin(now / 60) * 1, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Boss body
+  const px = p.x - camera.x, py = p.y - camera.y;
+  const face = p.facing || -1;
+  const flash = now < p.hitUntil;
+  ctx.save();
+  ctx.translate(px + p.w / 2, py);
+  ctx.scale(face, 1);
+  // Idle throne: draw a purple velvet throne behind him
+  if (p.state === 'idle') {
+    ctx.save();
+    ctx.scale(face, 1);
+    ctx.fillStyle = '#3a1638';
+    ctx.fillRect(-30, 4, 60, p.h);
+    ctx.fillStyle = '#a97fd8';
+    ctx.fillRect(-30, 4, 60, 6);
+    ctx.fillStyle = '#c9a83f';
+    ctx.fillRect(-30, p.h - 4, 60, 4);
+    ctx.restore();
+  }
+
+  // Body: pear-shaped tuxedo — black with wider bottom
+  ctx.fillStyle = flash ? '#f2f2f5' : '#0d0d12';
+  ctx.beginPath();
+  ctx.moveTo(-p.w * 0.36, p.h);
+  ctx.quadraticCurveTo(-p.w * 0.55, p.h * 0.55, -p.w * 0.32, p.h * 0.28);
+  ctx.lineTo(-p.w * 0.18, p.h * 0.10);
+  ctx.lineTo(p.w * 0.18, p.h * 0.10);
+  ctx.lineTo(p.w * 0.32, p.h * 0.28);
+  ctx.quadraticCurveTo(p.w * 0.55, p.h * 0.55, p.w * 0.36, p.h);
+  ctx.closePath(); ctx.fill();
+  // White shirt triangle
+  ctx.fillStyle = '#f6f4ec';
+  ctx.beginPath();
+  ctx.moveTo(-p.w * 0.13, p.h * 0.16);
+  ctx.lineTo(p.w * 0.13, p.h * 0.16);
+  ctx.lineTo(0, p.h * 0.70);
+  ctx.closePath(); ctx.fill();
+  // Purple bowtie
+  ctx.fillStyle = '#a97fd8';
+  ctx.beginPath();
+  ctx.moveTo(-6, p.h * 0.20);
+  ctx.lineTo(-9, p.h * 0.26); ctx.lineTo(-6, p.h * 0.32);
+  ctx.lineTo(6, p.h * 0.32); ctx.lineTo(9, p.h * 0.26); ctx.lineTo(6, p.h * 0.20);
+  ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#5a2c7a';
+  ctx.fillRect(-2, p.h * 0.22, 4, p.h * 0.08);
+
+  // Head — round, black
+  ctx.fillStyle = flash ? '#f2f2f5' : '#0d0d12';
+  ctx.beginPath(); ctx.arc(0, p.h * 0.05, p.w * 0.32, 0, Math.PI * 2); ctx.fill();
+  // Face patch (white oval)
+  ctx.fillStyle = '#f6f4ec';
+  ctx.beginPath(); ctx.ellipse(0, p.h * 0.08, p.w * 0.22, p.h * 0.12, 0, 0, Math.PI * 2); ctx.fill();
+  // Long red nose
+  ctx.fillStyle = '#c14a3a';
+  ctx.beginPath();
+  ctx.moveTo(3, p.h * 0.05);
+  ctx.lineTo(p.w * 0.32, p.h * 0.13);
+  ctx.lineTo(3, p.h * 0.12);
+  ctx.closePath(); ctx.fill();
+  // Eye
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(-3, p.h * 0.04, 1.4, 0, Math.PI * 2); ctx.fill();
+  // Monocle (right eye)
+  ctx.strokeStyle = '#e6c94a'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(4, p.h * 0.04, 4, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = 'rgba(180,220,255,0.20)';
+  ctx.beginPath(); ctx.arc(4, p.h * 0.04, 3.5, 0, Math.PI * 2); ctx.fill();
+  // Top hat
+  ctx.fillStyle = '#0a0a10';
+  ctx.fillRect(-p.w * 0.28, -p.h * 0.14, p.w * 0.56, 3);
+  ctx.fillRect(-p.w * 0.18, -p.h * 0.30, p.w * 0.36, p.h * 0.17);
+  ctx.fillStyle = '#5a2c7a';
+  ctx.fillRect(-p.w * 0.18, -p.h * 0.17, p.w * 0.36, 3);
+
+  // Feet: small orange flippers
+  ctx.fillStyle = '#e88a2c';
+  const step = Math.sin(now / 130 + p.x * 0.03);
+  ctx.fillRect(-p.w * 0.24, p.h - 4 + Math.max(0, step) * -1, 8, 4);
+  ctx.fillRect(p.w * 0.08, p.h - 4 + Math.max(0, -step) * -1, 8, 4);
+
+  // UMBRELLA — changes by phase
+  ctx.save();
+  // Anchor at right side (the hand)
+  ctx.translate(p.w * 0.32, p.h * 0.35);
+  if (p.state === 'idle' || p.state === 'waddle' || p.state === 'reload' || p.state === 'stagger') {
+    // Closed umbrella held out like a shotgun
+    ctx.rotate(-0.05);
+    // shaft
+    ctx.fillStyle = '#1a1520';
+    ctx.fillRect(0, -1.5, 26, 3);
+    // ferrule tip (gold)
+    ctx.fillStyle = '#c9b04a';
+    ctx.fillRect(24, -2, 4, 4);
+    // handle crook
+    ctx.strokeStyle = '#3a2416'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-2, 0); ctx.quadraticCurveTo(-8, 0, -8, 6); ctx.stroke();
+    // muzzle spark if firing this instant
+    if (p.state === 'waddle' && now < p.nextShotAt && (p.nextShotAt - now) < 100) {
+      ctx.fillStyle = '#ffe07a';
+      ctx.beginPath(); ctx.arc(26, 0, 3, 0, Math.PI * 2); ctx.fill();
+    }
+  } else if (p.state === 'flyto' || p.state === 'glide') {
+    // Open umbrella spinning like a helicopter blade above the boss
+    ctx.translate(-p.w * 0.32, -p.h * 0.28);
+    const spin = (now / 60) % (Math.PI * 2);
+    ctx.save();
+    ctx.rotate(spin);
+    const cols = ['#5a2c7a', '#7a3fa2', '#5a2c7a', '#7a3fa2', '#5a2c7a', '#7a3fa2'];
+    for (let i = 0; i < 6; i++) {
+      const a0 = i * Math.PI / 3, a1 = (i + 1) * Math.PI / 3;
+      ctx.fillStyle = cols[i];
+      ctx.beginPath(); ctx.moveTo(0, 0);
+      ctx.arc(0, 0, 26, a0, a1); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    // motion blur ring
+    ctx.strokeStyle = 'rgba(200,150,255,0.35)';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, 28, 0, Math.PI * 2); ctx.stroke();
+    // shaft going down to his hand
+    ctx.fillStyle = '#1a1520';
+    ctx.fillRect(-1.5, 0, 3, p.h * 0.28);
+  } else if (p.state === 'spin') {
+    // Bladed umbrella spike — extended horizontal blade spinning fast
+    const spin = (now / 30) % (Math.PI * 2);
+    ctx.save();
+    ctx.rotate(spin);
+    // blade
+    ctx.fillStyle = '#dcdce0';
+    ctx.beginPath();
+    ctx.moveTo(-36, -3); ctx.lineTo(36, -1);
+    ctx.lineTo(38, 0); ctx.lineTo(36, 1); ctx.lineTo(-36, 3);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#8a8a92'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-36, 0); ctx.lineTo(36, 0); ctx.stroke();
+    ctx.restore();
+    // pulsing red gloss (danger)
+    ctx.strokeStyle = `rgba(255,90,90,${0.4 + 0.3 * Math.sin(now / 90)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0, 0, 38, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+
+  ctx.restore();
+
+  // HP bar above the boss (once he's engaged)
+  if (p.state !== 'idle' && p.state !== 'dying') {
+    const barW = 60, barH = 6;
+    const bx = px + p.w / 2 - barW / 2;
+    const by = py - 14;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(bx - 1, by - 1, barW + 2, barH + 2);
+    ctx.fillStyle = '#2a1420';
+    ctx.fillRect(bx, by, barW, barH);
+    const frac = Math.max(0, p.hp / p.maxHp);
+    ctx.fillStyle = frac > 0.6 ? '#a97fd8' : frac > 0.3 ? '#e0b246' : '#e05a5a';
+    ctx.fillRect(bx, by, barW * frac, barH);
+    ctx.strokeStyle = '#c9c2a8'; ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, barW, barH);
+    // little "!" during stagger to signal the kill window
+    if (p.state === 'stagger') {
+      ctx.fillStyle = Math.floor(now / 120) % 2 === 0 ? '#ffe07a' : '#c14a3a';
+      ctx.font = 'bold 14px monospace'; ctx.textAlign = 'center';
+      ctx.fillText('!', bx + barW / 2, by - 4);
+    }
+  }
+}
+
+// ---------------------------------------------------------------
 // Bane rendering
 // ---------------------------------------------------------------
 function drawBane(t) {
@@ -11344,6 +11833,7 @@ function render(t) {
   drawVillain();
   drawBane(t);
   drawTwoFace(t);
+  if (level.penguin) drawPenguinBoss(t);
   drawShockwaves();
   drawImpactEffects(t);
   // Act 3 co-op: only the active character is on screen. The other one
