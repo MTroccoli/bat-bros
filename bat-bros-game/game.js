@@ -6709,8 +6709,26 @@ function drawTiles() {
       // undertones, staggered courses, mortar variation. Exposed
       // corridor faces get moss/slime edges.
       if (level.sewer) {
-        if (level.rampSegs && level.rampSegs.length &&
-            rampAt(tx * TILE + TILE / 2)) continue;
+        // Ramps paint their own wedge (surface + fill BELOW it) in
+        // drawRampsSewer. Skip drawing tiles that fall INSIDE that
+        // wedge so they don't peek through the ramp paint. But do
+        // NOT skip tiles ABOVE the ramp surface — those are the
+        // sewer ceiling / Piso 1 floor / meseta-adjacent walls that
+        // sit over the ramp column and must render normally. (Before
+        // this check, the entire column was skipped, leaving the
+        // meseta ceiling invisible-but-solid and the Piso 1 floor
+        // above the meseta undrawn — hence "techo invisible" and
+        // "piso falso / hilo verde" bugs.)
+        if (level.rampSegs && level.rampSegs.length) {
+          const r = rampAt(tx * TILE + TILE / 2);
+          if (r) {
+            const surf = rampSurfaceY(r, tx * TILE + TILE / 2);
+            const tileCenterY = ty * TILE + TILE / 2;
+            const insideFloorWedge = tileCenterY >= surf;
+            const insideCeilWedge = r.ceil && tileCenterY <= surf - r.ceil * TILE;
+            if (insideFloorWedge || insideCeilWedge) continue;
+          }
+        }
         // Determine which floor style to use for multi-floor
         let floorStyle = 'victorian';
         if (level.sewerFloors) {
